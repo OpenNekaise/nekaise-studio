@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Nekaise Studio — Dashboard</title>
+<style>
+  :root { --bg:#f4f1ec; --panel:#ffffff; --line:#e6e0d6; --fg:#34322e;
+          --muted:#9b958a; --accent:#5b7a99; --green:#7a9b76; --red:#c0805f; }
+  * { box-sizing:border-box; }
+  body { margin:0; font:14px/1.6 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+         background:var(--bg); color:var(--fg); }
+  header { padding:18px 26px; border-bottom:1px solid var(--line); background:var(--panel); }
+  header h1 { margin:0; font-size:17px; font-weight:600; letter-spacing:.01em; }
+  header .sub { color:var(--muted); font-size:12px; }
+  .wrap { display:grid; grid-template-columns:340px 1fr; gap:20px; padding:22px 26px; }
+  .panel { background:var(--panel); border:1px solid var(--line); border-radius:14px; padding:18px; }
+  h2 { margin:0 0 12px; font-size:12px; text-transform:uppercase; letter-spacing:.08em; color:var(--muted); font-weight:600; }
+  table { width:100%; border-collapse:collapse; }
+  th,td { text-align:left; padding:8px 6px; border-bottom:1px solid var(--line); font-size:12.5px; }
+  th { color:var(--muted); font-weight:500; }
+  tr.run { cursor:pointer; }
+  tr.run:hover { background:#f6f2ea; }
+  tr.run.sel { background:#eef2f5; }
+  .pill { font-size:11px; padding:2px 10px; border-radius:20px; font-weight:500; }
+  .running { background:#f3ead4; color:#a07d3c; }
+  .done { background:#e6efe2; color:#5d7a57; }
+  .cards { display:grid; grid-template-columns:repeat(4,1fr); gap:14px; margin-bottom:16px; }
+  .card { background:#faf8f4; border:1px solid var(--line); border-radius:12px; padding:14px; }
+  .card .k { color:var(--muted); font-size:11px; text-transform:uppercase; letter-spacing:.05em; }
+  .card .v { font-size:23px; font-weight:600; margin-top:4px; }
+  .up { color:var(--green); } .down { color:var(--red); }
+  canvas { width:100%; height:340px; display:block; }
+  .muted { color:var(--muted); }
+  code { background:#f1ede5; padding:1px 6px; border-radius:5px; font-size:12px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Nekaise Studio <span class="muted">· autoresearch dashboard</span></h1>
+  <div class="sub">live view of the fine-tuning loop — open while the agent runs experiments</div>
+</header>
+
+<div class="wrap">
+  <div class="panel">
+    <h2>Experiments</h2>
+    <table><thead><tr><th>model</th><th>pack</th><th>metric</th><th></th></tr></thead>
+      <tbody id="runs"></tbody></table>
+    <p class="muted" id="empty" style="display:none">No runs yet. Start one and it appears here.</p>
+  </div>
+
+  <div class="panel">
+    <h2 id="title">Select a run</h2>
+    <div class="cards">
+      <div class="card"><div class="k">baseline</div><div class="v" id="c-base">–</div></div>
+      <div class="card"><div class="k">before</div><div class="v" id="c-before">–</div></div>
+      <div class="card"><div class="k">after</div><div class="v" id="c-after">–</div></div>
+      <div class="card"><div class="k">delta</div><div class="v" id="c-delta">–</div></div>
+    </div>
+    <canvas id="chart" width="900" height="340"></canvas>
+    <div class="muted" id="meta"></div>
+  </div>
+</div>
+
+<script>
+let sel = null;            // {exp, run_id}
+const $ = id => document.getElementById(id);
+const fmt = v => (v==null ? "–" : (+v).toFixed(3));
+
+async function loadRuns() {
+  const runs = await fetch("/api/runs").then(r=>r.json());
+  $("empty").style.display = runs.length ? "none" : "block";
+  $("runs").innerHTML = runs.map(r => `
+    <tr class="run ${sel&&sel.run_id===r.run_id?'sel':''}" data-exp="${r.exp}" data-run="${r.run_id}">
+      <td>${(r.model||'').split('/').pop()}</td><td>${r.pack||''}</td>
+      <td>${r.metric||''}</td>
+      <td><span class="pill ${r.status}">${r.status}</span></td>
+    </tr>`).join("");
+  document.querySelectorAll("tr.run").forEach(tr =>
+    tr.onclick = () => { sel = {exp:tr.dataset.exp, run_id:tr.dataset.run}; loadRun(); loadRuns(); });
+  if (!sel && runs.length) { sel = {exp:runs[0].exp, run_id:runs[0].run_id}; loadRun(); }
+}
+
+async function loadRun() {
+  if (!sel) return;
+  const runs = await fetch("/api/runs").then(r=>r.json());
+  const m = runs.find(r => r.run_id===sel.run_id) || {};
+  const events = await fetch(`/api/events?exp=${sel.exp}&run=${sel.run_id}`).then(r=>r.json());
+  $("title").textContent = `${(m.model||'').split('/').pop()} · ${m.pack||''} — ${m.run_id||''}`;
+  $("c-base").textContent = fmt(m.baseline);
+  $("c-before").textContent = fmt(m.before);
+  $("c-after").textContent = fmt(m.after);
+  const d = $("c-delta");
+  d.textContent = m.delta==null ? "–" : (m.delta>=0?"+":"")+(+m.delta).toFixed(3);
+  d.className = "v " + (m.delta==null?"":(m.delta>=0?"up":"down"));
+  $("meta").innerHTML = `${events.length} logged steps · status <b>${m.status||''}</b>` +
+    (m.model?` · base <code>${m.model}</code>`:"");
+  drawLoss(events);
+}
+
+function drawLoss(events) {
+  const c = $("chart"), ctx = c.getContext("2d");
+  const W = c.width, H = c.height, pad = 46;
+  ctx.clearRect(0,0,W,H);
+  const pts = events.filter(e => e.loss!=null).map(e => [e.step, +e.loss]);
+  ctx.strokeStyle = "#ece7dd"; ctx.fillStyle = "#9b958a"; ctx.font = "11px system-ui";
+  if (!pts.length) { ctx.fillText("waiting for training steps…", pad, H/2); return; }
+  const xs = pts.map(p=>p[0]), ys = pts.map(p=>p[1]);
+  const x0=Math.min(...xs), x1=Math.max(...xs,1), y0=0, y1=Math.max(...ys)*1.1;
+  const X = x => pad + (x-x0)/((x1-x0)||1)*(W-pad-12);
+  const Y = y => H-pad - (y-y0)/((y1-y0)||1)*(H-pad-14);
+  // grid + y labels
+  for (let i=0;i<=4;i++){ const yv=y1*i/4, py=Y(yv);
+    ctx.strokeStyle="#ece7dd"; ctx.beginPath(); ctx.moveTo(pad,py); ctx.lineTo(W-12,py); ctx.stroke();
+    ctx.fillText(yv.toFixed(2), 6, py+3); }
+  // axes labels
+  ctx.fillText("step", W/2, H-12);
+  // loss line
+  ctx.strokeStyle = "#5b7a99"; ctx.lineWidth = 2; ctx.beginPath();
+  pts.forEach((p,i)=>{ const px=X(p[0]), py=Y(p[1]); i?ctx.lineTo(px,py):ctx.moveTo(px,py); });
+  ctx.stroke();
+  ctx.fillStyle="#5b7a99";
+  pts.forEach(p=>{ ctx.beginPath(); ctx.arc(X(p[0]),Y(p[1]),2.5,0,7); ctx.fill(); });
+  // x labels
+  ctx.fillStyle="#9b958a";
+  ctx.fillText(x0, pad, H-pad+16); ctx.fillText(x1, W-30, H-pad+16);
+}
+
+loadRuns(); setInterval(loadRuns, 3000); setInterval(loadRun, 2000);
+</script>
+</body>
+</html>

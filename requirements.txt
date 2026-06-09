@@ -1,0 +1,9 @@
+# Fine-tuning (what the agent's train.py uses)
+unsloth                 # fast LoRA fine-tuning for <8B models on a single GPU
+trl                     # SFT trainer
+transformers
+datasets                # task-pack datasets (e.g. openai/gsm8k)
+accelerate
+
+# Serving (serve/to_ollama.py) uses the external `ollama` CLI — install separately:
+#   https://ollama.com/download

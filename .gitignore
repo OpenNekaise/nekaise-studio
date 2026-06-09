@@ -1,0 +1,32 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+env/
+.ipynb_checkpoints/
+
+# Training artifacts — never commit weights or checkpoints
+outputs/
+experiments/**/outputs/
+# dashboard run telemetry (events.jsonl, meta.json) — ephemeral, rebuilt per run
+experiments/**/runs/
+checkpoints/
+*.gguf
+*.safetensors
+*.bin
+*.pt
+wandb/
+
+# Dataset / HF cache
+.cache/
+packs/**/data/
+
+# Secrets
+.env
+*.key
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/

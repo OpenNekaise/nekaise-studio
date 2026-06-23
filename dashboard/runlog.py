@@ -55,8 +55,14 @@ def trainer_callback(logger: "RunLogger"):
     from transformers import TrainerCallback
 
     class _Cb(TrainerCallback):
+        # Stream whichever of these the trainer reports — SFT logs loss/lr,
+        # GRPO logs reward/kl, etc. The dashboard plots whatever shows up.
+        KEYS = ("loss", "reward", "learning_rate", "grad_norm", "kl")
+
         def on_log(self, args, state, control, logs=None, **kw):
-            if logs and "loss" in logs:
-                logger.log_step(state.global_step, loss=logs["loss"],
-                                lr=logs.get("learning_rate"))
+            if not logs:
+                return
+            keep = {k: logs[k] for k in self.KEYS if logs.get(k) is not None}
+            if keep:
+                logger.log_step(state.global_step, **keep)
     return _Cb()

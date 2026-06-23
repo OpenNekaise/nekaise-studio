@@ -10,6 +10,9 @@ driver-agnostic instructions live in **[`skills/run-experiment.md`](../../../ski
 read and follow that file. It is the single source of truth (Codex reads the same file via
 `AGENTS.md`).
 
-In short: pick an experiment under `experiments/`, read its `LOG.md` and `train.py`, propose
-**one** change, run `python experiments/<name>/train.py`, read the printed `METRIC` line, and
-keep or revert based on whether it beat the best in `LOG.md`. Never edit `packs/*/scorer.py`.
+In short: pick an experiment under `experiments/`, read its `LOG.md` and its two editable
+recipe files — `train.py` (HOW: method sft/dpo/grpo + hyperparameters) and `build_data.py`
+(WHAT: distilled / rejection-sampled data). Propose **one** change in one file, run it
+(`build_data.py` to (re)build a dataset, then `train.py`), read the printed `METRIC` line,
+and keep or revert vs the best in `LOG.md`. Never edit `packs/*/{scorer,prepare}.py` or
+`lib/*` (the fixed referee/plumbing).

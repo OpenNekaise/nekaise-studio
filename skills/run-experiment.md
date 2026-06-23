@@ -1,78 +1,107 @@
 # Skill: run-experiment
 
 You are running an **autoresearch loop** (after Karpathy's `autoresearch`) to improve a
-small language model's score on a **task pack**, by fine-tuning it with Unsloth and editing
-a single training script. You are the researcher; the human only edits *this skill*.
+small language model's score on a **task pack**. You fine-tune with Unsloth and edit the
+experiment's two recipe files; the human only edits *this skill*.
 
 ## The setup
 
-An **experiment** lives in `experiments/<name>/`:
+An **experiment** lives in `experiments/<name>/` and has **two editable recipe files**:
 
-- `train.py` — **the one file you edit.** It loads a base model, fine-tunes it with Unsloth,
-  evaluates on the task pack, and prints a metric line. Change architecture knobs,
-  hyperparameters, LoRA config, prompt/format, data handling — anything here.
-- `LOG.md` — the running journal of every experiment: hypothesis, change, metric, kept/reverted.
+- `train.py` — **HOW** to train. Picks a `METHOD` (sft / dpo / grpo), a dataset, and an
+  init checkpoint; trains, evaluates on the pack, saves to `outputs/<stage>/`, prints a
+  `METRIC` line. Tune hyperparameters, LoRA, optimizer, prompt/format, method.
+- `build_data.py` — **WHAT** to train on. Builds a cached training set by sampling from a
+  model and keeping only solutions the pack scorer accepts (rejection sampling). Change the
+  teacher/student `source`, sample count, prompt, size.
+- `LOG.md` — the running journal of every run: hypothesis, change, metric, kept/reverted.
 
-A **task pack** lives in `packs/<pack>/`:
+A **task pack** lives in `packs/<pack>/` and is the **fixed referee** — `scorer.py` and
+`prepare.py`. **Never edit these.** `scorer.py` exposes the contract every method shares:
+`load_split(split, n)`, `is_correct(pred, gold)`, `reward(pred, gold)`, `extract_answer`.
 
-- `scorer.py` and `prepare.py` — **fixed. Never edit these.** They define the dataset and the
-  metric. Editing them would be cheating the fitness function.
-- `pack.md` — what the pack measures and how it's scored.
+Shared plumbing in `lib/` (`pack.py`, `datakit.py`, `llm.py`) is also fixed — you call it,
+you don't edit it.
 
 ## The loop
 
 Repeat, one change at a time:
 
-1. **Read** `experiments/<name>/LOG.md` (full history) and the current `train.py`.
-2. **Hypothesize** one concrete, minimal change likely to raise the metric. State it in one sentence.
-3. **Edit** only `train.py` to make that single change. Keep it reviewable.
-4. **Run** it: `python experiments/<name>/train.py`. It is **time-boxed** — respect the budget;
-   don't remove the time limit to train longer.
+1. **Read** `experiments/<name>/LOG.md` (full history) and the current `train.py` /
+   `build_data.py`.
+2. **Hypothesize** one concrete, minimal change likely to raise the metric. One sentence.
+3. **Edit** the smallest thing in **one** recipe file (`train.py` *or* `build_data.py`).
+4. **Run** it (time-boxed — don't remove the limit):
+   - changed `build_data.py`? → `python experiments/<name>/build_data.py` (builds + caches a
+     dataset artifact), then run `train.py` with `DATASET="auto"`.
+   - changed only `train.py`? → `python experiments/<name>/train.py`.
 5. **Read the metric** from the printed `METRIC ...` line.
-6. **Decide**:
-   - **Better** than the best in `LOG.md` → keep the change. Append an entry to `LOG.md`
-     (hypothesis, diff summary, metric, ✅ kept). Optionally `git commit`.
-   - **Worse or equal** → revert the edit. Append the entry anyway (❌ reverted) — negative
-     results are data; they stop you re-trying dead ends.
-7. **Repeat** with the next hypothesis.
+6. **Decide**: better than the best in `LOG.md` → keep + log (✅). Worse/equal → revert the
+   edit + log anyway (❌ — negative results stop you re-trying dead ends).
+7. **Repeat.**
 
-## What to vary (high-leverage knobs first)
+## Methods you can reach (all use the same fixed referee)
 
-- **Prompt / format** — system prompt, how the answer is delimited, chat template usage.
-- **Data** — subset, ordering, packing, max sequence length, how examples are rendered.
-- **LoRA** — rank `r`, `alpha`, dropout, which `target_modules`.
-- **Optimization** — learning rate, schedule, warmup, weight decay, optimizer, batch / grad-accum.
-- **Steps** — within the time budget, more steps vs. bigger batches.
+- **SFT** — `METHOD="sft"`. Train on an SFT dataset. `DATASET="render"` = SFT on the pack's
+  gold (the baseline); `DATASET="auto"` = SFT on whatever `build_data.py` last built.
+- **RFT / rejection sampling** — in `build_data.py`, set `source` to the student and
+  `n_samples>1`; keep its correct samples; then SFT (`DATASET="auto"`).
+- **Distillation** — in `build_data.py`, set `source` to a teacher (`anthropic:claude-…` or
+  `ollama:qwen3.6:27b`); keep its correct chain-of-thought; then SFT.
+- **GRPO / DPO** — `METHOD="grpo"` uses the pack's graded `reward()` as a verifiable reward;
+  `METHOD="dpo"` trains on preference pairs.
+
+**Pipelines hand off through checkpoints.** Each run saves to `outputs/<STAGE>/` and updates
+`outputs/best.json`. To polish an SFT model with RL: run SFT (`STAGE="sft"`), then run again
+with `METHOD="grpo"`, `INIT_FROM="outputs/sft"`, `STAGE="grpo"`. The reference recipe —
+*teacher CoT → reject-sample → SFT → GRPO* — is just: edit `build_data.py` (distill) → run →
+`train.py METHOD=sft DATASET=auto` → `train.py METHOD=grpo INIT_FROM=outputs/sft`.
+
+## What to vary (high-leverage first)
+
+- **Data** (`build_data.py`) — teacher vs student source, #samples, prompt/CoT style, size,
+  filtering. Often the biggest lever.
+- **Method** — sft → rft → grpo. With a verifiable scorer, RFT/GRPO usually beat tuning SFT.
+- **Prompt / format**, **LoRA** (r, alpha, dropout, target_modules), **optimization** (lr,
+  schedule, warmup, batch/grad-accum), **steps** within the time budget.
 
 ## Rules
 
-- **One change per run.** You can't attribute a result to two changes at once.
-- **Never edit `packs/*/scorer.py` or `prepare.py`.** That's the referee.
+- **One change per run**, in one recipe file. You can't attribute a result to two changes.
+- **Never edit `packs/*/{scorer,prepare}.py` or `lib/*`.** That's the fixed referee/plumbing.
+  Using the scorer to *filter training data* in `build_data.py` is allowed and expected —
+  it's not cheating, because **evaluation always runs on the held-out test split with the
+  same fixed scorer.** What you must never do is change how the metric itself is computed.
 - **Honor the time box.** Comparisons are only fair at equal wall-clock.
 - **Log everything**, including failures. `LOG.md` is the memory across the whole search.
-- **Best metric wins.** The job is to push the `METRIC` number, nothing else.
+- Built datasets are **cached + provenance-tracked** (`data/<id>/provenance.json`): same
+  recipe reuses the cache, a changed recipe makes a new artifact. Don't regenerate by hand.
+- **Best metric wins.** Push the `METRIC` number, nothing else.
 
 ## Starting
 
-Pick (or be told) an experiment, then: *"Read `LOG.md` and the current `train.py`, propose one
-change, and kick off a new experiment."* If `LOG.md` is empty, your first run just establishes
-the **baseline** metric — make no change, run it, and record the number.
+Pick (or be told) an experiment, then: *"Read `LOG.md`, `train.py`, and `build_data.py`;
+propose one change; run it."* If `LOG.md` is empty, the first run establishes the
+**baseline** — make no change, run `train.py` with `DATASET="render"`, record the number.
 
 ## Dashboard
 
-Before kicking off a run, start the local dashboard so the human can watch if they want:
+Before a run, start the local dashboard so the human can watch if they want:
 
 ```bash
 python dashboard/server.py    # serves http://localhost:8765
 ```
 
-Tell them the URL once. `train.py` streams loss + the final metric to it automatically (via
-`dashboard/runlog.py`), and every run shows up in the leaderboard — they can ignore it or click
-in. Don't block on it; it's optional telemetry, not part of the loop's decisions.
+Tell them the URL once. Training streams loss (SFT) or reward/kl (GRPO) plus the final eval
+metric; every run shows up in the leaderboard. It's optional telemetry, not part of the
+loop's decisions — don't block on it.
 
 ## Current targets
 
-- Active experiment: `experiments/granite-4.1-3b-gsm8k/` (base: `unsloth/granite-4.1-3b`, pack: `gsm8k`).
-- Planned: Granite-4.1-8B, Gemma-4, Qwen-3.5, and sub-1B Granite (350m/1b). One folder per model.
-- The `gsm8k` pack is a **public bootstrap** — it proves the loop works. It will later be swapped
-  for a building-ontology pack with no change to this skill or the loop.
+- Active experiment: `experiments/granite-4.1-3b-gsm8k/` (base `unsloth/granite-4.1-3b`, pack `gsm8k`).
+- Planned: Granite-4.1-8B, Gemma-4, Qwen-3.5, sub-1B Granite. One folder per model.
+- `gsm8k` is a **public bootstrap** that proves the loop. It will later swap for a
+  building-ontology pack with **no change to this skill, the loop, or the recipe files'
+  structure** — only the pack import changes.
+- To serve a winner: `python serve/to_ollama.py --exp <name> --name <ollama-name>` exports
+  `outputs/best` to GGUF/Ollama, which `nekaise-edge` then runs (`OLLAMA_MODEL=<ollama-name>`).

@@ -13,6 +13,24 @@ The twist: the interface *is* an AI agent. Following Andrej Karpathy's
 drives by itself. Everything you'd normally do as an ML researcher lives in a **skill**, not in
 commands you type.
 
+## The core idea: just dump data into `nekaise_data/`
+
+The most important design decision in Nekaise Studio: **there is one folder you feed, and the
+AI does everything else.** Drop a building's real data into `nekaise_data/<building>/` — HVAC
+and control PDFs, control cards, the ontology / semantic model (Brick / ASHRAE 223P `.ttl`),
+tag lists, BIM, sensor exports — one subfolder per building, and that's it. You don't clean it,
+label it, or hand-write any training data.
+
+From there the agent does the rest: it reads the data, **designs the dataset itself** (e.g.
+Opus 4.8 prompted as a senior building engineer, authoring English Q&A grounded in each
+building's real ontology to train a junior engineer), fine-tunes a small model on it, and
+scores the result on a held-out building — the autoresearch loop below.
+
+> ⚠️ **`nekaise_data/` is git-ignored and never committed.** It holds proprietary, real
+> building data — it stays on your machine. Only code and prompts live in this repo. Likewise,
+> API keys (e.g. the teacher's `ANTHROPIC_API_KEY`) are read from a local `.env` and are never
+> committed.
+
 ## How it works
 
 ```
@@ -39,10 +57,12 @@ commands you type.
 
 | Path | What it is |
 |------|-----------|
+| `nekaise_data/<building>/` | **The one folder you feed.** Raw building data — PDFs, ontologies (`.ttl`), tag lists, BIM, sensor exports. One subfolder per building. **Git-ignored; never committed.** |
 | `skills/` | **The product.** Driver-agnostic markdown skills — the loop's instructions. |
 | `.claude/skills/`, `AGENTS.md` | Thin adapters so **both Claude Code and Codex** use the same skills. |
-| `experiments/<model>-<pack>/` | `train.py` (the one file the agent edits) + `LOG.md` (its journal). |
-| `packs/<pack>/` | A **task pack** = dataset + `scorer.py` (the fitness function). **Fixed; never edited.** |
+| `experiments/<model>-<pack>/` | Two editable recipe files — `build_data.py` (WHAT data: distill / rejection-sample) + `train.py` (HOW: sft/grpo) — plus `LOG.md`. Built datasets (`data/`) and checkpoints (`outputs/`) are git-ignored. |
+| `packs/<pack>/` | A **task pack** = data + `scorer.py` (the fixed referee: `load_split`/`is_correct`/`reward`). **Never edited.** `packs/building/` scores ontology/topology Q&A from `nekaise_data`. |
+| `lib/` | Fixed plumbing: `pack.py` (load a pack), `datakit.py` (dataset cache + provenance), `llm.py` (teacher backends: ollama / anthropic / openai). |
 | `serve/` | Export a winning model to GGUF → Ollama (the handoff to `nekaise-edge`). |
 
 ## Design principles

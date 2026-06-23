@@ -95,35 +95,52 @@ async function loadRun() {
   d.className = "v " + (m.delta==null?"":(m.delta>=0?"up":"down"));
   $("meta").innerHTML = `${events.length} logged steps · status <b>${m.status||''}</b>` +
     (m.model?` · base <code>${m.model}</code>`:"");
-  drawLoss(events);
+  drawSeries(events);
 }
 
-function drawLoss(events) {
+const PALETTE = ["#5b7a99","#7a9b76","#9b7ab0","#c0805f","#b0a24a","#5fa3a0"];
+
+// Any numeric event field (except step/t) is a plottable series: loss (SFT),
+// reward/kl (GRPO), eval_acc, grad_norm, … The chart adapts to whatever is logged.
+function seriesKeys(events) {
+  const skip = new Set(["step","t"]), keys = new Set();
+  events.forEach(e => Object.keys(e).forEach(k => {
+    if (!skip.has(k) && typeof e[k]==="number" && isFinite(e[k])) keys.add(k);
+  }));
+  return [...keys];
+}
+
+function drawSeries(events) {
   const c = $("chart"), ctx = c.getContext("2d");
   const W = c.width, H = c.height, pad = 46;
-  ctx.clearRect(0,0,W,H);
-  const pts = events.filter(e => e.loss!=null).map(e => [e.step, +e.loss]);
-  ctx.strokeStyle = "#ece7dd"; ctx.fillStyle = "#9b958a"; ctx.font = "11px system-ui";
-  if (!pts.length) { ctx.fillText("waiting for training steps…", pad, H/2); return; }
-  const xs = pts.map(p=>p[0]), ys = pts.map(p=>p[1]);
-  const x0=Math.min(...xs), x1=Math.max(...xs,1), y0=0, y1=Math.max(...ys)*1.1;
+  ctx.clearRect(0,0,W,H); ctx.font = "11px system-ui";
+  const series = seriesKeys(events).map(k => ({
+    k, pts: events.filter(e => e[k]!=null && isFinite(e[k])).map(e => [+e.step, +e[k]])
+  })).filter(s => s.pts.length);
+  if (!series.length) { ctx.fillStyle="#9b958a"; ctx.fillText("waiting for training steps…", pad, H/2); return; }
+  const allx = series.flatMap(s => s.pts.map(p=>p[0]));
+  const x0 = Math.min(...allx), x1 = Math.max(...allx,1);
   const X = x => pad + (x-x0)/((x1-x0)||1)*(W-pad-12);
-  const Y = y => H-pad - (y-y0)/((y1-y0)||1)*(H-pad-14);
-  // grid + y labels
-  for (let i=0;i<=4;i++){ const yv=y1*i/4, py=Y(yv);
-    ctx.strokeStyle="#ece7dd"; ctx.beginPath(); ctx.moveTo(pad,py); ctx.lineTo(W-12,py); ctx.stroke();
-    ctx.fillText(yv.toFixed(2), 6, py+3); }
-  // axes labels
-  ctx.fillText("step", W/2, H-12);
-  // loss line
-  ctx.strokeStyle = "#5b7a99"; ctx.lineWidth = 2; ctx.beginPath();
-  pts.forEach((p,i)=>{ const px=X(p[0]), py=Y(p[1]); i?ctx.lineTo(px,py):ctx.moveTo(px,py); });
-  ctx.stroke();
-  ctx.fillStyle="#5b7a99";
-  pts.forEach(p=>{ ctx.beginPath(); ctx.arc(X(p[0]),Y(p[1]),2.5,0,7); ctx.fill(); });
-  // x labels
-  ctx.fillStyle="#9b958a";
+  const Y = v => H-pad - v*(H-pad-26);          // v is normalized to [0,1]
+  // grid + normalized y labels
+  ctx.strokeStyle="#ece7dd"; ctx.fillStyle="#9b958a";
+  for (let i=0;i<=4;i++){ const py=Y(i/4);
+    ctx.beginPath(); ctx.moveTo(pad,py); ctx.lineTo(W-12,py); ctx.stroke();
+    ctx.fillText((i/4).toFixed(2), 6, py+3); }
   ctx.fillText(x0, pad, H-pad+16); ctx.fillText(x1, W-30, H-pad+16);
+  ctx.fillText("each series auto-scaled to its own range", W/2-90, H-12);
+  // one auto-scaled line per series, with a legend
+  series.forEach((s, si) => {
+    const ys = s.pts.map(p=>p[1]), lo = Math.min(...ys), hi = Math.max(...ys);
+    const norm = y => (hi-lo) ? (y-lo)/(hi-lo) : 0.5;
+    const col = PALETTE[si % PALETTE.length];
+    ctx.strokeStyle = col; ctx.lineWidth = 2; ctx.beginPath();
+    s.pts.forEach((p,i) => { const px=X(p[0]), py=Y(norm(p[1])); i?ctx.lineTo(px,py):ctx.moveTo(px,py); });
+    ctx.stroke();
+    const lx = pad+8 + si*150, ly = 16;
+    ctx.fillStyle = col; ctx.fillRect(lx, ly-8, 10, 10);
+    ctx.fillStyle = "#34322e"; ctx.fillText(`${s.k} (${ys[ys.length-1].toFixed(3)})`, lx+14, ly+1);
+  });
 }
 
 loadRuns(); setInterval(loadRuns, 3000); setInterval(loadRun, 2000);

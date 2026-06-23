@@ -20,6 +20,15 @@ autoresearch loop works end-to-end before swapping in building-ontology data.
 ## The swap to building ontology
 
 A future `packs/building-ontology/` will expose the same contract — a `scorer.py` with
-`is_correct()` + `load_test()` and a `prepare.py` — measuring ontology lookups, point-name
-normalization, and query construction. Nothing in the loop, the skill, or `train.py`'s
-structure changes; only `BASE_MODEL` stays and the pack import swaps.
+`load_split()`, `is_correct()`, `reward()`, `extract_answer()` and a `prepare.py` —
+measuring ontology lookups, point-name normalization, and query construction. Nothing in the
+loop, the skill, or the recipe files' structure changes; only the pack import swaps.
+
+## Scorer contract (the fixed referee, reused by every method)
+
+| Function | Used by |
+|---|---|
+| `load_split(split, n)` | data building (`train`) and evaluation (`test`) |
+| `is_correct(pred, gold) -> bool` | the eval metric **and** the rejection-sampling filter |
+| `reward(pred, gold) -> float` | graded signal for GRPO/RL (1.0 correct; 0.1 well-formed) |
+| `extract_answer(text)` | shared parsing helper |

@@ -12,6 +12,7 @@ experiments/**/outputs/
 # dashboard run telemetry (events.jsonl, meta.json) — ephemeral, rebuilt per run
 experiments/**/runs/
 checkpoints/
+unsloth_compiled_cache/
 *.gguf
 *.safetensors
 *.bin
@@ -21,6 +22,11 @@ wandb/
 # Dataset / HF cache
 .cache/
 packs/**/data/
+# Built dataset artifacts (teacher CoT / rejection-sampled / preference pairs) — rebuilt from SPEC
+experiments/**/data/
+
+# Real building data — NEVER commit (proprietary PDFs, control cards, BIM, PII)
+nekaise_data/
 
 # Secrets
 .env

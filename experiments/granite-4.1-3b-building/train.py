@@ -24,6 +24,7 @@ EXP_DIR = Path(__file__).resolve().parent
 OUT_DIR = EXP_DIR / "outputs"
 sys.path.insert(0, str(REPO / "lib"))
 sys.path.insert(0, str(REPO / "dashboard"))
+sys.path.insert(0, str(REPO / "packs" / "building"))
 
 import datakit  # noqa: E402
 from pack import load as load_pack  # noqa: E402
@@ -41,7 +42,8 @@ INIT_FROM       = None         # None = BASE_MODEL; or "outputs/<stage>" to cont
 STAGE           = "sft"        # checkpoint saved to outputs/<STAGE>/
 
 BASE_MODEL      = "unsloth/granite-4.1-3b"
-MAX_SEQ_LEN     = 4096
+OPEN_BOOK       = True    # eval: put the held-out building's ontology in the prompt (as nekaise-edge serves it)
+MAX_SEQ_LEN     = 16384   # wide enough to hold the held-out ontology (~10k tok) + question for open-book eval
 LOAD_IN_4BIT    = True
 TIME_BUDGET_MIN = 15
 EVAL_N          = 80           # held-out building has 200+ verifiable tasks; subset for speed
@@ -52,9 +54,9 @@ LORA = dict(r=16, lora_alpha=16, lora_dropout=0.0, bias="none",
                             "gate_proj", "up_proj", "down_proj"])
 
 TRAIN = dict(per_device_train_batch_size=1, gradient_accumulation_steps=8,
-             warmup_steps=5, max_steps=120, learning_rate=2e-4,
+             warmup_steps=5, max_steps=40, learning_rate=2e-4,
              optim="adamw_8bit", weight_decay=0.01, lr_scheduler_type="linear",
-             logging_steps=5, seed=3407)
+             logging_steps=5, seed=3407)  # max_steps 120->40: lighter, task-aligned data needs fewer epochs
 
 GRPO = dict(num_generations=8, max_prompt_length=1024, max_completion_length=MAX_NEW_TOKENS,
             train_questions=200)
@@ -109,15 +111,32 @@ def time_budget_callback():
     return _TB()
 
 
+def holdout_corpus(pack, max_chars=300000):
+    """Full text data-in-hand for the held-out building (retrieval source). Shared: lib/corpus.py."""
+    import prepare  # packs/building/prepare.py (fixed data locator)
+    from corpus import building_corpus
+    text, _ = building_corpus(prepare.DATA / pack.HOLDOUT_BUILDING, max_chars)
+    return text
+
+
 def evaluate(model, tok, pack, n):
     from unsloth import FastLanguageModel
+    from corpus import retrieve
     FastLanguageModel.for_inference(model)
+    full = holdout_corpus(pack) if OPEN_BOOK else None
     test = pack.load_split("test", n)
     correct = 0
     for ex in test:
+        if full is None:
+            user = ex["question"]
+        else:
+            ctx = retrieve(full, ex["question"], ignore=[pack.HOLDOUT_BUILDING])
+            user = ("Use only the building's data below to answer.\n\n"
+                    f"--- BUILDING DATA ---\n{ctx}\n--- END BUILDING DATA ---\n\n"
+                    f"Question: {ex['question']}")
         prompt = tok.apply_chat_template(
             [{"role": "system", "content": SYSTEM_PROMPT},
-             {"role": "user", "content": ex["question"]}],
+             {"role": "user", "content": user}],
             tokenize=False, add_generation_prompt=True)
         inputs = tok(prompt, return_tensors="pt").to(model.device)
         out = model.generate(**inputs, max_new_tokens=MAX_NEW_TOKENS, do_sample=False)
@@ -146,8 +165,8 @@ def run_sft(model, tok, rows, callbacks):
     ds = Dataset.from_list([
         {"text": tok.apply_chat_template(r["messages"], tokenize=False)} for r in rows])
     SFTTrainer(
-        model=model, tokenizer=tok, train_dataset=ds, callbacks=callbacks,
-        args=SFTConfig(dataset_text_field="text", max_seq_length=MAX_SEQ_LEN,
+        model=model, processing_class=tok, train_dataset=ds, callbacks=callbacks,
+        args=SFTConfig(dataset_text_field="text", max_length=MAX_SEQ_LEN,
                        output_dir=str(OUT_DIR / "_trainer"), report_to="none", **TRAIN),
     ).train()
 

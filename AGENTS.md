@@ -18,8 +18,8 @@ Three skills, three jobs (each canonical under `skills/`, mirrored to `.claude/s
 - **[`skills/run-experiment.md`](skills/run-experiment.md)** — be the *loop*; read it first when
   training:
   1. Pick an experiment in `experiments/<name>/`.
-  2. Read its `LOG.md` and the editable recipe files: `train.py` (HOW) + `build_data.py` (WHAT,
-     the cheap TTL-only fallback; the richer data path is the `prepare-trainset` skill).
+  2. Read its `LOG.md` and the editable recipe files: `train.py` (HOW) + `build_data.py` (WHAT —
+     the teacher authors realistic engineer/operator Q&A + anchors; `eval_judge.py` grades by anchors).
   3. Propose **one** change, edit one recipe file.
   4. Run it (rebuild the dataset, then `train.py`; time-boxed) and read the `METRIC` line.
   5. Keep the change if it beats the best in `LOG.md`; otherwise revert. Log either way.

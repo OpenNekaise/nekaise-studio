@@ -16,9 +16,9 @@ An **experiment** lives in `experiments/<name>/` and has **two editable recipe f
 - `train.py` — **HOW** to train. Picks a `METHOD` (sft / dpo / grpo), a dataset, and an
   init checkpoint; trains, evaluates on the pack, saves to `outputs/<stage>/`, prints a
   `METRIC` line. Tune hyperparameters, LoRA, optimizer, prompt/format, method.
-- `build_data.py` — **WHAT** to train on. Builds a cached training set by sampling from a
-  model and keeping only solutions the pack scorer accepts (rejection sampling). Change the
-  teacher/student `source`, sample count, prompt, size.
+- `build_data.py` — **WHAT** to train on. The teacher authors the realistic questions an engineer
+  or operator asks (with grounded answers + `anchors`), built into open-book SFT demos + the frozen
+  exam (`eval_judge.py` grades by anchors). Change the questions-per-building, prompts, teacher.
 - `LOG.md` — the running journal of every run: hypothesis, change, metric, kept/reverted.
 
 A **task pack** lives in `packs/<pack>/` and is the **fixed referee** — `scorer.py` and

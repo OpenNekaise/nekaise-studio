@@ -1,26 +1,17 @@
 #!/usr/bin/env python3
-"""build_data.py — DATA recipe for the building pack: distill a senior building engineer.
+"""build_data.py — author realistic engineer/operator Q&A, then build SFT demos + the frozen exam.
 
-Opus 4.8, prompted AS a senior building / HVAC / BMS engineer, reads a building's real
-semantic model (Brick + ASHRAE 223P ontology) and writes English question-answer pairs that
-would train a junior building engineer to understand and operate THAT building. The pairs
-become SFT data for the small model. Evaluation stays separate and verifiable — the fixed
-ontology scorer in packs/building/scorer.py measures progress objectively.
+Runnable form of `skills/prepare-trainset.md`: the teacher (a frontier model) authors the questions
+a building **engineer or operator** actually asks about each building — no fixed taxonomy — with a
+grounded answer and its `anchors` (the must-match facts). Training buildings become open-book SFT
+demos (answered over a retrieved slice, via `lib/datakit`); the holdout building becomes the frozen
+realistic exam `packs/building/eval_open.jsonl`. The judge (`eval_judge.py`) grades by anchors.
 
-Cross-building: training Q&A is generated only from the NON-held-out buildings; the held-out
-building (NEKAISE_HOLDOUT; defaults to the first building by name) is reserved for eval. Each
-building's ontology is sent as the CACHED system context, so repeated/large calls bill ~0.1x
-on the shared prefix.
-
-NOTE: this API-only recipe reads just the `.ttl` graph. The richer, primary path is the
-`prepare-trainset` skill (Claude Code reads the WHOLE building folder — control cards, guides,
-trends — and grounds Q&A in all of it). Keep this script as a cheap, unattended TTL fallback.
-
-    set -a; source /home/zengp/Code/KebAgent/.env; set +a   # provides ANTHROPIC_API_KEY
-    python experiments/granite-4.1-3b-building/build_data.py            # build + cache full set
+    set -a; source <your>/.env; set +a                                 # ANTHROPIC_API_KEY
+    python experiments/granite-4.1-3b-building/build_data.py            # full
     python experiments/granite-4.1-3b-building/build_data.py --smoke    # 1 building, 5 Q&A, print
 
-Edit SPEC / the prompts to change the recipe. NEVER edit packs/*/scorer.py (the referee).
+Edit the SPEC / prompts to change the recipe. NEVER edit packs/*/scorer.py or prepare.py.
 """
 from __future__ import annotations
 
@@ -35,168 +26,113 @@ REPO = Path(__file__).resolve().parents[2]
 EXP_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(REPO / "lib"))
 sys.path.insert(0, str(REPO / "packs" / "building"))
-
 import datakit  # noqa: E402
 import llm  # noqa: E402
-import prepare  # noqa: E402  (building data locator)
+import prepare  # noqa: E402  (building data locator; default_holdout)
+from corpus import building_corpus, retrieve  # noqa: E402
 
-HOLDOUT_BUILDING = os.environ.get("NEKAISE_HOLDOUT") or prepare.default_holdout()
-MAX_ONTOLOGY_CHARS = 60_000  # cap grounding context per building (TTLs are small; safety bound)
+TEACHER = "anthropic:claude-opus-4-8"
+HOLDOUT = os.environ.get("NEKAISE_HOLDOUT") or prepare.default_holdout()
+N = 35
+QA_DIR = EXP_DIR / "data" / "realistic_qa"   # git-ignored (experiments/**/data/)
 
-# ================================== SPEC (the knobs) =================================
-SPEC = {
-    "pack": "building",
-    "teacher": "anthropic:claude-opus-4-8",
-    "questions_per_building": 40,
-    "max_tokens": 12000,
-    "holdout": HOLDOUT_BUILDING,
-}
+SYSTEM_PROMPT = (  # the student persona; must match train.py
+    "You are a knowledgeable building engineer assistant. Answer the question accurately and "
+    "specifically, grounding your answer in the building's equipment, sensors, topology, and "
+    "semantic model (Brick / ASHRAE 223P). Name the relevant entities and explain your reasoning.")
 
-# The teacher's persona + the building's ontology (this is the CACHED system prefix).
-TEACHER_SYSTEM = """You are a senior building services engineer with 20+ years of experience in \
-HVAC, building automation / BMS, controls, and commissioning. You are fluent in semantic \
-building models — Brick Schema and ASHRAE Standard 223P — and you mentor junior engineers.
+SENIOR_SYS = ("You are a senior building services engineer (HVAC, BMS/controls, commissioning). "
+    "Below is ALL available data for one building — study it carefully.\n\n"
+    "--- BUILDING DATA ---\n{corpus}\n--- END BUILDING DATA ---")
 
-Below is the semantic model (RDF/Turtle) for one specific building: "{building}". Study it \
-carefully — it defines the building's equipment, sensors, points, systems, and how they \
-connect (s223:cnx connections, brick/s223 classes, rdfs:comment descriptions).
+TASK = """Author {n} questions that a real building ENGINEER or OPERATOR would actually ask about THIS building — in their own words and shorthand. Do NOT use a fixed taxonomy; just span what they really need: look up a spec/value, explain the structure (what connects to what), explain control logic / a sequence, DIAGNOSE (what would you check, and why, when something is wrong), and fetch/inspect time-series. Mix the voice: some engineer (precise, uses tags), some operator (casual). Vary phrasing.
 
---- BUILDING ONTOLOGY: {building} ---
-{ontology}
---- END ONTOLOGY ---"""
+For each, give the correct grounded `answer` and its `anchors` — the specific facts the answer MUST contain to be judged right: numeric values, vendor tags, file paths, component names, time windows, or the items of a checklist. Every anchor MUST come from the data above — invent nothing; keep anchors minimal-but-complete.
 
-# The generation task (user turn).
-TEACHER_TASK = """Design {n} high-quality question-and-answer training pairs, in English, that \
-would teach a junior building engineer to understand and operate THIS building.
-
-Ground every pair in the ontology above — reference the building's REAL entities, equipment, \
-sensors, points, and connections by their actual names/identifiers. Do not invent anything \
-that is not in the model.
-
-Cover a mix of:
-- Equipment & classification: what a given entity is, its Brick/223P class, what it does.
-- Topology: what connects to what (s223:cnx), what serves or feeds what, the air/water path.
-- Sensors & points: what is measured where, and how a reading would be interpreted.
-- Operational reasoning: practical "what would you check, and why" troubleshooting a mentor asks.
-
-Each answer must be correct per the ontology, specific (name the entities), and explain the \
-reasoning a senior engineer would use — not a one-word fact. Vary difficulty from basic \
-identification to multi-step reasoning.
-
-Return ONLY a JSON array, with no prose and no markdown fences:
-[{{"question": "...", "answer": "..."}}, ...]"""
-
-# What the STUDENT (small model) is trained to be.
-STUDENT_SYSTEM = (
-    "You are a knowledgeable building engineer assistant. Answer questions about the building "
-    "accurately and specifically, grounding your answers in its equipment, sensors, topology, "
-    "and semantic model. Explain your reasoning like a senior engineer mentoring a colleague."
-)
-# =====================================================================================
+Return ONLY a JSON array, no prose, no markdown fences:
+[{{"persona":"engineer|operator","intent":"<one free-form word>","question":"...","answer":"...","anchors":["...","..."],"source":"<file or entity>"}}, ...]"""
 
 
-def building_ontology(building: str) -> str:
-    """Concatenated Turtle text for a building (the teacher's grounding context)."""
-    d = prepare.DATA / building
-    parts = []
-    for ttl in sorted(d.rglob("*.ttl")):
-        try:
-            parts.append(f"# file: {ttl.name}\n{ttl.read_text(errors='replace')}")
-        except Exception as e:
-            print(f"  ! {building}: skip {ttl.name} ({e})", file=sys.stderr)
-    return ("\n\n".join(parts))[:MAX_ONTOLOGY_CHARS]
+def ob(ctx: str, q: str) -> str:  # must match train.py eval prompt
+    return ("Use only the building's data below to answer.\n\n"
+            f"--- BUILDING DATA ---\n{ctx}\n--- END BUILDING DATA ---\n\nQuestion: {q}")
 
 
-def training_buildings() -> list[str]:
-    """All buildings with an ontology, minus the held-out one."""
-    return [d.name for d in prepare.building_dirs() if d.name != SPEC["holdout"]]
-
-
-def _parse_qa(text: str) -> list[dict]:
-    """Pull the JSON array of {question, answer} out of the teacher's reply, robustly.
-
-    Tolerates truncation: if the array didn't close (output hit max_tokens), salvage by
-    closing it after the last complete object, so we keep the Q&A that did come through.
-    """
+def parse_array(text: str) -> list[dict]:
     t = re.sub(r"^```(?:json)?|```$", "", text.strip(), flags=re.MULTILINE).strip()
-    start = t.find("[")
-    if start == -1:
+    s = t.find("[")
+    if s == -1:
         return []
-    body = t[start:]
-    candidates = []
-    end = body.rfind("]")
-    if end != -1:
-        candidates.append(body[: end + 1])           # well-formed array
-    last_obj = body.rfind("}")
-    if last_obj != -1:
-        candidates.append(body[: last_obj + 1] + "]")  # salvage truncated tail
-    for c in candidates:
+    body = t[s:]
+    for cand in ((body[: body.rfind("]") + 1]) if "]" in body else "",
+                 (body[: body.rfind("}") + 1] + "]") if "}" in body else ""):
+        if not cand:
+            continue
         try:
-            arr = json.loads(c)
+            arr = json.loads(cand)
         except json.JSONDecodeError:
             continue
-        out = [
-            {"question": str(x["question"]), "answer": str(x["answer"])}
-            for x in arr
-            if isinstance(x, dict) and x.get("question") and x.get("answer")
-        ]
+        out = [x for x in arr if isinstance(x, dict) and x.get("question") and x.get("answer") and x.get("anchors")]
         if out:
             return out
     return []
 
 
-def generate_for_building(building: str, n: int, max_tokens: int) -> list[dict]:
-    system = TEACHER_SYSTEM.format(building=building, ontology=building_ontology(building))
-    task = TEACHER_TASK.format(n=n)
-    reply = llm.generate(SPEC["teacher"], system=system, user=task, max_tokens=max_tokens)
-    return _parse_qa(reply)
+def author(bdir: Path, n: int = N, max_tokens: int = 16000) -> list[dict]:
+    corpus, _ = building_corpus(bdir, max_chars=200000)
+    reply = llm.generate(TEACHER, system=SENIOR_SYS.format(corpus=corpus),
+                         user=TASK.format(n=n), max_tokens=max_tokens)
+    items = parse_array(reply)
+    for i, it in enumerate(items):
+        it["id"] = f"{bdir.name[:3]}-{i:02d}"
+    return items
 
 
-def _to_sft(qa: dict) -> dict:
+def sft_row(ctx: str, it: dict) -> dict:
     return {"messages": [
-        {"role": "system", "content": STUDENT_SYSTEM},
-        {"role": "user", "content": qa["question"]},
-        {"role": "assistant", "content": qa["answer"]},
-    ]}
-
-
-def build(spec: dict):
-    for b in training_buildings():
-        qa = generate_for_building(b, spec["questions_per_building"], spec["max_tokens"])
-        print(f"  {b}: {len(qa)} Q&A", file=sys.stderr)
-        for item in qa:
-            yield _to_sft(item)
+        {"role": "system", "content": SYSTEM_PROMPT},
+        {"role": "user", "content": ob(ctx, it["question"])},
+        {"role": "assistant", "content": it["answer"]}]}
 
 
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("--smoke", action="store_true",
-                    help="generate 5 Q&A from one training building and print them (tiny cost)")
+    ap.add_argument("--smoke", action="store_true", help="author 5 Q&A from one training building and print")
     args = ap.parse_args()
 
+    train_dirs = [d for d in prepare.building_dirs() if d.name != HOLDOUT]
     if args.smoke:
-        return smoke()
+        items = author(train_dirs[0], n=5, max_tokens=4000)
+        print(f"=== {len(items)} realistic Q&A for '{train_dirs[0].name}' (engineer/operator) ===\n")
+        for it in items:
+            print(f"[{it['persona']}/{it.get('intent','')}] {it['question']}\n  A: {it['answer']}\n  anchors: {it['anchors']}\n")
+        assert items, "teacher returned no parseable Q&A"
+        return
 
-    d = datakit.cached(
-        EXP_DIR, SPEC, lambda: build(SPEC),
-        stats=lambda rows: {"examples": len(rows), "teacher": SPEC["teacher"],
-                            "buildings": training_buildings(), "holdout": SPEC["holdout"]},
-    )
-    prov = datakit.provenance(d)
-    print(f"dataset {prov['dataset_id']}: {prov['n']} Q&A examples -> {d}")
-    print(f"  teacher={SPEC['teacher']}  train_buildings={training_buildings()}  holdout={SPEC['holdout']}")
-    print("train with: DATASET=auto  (train.py reads data/LATEST); eval is the fixed building pack")
+    QA_DIR.mkdir(parents=True, exist_ok=True)
+    rows, exam = [], []
+    for d in prepare.building_dirs():
+        b = d.name
+        items = author(d)
+        (QA_DIR / f"{b}.json").write_text(json.dumps(items, ensure_ascii=False, indent=2))
+        print(f"  {b}: {len(items)} Q&A", file=sys.stderr)
+        if b == HOLDOUT:
+            for it in items:
+                exam.append({"id": it["id"], "persona": it.get("persona", ""), "intent": it.get("intent", ""),
+                             "question": it["question"], "ground_truth": it["answer"],
+                             "anchors": it["anchors"], "source": it.get("source", "")})
+        else:
+            corpus, _ = building_corpus(d, max_chars=300000)
+            for it in items:
+                rows.append(sft_row(retrieve(corpus, it["question"], ignore=[b]), it))
 
-
-def smoke() -> None:
-    b = training_buildings()[0]
-    print(f"[smoke] teacher={SPEC['teacher']}  building={b}", file=sys.stderr)
-    qa = generate_for_building(b, 5, 4000)
-    print(f"\n=== {len(qa)} Q&A generated for '{b}' (senior building engineer → junior) ===\n")
-    for i, item in enumerate(qa, 1):
-        print(f"Q{i}: {item['question']}")
-        print(f"A{i}: {item['answer']}\n")
-    assert qa, "teacher returned no parseable Q&A"
+    spec = {"pack": "building", "teacher": TEACHER, "method": "realistic-operator-qa", "holdout": HOLDOUT}
+    dd = datakit.write(EXP_DIR, spec, rows, stats={"examples": len(rows), "teacher": TEACHER})
+    exam_path = REPO / "packs" / "building" / "eval_open.jsonl"
+    exam_path.write_text("\n".join(json.dumps(e, ensure_ascii=False) for e in exam) + "\n")
+    print(f"SFT demos: {len(rows)} -> {dd}  (LATEST={datakit.dataset_id(spec)})")
+    print(f"frozen exam: {len(exam)} questions -> {exam_path}  (git-ignored)")
+    print("train: python experiments/.../train.py   |   judge-eval: python experiments/.../eval_judge.py")
 
 
 if __name__ == "__main__":

@@ -38,22 +38,22 @@ experiment's `build_data.py`; this pack only defines the fixed, verifiable evalu
 
 ## Open-ended eval (judge track)
 
-The deterministic scorer above only grades what the graph encodes (type / count / connections).
-Competencies the graph can't grade — setpoint/curve lookups, control-sequence ordering, alarm
-reasoning — are evaluated by the **`judge` skill** against a **frozen exam**:
-`packs/building/eval_open.jsonl` (git-ignored; it derives from the proprietary holdout building).
-One JSON object per line:
+The deterministic scorer above only grades synthetic graph questions (type / count / connections)
+— **not how a real user asks**. The **primary** metric is the **realistic exam**: the questions a
+building engineer or operator actually asks, graded by the **`judge` skill** against a **frozen
+exam** `packs/building/eval_open.jsonl` (git-ignored; derives from the proprietary holdout
+building). One JSON object per line:
 
 ```json
-{"id": "...", "question": "...", "reference": "<correct grounded answer>", "citation": "<source>", "rubric": ["must-have point", "..."]}
+{"id": "...", "persona": "engineer|operator", "category": "topology|control|factual|timeseries", "question": "...", "ground_truth": "<correct grounded answer; nails the anchors — values, tags, file paths, component names, windows>", "source": "<file / entity>"}
 ```
 
 It is authored **once** by the `prepare-trainset` skill (holdout building only) and then **frozen**
-like this scorer. The judge produces `building_judge ∈ [0,1]`, reported **alongside** the
-deterministic `building_acc` — it is advisory and **never** the loop's keep/revert signal or a
-GRPO reward.
+like this scorer. The judge grades each answer on a **3-point rubric** (1.0/0.5/0.0; strict on the
+anchors, lenient on phrasing) and reports `building_judge ∈ [0,1]` plus per-category means. The
+deterministic `building_acc` above is demoted to a **cheap sanity check**.
 
 ## Future question kinds
 
-setpoint/spec lookup with citations, tag-name normalization (Brick/223P), control-sequence
-interpretation, BIM/spatial queries — each adds templates here + scorer logic, no loop change.
+`action` tasks (fetch/align time series, fit a model), multi-step troubleshooting, BIM/spatial
+queries — each adds realistic templates to the exam; the loop and skills don't change.

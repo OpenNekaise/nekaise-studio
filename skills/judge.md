@@ -16,40 +16,38 @@ You always grade against something **fixed and external**, and you judge **blind
 - **Gate mode** → the building's own corpus (the ground truth for that building).
 - **Eval mode** → the **frozen** `packs/building/eval_open.jsonl` (each row's `ground_truth` + `source`).
 You do **not** see which model/checkpoint produced the candidate. You do **not** invent the
-standard. Grade at **temperature 0**, apply the rubric literally, and when genuinely unsure,
-**fail closed** (reject in gate mode; score the lower tier in eval mode).
+standard. Grade at **temperature 0**, and when genuinely unsure whether an anchor is present,
+**fail closed** (count it as not-met).
 
-## The rubric (3-point scale) — use this verbatim
+## Scoring — anchor checklist, fraction matched
 
-- **1.0 — fully correct:** states every key fact in the gold. Equivalent wording is fine, extra
-  correct detail is fine. Omitting one of several listed items is **not** 1.0.
-- **0.5 — partially correct:** some key facts, but missing one or more, hedges where the gold is
-  concrete, or a small wrong detail beside mostly-correct content.
-- **0.0 — wrong:** incorrect, hallucinates a value / tag / file path / component not in the gold,
-  says "I don't know" when the gold is concrete, or refuses.
+Each question carries `anchors`: the specific facts the answer must contain. **The score is the
+fraction of anchors present in the candidate**, in `[0,1]` — so single-anchor questions are
+effectively pass/fail, and multi-part answers (a component list, a diagnostic checklist) get
+honest partial credit instead of a flat tier.
 
-**Strict — these must match** (case-sensitive where applicable):
-- numeric values (setpoints, thresholds, pressures, temperatures, %),
-- vendor tags (including a `.Value` suffix if the gold has it),
-- file paths (including any directory prefix and extension),
-- component names (e.g. a sensor/valve/fan tag),
-- time windows — both **start AND end** for timeseries questions.
+For each anchor, decide present-or-not by matching **strictly on the fact** but **leniently on
+phrasing**:
+- **Strict (the fact itself):** numeric values (setpoints, thresholds, temps, %), vendor tags
+  (incl. a `.Value` suffix if the anchor has it), file paths (incl. directory prefix + extension),
+  component names, and time windows (a window anchor needs both **start AND end**).
+- **Lenient (around it):** wording, order, synonyms (a plain-English name and its equipment tag are
+  equivalent), extra correct detail, whether the schema is named.
 
-**Lenient:** phrasing, ordering of list items, synonyms (a plain-English name and its equipment
-tag are equivalent), and whether the candidate names the schema (extra schema detail fine,
-omitting it fine).
+`score = (anchors matched) / (total anchors)`.
 
-**Timeseries questions:** the answer must name the data **file path(s)** AND an explicit
-**start–end window** → else cap at 0.5; wrong file or wrong window → 0.0. **Empty / refused** when
-the gold is concrete → 0.0.
+**Contradiction penalty:** if the candidate confidently asserts a *wrong* value/tag/path/component
+where the gold has a specific one (a hallucinated fact, not just an omission), that anchor is a
+miss **and** cap the whole answer at `0.5` — a confident wrong fact is worse than a gap. An
+**empty / refused** answer when anchors exist → `0`.
 
 ## Mode A — gate (build-time quality firewall)
 
 Called by `skills/prepare-trainset.md` for each candidate **teacher demo** before it enters the
-training set. Score the teacher's answer against its `source` / the building corpus on the rubric
-above, and **keep only 1.0** (fully correct, fully grounded — no invented value/tag/path). Drop
-anything below: a wrong training example is worse than a missing one. Report the reject count
-(rejections are data — they catch a drifting generator).
+training set. Score the teacher's answer by its `anchors` against the building corpus, and **keep
+only `score == 1.0`** (every anchor matched, nothing contradicted or invented). Drop anything
+below: a wrong training example is worse than a missing one. Report the reject count (rejections
+are data — they catch a drifting generator).
 
 ## Mode B — eval (the building-quality metric)
 
@@ -57,16 +55,16 @@ Grades the student on the **frozen realistic exam** — the real measure of whet
 answers like an engineer/operator.
 
 **Inputs:**
-- The frozen `packs/building/eval_open.jsonl` (each row: `persona`, `category`, `question`,
-  `ground_truth`, `source`).
+- The frozen `packs/building/eval_open.jsonl` (each row: `persona`, `intent`, `question`,
+  `ground_truth`, `anchors`, `source`).
 - The **student's answers** — generate them from the experiment's checkpoint
   (`experiments/<exp>/outputs/<stage>`) or its exported Ollama model, using the same `SYSTEM_PROMPT`
   and chat template as `train.py`, greedy decoding. Judge them **blind**.
 
-**Grade** each answer vs its `ground_truth` on the 3-point rubric. **Aggregate:**
-`building_judge = mean(score)` over the exam, and also report the mean **per category**
-(topology / control / factual / timeseries) so you see *where* it's weak. Write a per-question
-`{id, score, reason}` breakdown to the run dir for spot-checking.
+**Grade** each answer by its `anchors` (fraction matched, above). **Aggregate:**
+`building_judge = mean(score)` over the exam, and also report the mean **per `intent`** so you see
+*where* it's weak, plus a bucketed count (`1.0` / partial / `0`) for readability. Write a
+per-question `{id, score, matched, missed, reason}` breakdown to the run dir for spot-checking.
 
 This is the **primary building-quality signal**. The deterministic `packs/building/scorer.py`
 (graph `type`/`count`/`conns`) stays only as a cheap sanity check, not the goal.
@@ -74,11 +72,11 @@ This is the **primary building-quality signal**. The deterministic `packs/buildi
 ## Output format (one JSONL line per record)
 
 ```json
-{"id": "...", "score": 1.0, "reason": "<one short sentence naming the missing/wrong fact, <200 chars>"}
+{"id": "...", "score": 0.67, "matched": ["..."], "missed": ["..."], "reason": "<one short sentence, <200 chars>"}
 ```
 
-`score` ∈ `{1.0, 0.5, 0.0}` (numbers). Preserve input order. If a record is unparseable, write
-`"score": null` + a `reason` — do **not** skip it.
+`score` ∈ `[0,1]` (fraction of anchors matched). Preserve input order. If a record is unparseable,
+write `"score": null` + a `reason` — do **not** skip it.
 
 ## Hard rules
 

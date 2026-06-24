@@ -45,12 +45,14 @@ exam** `packs/building/eval_open.jsonl` (git-ignored; derives from the proprieta
 building). One JSON object per line:
 
 ```json
-{"id": "...", "persona": "engineer|operator", "category": "topology|control|factual|timeseries", "question": "...", "ground_truth": "<correct grounded answer; nails the anchors — values, tags, file paths, component names, windows>", "source": "<file / entity>"}
+{"id": "...", "persona": "engineer|operator", "intent": "<free-form>", "question": "...", "ground_truth": "<correct grounded answer>", "anchors": ["<must-match fact: value / tag / file path / component / window / checklist item>", "..."], "source": "<file / entity>"}
 ```
 
-It is authored **once** by the `prepare-trainset` skill (holdout building only) and then **frozen**
-like this scorer. The judge grades each answer on a **3-point rubric** (1.0/0.5/0.0; strict on the
-anchors, lenient on phrasing) and reports `building_judge ∈ [0,1]` plus per-category means. The
+(No fixed category taxonomy — `intent` is free-form, for coverage/reporting only.) It is authored
+**once** by the `prepare-trainset` skill (holdout building only) and then **frozen** like this
+scorer. The judge scores each answer by the **fraction of its `anchors`** present (strict on the
+fact — values/tags/paths/components/windows — lenient on phrasing), so multi-part answers get
+honest partial credit; `building_judge ∈ [0,1]` is reported with per-`intent` means. The
 deterministic `building_acc` above is demoted to a **cheap sanity check**.
 
 ## Future question kinds

@@ -125,6 +125,12 @@ You mostly don't run things by hand. Point Claude Code or Codex at the repo and 
 (For the first run, prime the dataset cache once: `python packs/gsm8k/prepare.py`. Requires a
 CUDA GPU + `pip install -r requirements.txt`.)
 
+## Method
+
+[`docs/METHOD.md`](docs/METHOD.md) — the playbook for driving the loop toward **teacher parity**:
+diagnose before you optimize (measure the teacher *and* the untrained base), open-book = the data
+in hand + retrieval, task-aligned teacher distillation, and the pitfalls to avoid.
+
 ## Related
 
 - [opennekaise](https://github.com/OpenNekaise/opennekaise) — the cloud Nekaise Agent.

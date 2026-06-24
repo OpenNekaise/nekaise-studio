@@ -56,7 +56,7 @@ LORA = dict(r=16, lora_alpha=16, lora_dropout=0.0, bias="none",
 TRAIN = dict(per_device_train_batch_size=1, gradient_accumulation_steps=8,
              warmup_steps=5, max_steps=40, learning_rate=2e-4,
              optim="adamw_8bit", weight_decay=0.01, lr_scheduler_type="linear",
-             logging_steps=5, seed=3407)  # max_steps 120->40: lighter, task-aligned data needs fewer epochs
+             logging_steps=5, seed=3407)  # 40 best (run 4); 70 (run 5) overfit type/count and forgot base conns
 
 GRPO = dict(num_generations=8, max_prompt_length=1024, max_completion_length=MAX_NEW_TOKENS,
             train_questions=200)
@@ -122,11 +122,15 @@ def holdout_corpus(pack, max_chars=300000):
 def evaluate(model, tok, pack, n):
     from unsloth import FastLanguageModel
     from corpus import retrieve
+    from collections import Counter
     FastLanguageModel.for_inference(model)
     full = holdout_corpus(pack) if OPEN_BOOK else None
     test = pack.load_split("test", n)
     correct = 0
+    by, hit = Counter(), Counter()
     for ex in test:
+        kind = ex["answer"].split(":")[0]
+        by[kind] += 1
         if full is None:
             user = ex["question"]
         else:
@@ -141,7 +145,10 @@ def evaluate(model, tok, pack, n):
         inputs = tok(prompt, return_tensors="pt").to(model.device)
         out = model.generate(**inputs, max_new_tokens=MAX_NEW_TOKENS, do_sample=False)
         pred = tok.decode(out[0][inputs.input_ids.shape[1]:], skip_special_tokens=True)
-        correct += pack.is_correct(pred, ex["answer"])
+        ok = pack.is_correct(pred, ex["answer"])
+        correct += ok
+        hit[kind] += int(ok)
+    print(f"[eval] by kind: {dict((k, f'{hit[k]}/{by[k]}') for k in sorted(by))}")
     return correct / len(test)
 
 

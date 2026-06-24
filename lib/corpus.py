@@ -57,38 +57,65 @@ def building_corpus(bdir, max_chars: int = MAX_CHARS) -> tuple[str, list[str]]:
 
 # --- retrieval over RAW corpus text (keep open-book context short for a small model) ----------
 
-def _question_keys(question: str) -> list[str]:
-    """Distinctive search keys from a question: quoted phrases + entity-like identifier tokens."""
-    quoted = [a or b for a, b in re.findall(r'"([^"]+)"|\'([^\']+)\'', question) if (a or b)]
-    phrases = [q for q in quoted if len(q) >= 6] or quoted          # drop short quotes (e.g. building name)
-    ids = [t for t in re.findall(r"[A-Za-z_][A-Za-z0-9_:\-]{2,}", question)
-           if re.search(r"[0-9_:]", t)]                              # entity-like tokens (have a digit/_/:)
-    return phrases + ids
+_STOP = frozenset((
+    "what whats which where when whos whose how does did the and for its with from are there has "
+    "have much many about you your using use into over why check would should this that these those "
+    "give get pull grab show tell list name walk through between value values data file files sensor "
+    "building room number what's give me run loop each per all any both not but its his her their"
+).split())
+
+
+def _chunks(text: str, target: int = 1600) -> list[str]:
+    """Split corpus into retrievable chunks: blank-line paragraphs, with big ones (e.g. a TTL file
+    with no blank lines) sub-split into ~target-sized line windows (small overlap). Works for prose,
+    markdown, tables and Turtle alike."""
+    out: list[str] = []
+    for para in re.split(r"\n\s*\n", text):
+        if not para.strip():
+            continue
+        if len(para) <= target * 1.7:
+            out.append(para)
+            continue
+        lines = para.split("\n")
+        i = 0
+        while i < len(lines):
+            j, size = i, 0
+            while j < len(lines) and size < target:
+                size += len(lines[j]) + 1
+                j += 1
+            out.append("\n".join(lines[i:j]))
+            i = max(j - 2, i + 1)  # small overlap so a fact split across the boundary survives
+    return out
 
 
 def retrieve(corpus_text: str, question: str, max_chars: int = 14000, ignore=()) -> str:
-    """Return the slice of `corpus_text` relevant to `question` — the full statement BLOCK around
-    each line matching the question's quoted phrases / entity ids. Raw text, no parsing: a block is
-    a contiguous run bounded by a blank line or a statement terminator (` .`), so an entity's whole
-    set of triples (type, comment, every s223:cnx) is captured. Short by design so training/eval
-    stay cheap and realistic (data >> small-model window).
+    """Return the slice of `corpus_text` relevant to `question`: rank chunks by overlap with the
+    question's strong keys (quoted phrases / entity-like ids, weighted ×10) and content words
+    (weighted ×1), take the top chunks up to `max_chars`, restored to document order. Raw text, no
+    parsing — works for natural-language operator questions as well as tagged engineer ones.
     """
     ig = {x.lower() for x in ignore}
-    keys = [k.lower() for k in _question_keys(question) if len(k) >= 4 and k.lower() not in ig]
-    if not keys:
+    quoted = [a or b for a, b in re.findall(r'"([^"]+)"|\'([^\']+)\'', question) if (a or b)]
+    ids = [t for t in re.findall(r"[A-Za-z_][A-Za-z0-9_:\-]{2,}", question) if re.search(r"[0-9_:]", t)]
+    strong = [k.lower() for k in (quoted + ids) if len(k) >= 3 and k.lower() not in ig]
+    words = {w for w in re.findall(r"[a-z]{4,}", question.lower()) if w not in _STOP and w not in ig}
+    chunks = _chunks(corpus_text)
+
+    def score(c: str) -> int:
+        cl = c.lower()
+        return 10 * sum(1 for k in strong if k in cl) + sum(1 for w in words if w in cl)
+
+    ranked = sorted(range(len(chunks)), key=lambda i: (score(chunks[i]), -i), reverse=True)
+    picked: list[int] = []
+    total = 0
+    for i in ranked:
+        if score(chunks[i]) <= 0:
+            break
+        c = chunks[i]
+        if picked and total + len(c) > max_chars:
+            break
+        picked.append(i)
+        total += len(c)
+    if not picked:
         return corpus_text[:max_chars]
-    lines = corpus_text.split("\n")
-    low = [l.lower() for l in lines]
-    hits = [i for i, l in enumerate(low) if any(k in l for k in keys)]
-    if not hits:
-        return corpus_text[:max_chars]
-    keep: set[int] = set()
-    for i in hits:
-        a = i
-        while a > 0 and lines[a - 1].strip() and not lines[a - 1].rstrip().endswith("."):
-            a -= 1
-        b = i
-        while b < len(lines) - 1 and lines[b].strip() and not lines[b].rstrip().endswith("."):
-            b += 1
-        keep.update(range(a, b + 1))
-    return ("\n".join(lines[j] for j in sorted(keep)))[:max_chars]
+    return ("\n\n".join(chunks[i] for i in sorted(picked)))[:max_chars]

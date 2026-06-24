@@ -7,7 +7,7 @@ The real target. Measures a small model's ability to do what Opus does in OpenNe
 |---|---|
 | **Source** | `nekaise_data/<building>/*.ttl` (Brick / ASHRAE 223P / REC semantic models) |
 | **Buildings** | one folder per building; ≥1 ontology each (parsed by [`prepare.py`](prepare.py)) |
-| **Split** | **cross-building** — held-out building (`NEKAISE_HOLDOUT`, default `rio10`) = test; rest = train |
+| **Split** | **cross-building** — held-out building (`NEKAISE_HOLDOUT`) = test; rest = train |
 | **Metric** | `building_acc` — fraction of deterministically-verifiable questions answered correctly |
 | **Scorer** | [`scorer.py`](scorer.py) — **fixed; the agent must not edit it** |
 
@@ -35,6 +35,23 @@ ontology available (RAG / file tools, as in nekaise-edge); fine-tuning teaches i
 that grounding — read the model, answer with the right class/topology, in the right form.
 Training data (teacher chain-of-thought, rejection-sampled by this scorer) is built in the
 experiment's `build_data.py`; this pack only defines the fixed, verifiable evaluation.
+
+## Open-ended eval (judge track)
+
+The deterministic scorer above only grades what the graph encodes (type / count / connections).
+Competencies the graph can't grade — setpoint/curve lookups, control-sequence ordering, alarm
+reasoning — are evaluated by the **`judge` skill** against a **frozen exam**:
+`packs/building/eval_open.jsonl` (git-ignored; it derives from the proprietary holdout building).
+One JSON object per line:
+
+```json
+{"id": "...", "question": "...", "reference": "<correct grounded answer>", "citation": "<source>", "rubric": ["must-have point", "..."]}
+```
+
+It is authored **once** by the `prepare-trainset` skill (holdout building only) and then **frozen**
+like this scorer. The judge produces `building_judge ∈ [0,1]`, reported **alongside** the
+deterministic `building_acc` — it is advisory and **never** the loop's keep/revert signal or a
+GRPO reward.
 
 ## Future question kinds
 

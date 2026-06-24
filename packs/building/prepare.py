@@ -45,6 +45,16 @@ def building_dirs() -> list[Path]:
     return out
 
 
+def default_holdout() -> str | None:
+    """Building reserved for eval when NEKAISE_HOLDOUT is unset: the first folder by name.
+
+    Kept positional (not a literal name) so no specific, proprietary building name is
+    hardcoded in tracked source. Set NEKAISE_HOLDOUT to choose a different holdout.
+    """
+    dirs = building_dirs()
+    return dirs[0].name if dirs else None
+
+
 def parse_building(d: Path) -> list[dict]:
     """Merge a building's .ttl files into one graph and extract a flat entity list."""
     import rdflib

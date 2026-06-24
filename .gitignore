@@ -27,6 +27,8 @@ experiments/**/data/
 
 # Real building data — NEVER commit (proprietary PDFs, control cards, BIM, PII)
 nekaise_data/
+# Frozen open-ended exam — derived from the (proprietary) holdout building; grade-against-only
+packs/**/eval_open.jsonl
 
 # Secrets
 .env

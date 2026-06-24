@@ -8,8 +8,13 @@ become SFT data for the small model. Evaluation stays separate and verifiable �
 ontology scorer in packs/building/scorer.py measures progress objectively.
 
 Cross-building: training Q&A is generated only from the NON-held-out buildings; the held-out
-building (NEKAISE_HOLDOUT, default rio10) is reserved for eval. Each building's ontology is
-sent as the CACHED system context, so repeated/large calls bill ~0.1x on the shared prefix.
+building (NEKAISE_HOLDOUT; defaults to the first building by name) is reserved for eval. Each
+building's ontology is sent as the CACHED system context, so repeated/large calls bill ~0.1x
+on the shared prefix.
+
+NOTE: this API-only recipe reads just the `.ttl` graph. The richer, primary path is the
+`prepare-trainset` skill (Claude Code reads the WHOLE building folder — control cards, guides,
+trends — and grounds Q&A in all of it). Keep this script as a cheap, unattended TTL fallback.
 
     set -a; source /home/zengp/Code/KebAgent/.env; set +a   # provides ANTHROPIC_API_KEY
     python experiments/granite-4.1-3b-building/build_data.py            # build + cache full set
@@ -35,7 +40,7 @@ import datakit  # noqa: E402
 import llm  # noqa: E402
 import prepare  # noqa: E402  (building data locator)
 
-HOLDOUT_BUILDING = os.environ.get("NEKAISE_HOLDOUT", "rio10")
+HOLDOUT_BUILDING = os.environ.get("NEKAISE_HOLDOUT") or prepare.default_holdout()
 MAX_ONTOLOGY_CHARS = 60_000  # cap grounding context per building (TTLs are small; safety bound)
 
 # ================================== SPEC (the knobs) =================================

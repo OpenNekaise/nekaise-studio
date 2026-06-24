@@ -8,8 +8,8 @@ and grades answers against the graph. The gold is encoded with a kind prefix so 
     count:<int>                 - how many of a class exist; correct on exact integer
     conns:<name>[|<name>...]    - what an entity connects to (s223:cnx); graded by fraction
 
-Cross-building eval: the held-out building (NEKAISE_HOLDOUT, default "rio10") is the test
-split; the rest are train. This measures generalization to an UNSEEN building — the real
+Cross-building eval: the held-out building (NEKAISE_HOLDOUT; defaults to the first building
+by name) is the test split; the rest are train. This measures generalization to an UNSEEN building — the real
 "approach Opus" bar. Editing this file would cheat the metric (see skills/run-experiment.md).
 
 Contract: load_split / is_correct / reward / extract_answer.
@@ -27,7 +27,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import prepare  # noqa: E402  (fixed index builder)
 
 # Which building is held out for evaluation (cross-building generalization).
-HOLDOUT_BUILDING = os.environ.get("NEKAISE_HOLDOUT", "rio10")
+# Configured via env; falls back to a positional default so no proprietary name is hardcoded.
+HOLDOUT_BUILDING = os.environ.get("NEKAISE_HOLDOUT") or prepare.default_holdout()
 
 
 # ------------------------------ task generation -------------------------------

@@ -3,7 +3,7 @@
 
 SFT granite-4.1-3b on the senior-building-engineer Q&A distilled from Opus 4.8 (built by
 build_data.py), then evaluate on the FIXED, verifiable ontology scorer over the HELD-OUT
-building (rio10) — i.e. does learning to reason like a building engineer on 3 buildings
+building — i.e. does learning to reason like a building engineer on the training buildings
 generalize to an unseen one? Saves a checkpoint and prints the METRIC line the loop reads.
 
     set -a; source /home/zengp/Code/KebAgent/.env; set +a   # only needed if a method calls a teacher
@@ -44,7 +44,7 @@ BASE_MODEL      = "unsloth/granite-4.1-3b"
 MAX_SEQ_LEN     = 4096
 LOAD_IN_4BIT    = True
 TIME_BUDGET_MIN = 15
-EVAL_N          = 80           # held-out rio10 has 227 verifiable tasks; subset for speed
+EVAL_N          = 80           # held-out building has 200+ verifiable tasks; subset for speed
 MAX_NEW_TOKENS  = 320
 
 LORA = dict(r=16, lora_alpha=16, lora_dropout=0.0, bias="none",

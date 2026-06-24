@@ -7,11 +7,15 @@ Nekaise Studio is the **model factory** behind [OpenNekaise](https://github.com/
 It fine-tunes small models (1B–8B, and smaller) that can eventually run on-prem in a building
 via [`nekaise-edge`](https://github.com/OpenNekaise/nekaise-edge) — no frontier cloud dependency.
 
-The twist: the interface *is* an AI agent. Following Andrej Karpathy's
+**The mission:** distill a frontier *senior building engineer* (Claude / Opus) into a small
+*junior* that understands a real building's systems well enough to work on-site — cheaply, with
+no cloud. The bar is generalization: the junior is graded on a **building it never trained on**.
+
+The twist: the whole apprenticeship is **run by an AI**. Following Andrej Karpathy's
 [`autoresearch`](https://github.com/karpathy/autoresearch), the platform is a tight loop —
 **propose a change → fine-tune → score → keep or revert → repeat** — that Claude Code or Codex
-drives by itself. Everything you'd normally do as an ML researcher lives in a **skill**, not in
-commands you type.
+drives by itself. And it isn't only the loop: the AI also **prepares the training data** (as the
+senior engineer) and **judges** its quality. Every role is a **skill**, not commands you type.
 
 ## The core idea: just dump data into `nekaise_data/`
 
@@ -21,10 +25,11 @@ and control PDFs, control cards, the ontology / semantic model (Brick / ASHRAE 2
 tag lists, BIM, sensor exports — one subfolder per building, and that's it. You don't clean it,
 label it, or hand-write any training data.
 
-From there the agent does the rest: it reads the data, **designs the dataset itself** (e.g.
-Opus 4.8 prompted as a senior building engineer, authoring English Q&A grounded in each
-building's real ontology to train a junior engineer), fine-tunes a small model on it, and
-scores the result on a held-out building — the autoresearch loop below.
+From there the agent does the rest. Reading the **full** corpus — ontology, control cards, trend
+data, alarms — Claude Code (as a senior engineer, via the `prepare-trainset` skill) **designs the
+dataset itself**: grounded Q&A that teach a junior to operate *that* building. A second skill,
+`judge`, throws out anything not grounded in the real data. Then the autoresearch loop below
+fine-tunes a small model and scores it on a **held-out building** it never saw.
 
 > ⚠️ **`nekaise_data/` is git-ignored and never committed.** It holds proprietary, real
 > building data — it stays on your machine. Only code and prompts live in this repo. Likewise,
@@ -34,31 +39,39 @@ scores the result on a held-out building — the autoresearch loop below.
 ## How it works
 
 ```
-  You: "improve granite-3b on the gsm8k pack"
+  You: drop a building into nekaise_data/<building>/   ·   "train a junior on it"
             │
             ▼
-  Claude Code / Codex  ──reads──►  skills/run-experiment.md   (the program — a markdown skill)
+  Claude Code / Codex  ──drive──►  three markdown skills (the program):
             │
-            ▼   the loop, run autonomously:
+            ├─ prepare-trainset ─► senior engineer reads the WHOLE corpus
+            │                      (ontology + control cards + trends), writes grounded Q&A
+            ├─ judge (gate) ─────► drops any ungrounded / hallucinated example
+            │
+            ▼   then the autoresearch loop (skills/run-experiment.md), run autonomously:
    ┌─────────────────────────────────────────────────────────────┐
-   │  1. read LOG.md + train.py                                   │
-   │  2. propose ONE change, edit experiments/<m>/train.py        │
-   │  3. run it  →  Unsloth fine-tune (time-boxed)                │
-   │  4. score on packs/<pack>/scorer.py   (the fixed referee)    │
-   │  5. better than best?  keep + log.  worse?  revert + log.    │
-   │  6. repeat — hundreds of experiments overnight               │
+   │  1. propose ONE change to a recipe (train.py / build_data.py)│
+   │  2. fine-tune the small model with Unsloth (time-boxed)      │
+   │  3. score on packs/building/scorer.py — the FIXED referee,   │
+   │     over a HELD-OUT building it never trained on             │
+   │  4. better than best?  keep + log.  worse?  revert + log.    │
+   │  5. repeat — hundreds of experiments overnight               │
    └─────────────────────────────────────────────────────────────┘
             │
+            ├─ judge (eval) ─────► advisory score on open-ended questions
             ▼
-   serve/to_ollama.py  ──►  GGUF in Ollama  ──►  nekaise-edge
+   serve/to_ollama.py ─► GGUF in Ollama ─► nekaise-edge  (runs on-prem, in the building)
 ```
+
+(The public **`gsm8k`** pack runs the exact same loop with a one-line scorer — it's the bootstrap
+that proves the machinery before the building data is in play.)
 
 ## Layout
 
 | Path | What it is |
 |------|-----------|
 | `nekaise_data/<building>/` | **The one folder you feed.** Raw building data — PDFs, ontologies (`.ttl`), tag lists, BIM, sensor exports. One subfolder per building. **Git-ignored; never committed.** |
-| `skills/` | **The product.** Driver-agnostic markdown skills — the loop's instructions. |
+| `skills/` | **The product.** Three driver-agnostic skills: `prepare-trainset` (senior engineer writes grounded data), `judge` (gate bad data + open-ended eval), `run-experiment` (the loop). |
 | `.claude/skills/`, `AGENTS.md` | Thin adapters so **both Claude Code and Codex** use the same skills. |
 | `experiments/<model>-<pack>/` | Two editable recipe files — `build_data.py` (WHAT data: distill / rejection-sample) + `train.py` (HOW: sft/grpo) — plus `LOG.md`. Built datasets (`data/`) and checkpoints (`outputs/`) are git-ignored. |
 | `packs/<pack>/` | A **task pack** = data + `scorer.py` (the fixed referee: `load_split`/`is_correct`/`reward`). **Never edited.** `packs/building/` scores ontology/topology Q&A from `nekaise_data`. |
@@ -67,12 +80,19 @@ scores the result on a held-out building — the autoresearch loop below.
 
 ## Design principles
 
-- **The agent is the user.** No human runs Python; you direct an agent through a skill.
-- **One mutable file.** The agent only edits `train.py`. Everything else (data prep, scorer) is
-  fixed so it can't game the metric.
-- **The metric is the boss.** Each task pack defines an automatic score; the loop only climbs it.
-- **Task packs are swappable.** v0 is the public **`gsm8k`** pack (proves the loop works). Later
-  it swaps for a **building-ontology** pack — *the loop, skill, and `train.py` don't change.*
+- **The agent is the user.** No human runs Python; you direct agents through skills — for data,
+  judging, and the training loop alike.
+- **Edit the recipe, not the referee.** The agent edits the experiment's recipes (`train.py`,
+  `build_data.py`) and authors data via the `prepare-trainset` skill. The scorer, the held-out
+  split, and the frozen exam are fixed — so the metric can't be gamed.
+- **The metric is the boss.** A deterministic scorer decides keep/revert; the LLM `judge` is an
+  advisory second opinion, never the deciding vote.
+- **Generalize, don't memorize.** Train on some buildings, grade on a **held-out** one — the real
+  "approach Opus" bar.
+- **Proprietary data stays local.** Real building data, built datasets, and the exam are
+  git-ignored and never named in tracked files; only code and prompts live in this repo.
+- **The mission pack is here; gsm8k just proves the loop.** `packs/gsm8k/` is the public
+  bootstrap; `packs/building/` is the real target — same loop, same skills, swap the pack.
 - **Small only.** Target <8B: Granite 4.1 (3B/8B), Gemma 4, Qwen 3.5, down to sub-1B Granite.
   Starting point: **`unsloth/granite-4.1-3b`**.
 

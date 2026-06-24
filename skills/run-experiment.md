@@ -4,6 +4,11 @@ You are running an **autoresearch loop** (after Karpathy's `autoresearch`) to im
 small language model's score on a **task pack**. You fine-tune with Unsloth and edit the
 experiment's two recipe files; the human only edits *this skill*.
 
+> **Related skills.** For the `building` pack, training data is authored by the
+> **`prepare-trainset`** skill (a senior engineer reading the real corpus) and filtered/graded
+> by the **`judge`** skill. This loop consumes their output (`data/LATEST`) and decides
+> keep/revert on the **deterministic** `METRIC` only — `building_judge` is advisory.
+
 ## The setup
 
 An **experiment** lives in `experiments/<name>/` and has **two editable recipe files**:

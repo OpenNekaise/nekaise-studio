@@ -1,6 +1,6 @@
 ---
 name: judge
-description: Act as an impartial senior-building-engineer examiner that grades against a FIXED reference (never free-judges). Two modes — gate mode filters hallucinated/ungrounded training pairs before they enter the dataset (called by prepare-trainset); eval mode scores the student model on the frozen open-ended exam (packs/building/eval_open.jsonl) as an advisory second metric alongside building_acc. Use when filtering generated training data or running open-ended evaluation. Never replaces the deterministic scorer or the GRPO reward.
+description: Act as an impartial expert grader for realistic building QA, scoring a candidate answer against a FIXED grounded reference on a 3-point rubric (1.0/0.5/0.0 — strict on values/tags/file-paths/component-names/time-windows, lenient on phrasing), blind to which model produced it. Two modes — gate mode keeps only fully-correct (1.0) teacher demos before they enter the training set; eval mode scores the student on the frozen realistic exam (packs/building/eval_open.jsonl) to produce building_judge, the primary building-quality signal. Use when filtering generated training data or running realistic-question evaluation.
 ---
 
 # judge
@@ -10,13 +10,16 @@ as a building-engineer examiner, out of the fine-tuning hot loop. The canonical,
 instructions live in **[`skills/judge.md`](../../../skills/judge.md)** — read and follow that
 file. It is the single source of truth (Codex reads the same file via `AGENTS.md`).
 
-In short, two modes, both grading against a **fixed reference**:
-- **Gate mode** — for each candidate training pair, verify it is grounded and correct against the
-  building's corpus/ontology; drop hallucinations. Fail closed when unsure.
-- **Eval mode** — grade the student's answers on the **frozen** `packs/building/eval_open.jsonl`
-  (reference + rubric), aggregate to `building_judge`, and report it **alongside** `building_acc`.
+In short, two modes, both grading **blind** against a **fixed reference** on the 3-point rubric
+(strict on numeric values / vendor tags / file paths / component names / time windows; lenient on
+phrasing and ordering):
+- **Gate mode** — for each candidate teacher demo, score it against its source/corpus and **keep
+  only 1.0** (fully correct, fully grounded); drop the rest. Fail closed when unsure.
+- **Eval mode** — grade the student's answers on the **frozen** realistic exam
+  `packs/building/eval_open.jsonl` (`ground_truth` + `source`), aggregate to `building_judge`
+  (plus per-category means). This is the **primary** building-quality signal; the deterministic
+  scorer is a cheap sanity check.
 
-**Hard rules:** grade only against the corpus or the frozen exam — never free-judge; never edit
-`packs/*/scorer.py`, `prepare.py`, or `eval_open.jsonl`; never feed your output to GRPO or use it
-for keep/revert (deterministic `building_acc` is the boss); temperature 0; no real names in
-tracked files.
+**Hard rules:** grade only against the corpus or the frozen exam — never free-judge; judge blind;
+never edit `packs/*/scorer.py`, `prepare.py`, or `eval_open.jsonl`; temperature 0; no real names
+in tracked files.

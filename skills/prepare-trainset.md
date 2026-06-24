@@ -47,9 +47,10 @@ If you are ever unsure whether something is safe to write to a tracked file, lea
 - The **holdout** building (`NEKAISE_HOLDOUT`, else `prepare.default_holdout()`) is reserved
   for evaluation. **Never generate training data from the holdout** — that would leak the test
   set into training and the cross-building score would be meaningless.
-- The deterministic referee (`packs/building/scorer.py`) already mints `type` / `count` /
-  `conns` questions from the graph. Your data **complements** it: teach the *reasoning* a
-  junior needs, so the student answers those questions (and harder ones) correctly.
+- You teach the junior to answer the **real questions a building engineer or operator asks** —
+  graded by the `judge` skill against grounded answers (this is the primary signal). The
+  deterministic `packs/building/scorer.py` (graph `type`/`count`/`conns`) stays only as a cheap
+  sanity check, **not** the goal — those synthetic ontology questions are not how anyone asks.
 
 ## The loop (run per **training** building — holdout excluded)
 
@@ -61,21 +62,37 @@ If you are ever unsure whether something is safe to write to a tracked file, lea
      strategies, setpoint/compensation curves, startup/shutdown, interlocks, fire/freeze logic.
    - Read operation guides (`.md`). Sample alarm exports and trend CSVs via Bash (`head`,
      a little `pandas`) — enough to ask realistic "what does this reading mean" questions.
-3. **Author N grounded Q&A pairs** (start ~40/building; tune). Cover a balanced mix:
-   - **Classification** — what an entity is, its Brick/223P class, what it does.
-   - **Topology** — what connects to / serves / feeds what (`s223:cnx`); the air/water path.
-   - **Sensors & points** — what is measured where, and how to read a value.
-   - **Control sequences** — the step-by-step from the control card, in order.
-   - **Setpoints & curves** — exact values / breakpoints (from the card), and why.
-   - **Alarms** — what an alarm means, its priority, what to check.
-   - **Operational reasoning** — "what would you check, and why" mentor-style troubleshooting.
-   Requirements for every pair:
-   - **Grounded.** Reference the building's *real* entities/values by their actual identifiers.
-     Invent nothing. If it is not in the documents, do not write it.
-   - **Specific and reasoned.** Senior-mentoring-a-junior, not a one-word fact.
-   - **Provenance.** Track, per pair, the source file + entity it came from (you'll need this
-     for the gate, and it keeps you honest).
-   - **Varied difficulty.** From basic identification to multi-step reasoning.
+3. **Author N realistic question→answer pairs** (start ~40/building; tune). Write the questions a
+   real **building engineer** or **operator** would actually ask — their words, their shorthand —
+   because they are the end users. Model them on real operator QA: natural language, task-oriented,
+   organized by category and persona.
+
+   **Categories** (how building people actually ask):
+   - **topology** — locate/describe assets and how they connect ("What's on the supply-air duct —
+     components and sensors?", "Walk me through the air path from intake to exhaust.")
+   - **control** — setpoints, thresholds, interlocks, sequence-of-operation ("What's the heating
+     setpoint and its min-limit?", "In step 1 of the heating sequence, what happens before the
+     valve opens?")
+   - **factual** — a specific spec/value lookup ("What supply temp does the curve target at -20°C
+     outside?")
+   - **timeseries** — fetch/align sensor data over a window ("Pull the supply-air temperature for
+     the first cold week of January."); the answer names the data file(s) **and** an explicit
+     start–end window.
+
+   **Personas / phrasing (their 脑回路)** — vary the voice so the junior handles all of them:
+   - **engineer** — precise, uses tags ("What's the supply-air temperature sensor's vendor tag,
+     and where's its data file?").
+   - **operator** — casual / vague ("Grab me the last two days of room temperature for the
+     top-floor office.").
+   Also vary phrasing: paraphrase, natural dates, and the occasional unseen / edge wording.
+
+   **Every pair carries** (this is the exam format the `judge` grades against):
+   - `question` — in the user's natural voice.
+   - `answer` — correct and **grounded**, and it must nail the **verifiable anchors** the judge is
+     strict on: numeric values, vendor tags, file paths, component names, time windows. Invent
+     nothing — if it is not in the documents, don't write it.
+   - `source` — the file / entity it came from (provenance; required for the gate and for honesty).
+   - `category` + `persona`.
 4. **Gate every pair** with the `judge` skill in **gate mode** (`skills/judge.md`): it verifies
    each pair is actually grounded and correct against the building's corpus, and drops
    hallucinations. Keep only what passes. Log how many were rejected (rejections are data).
@@ -100,17 +117,17 @@ equipment, sensors, topology, and semantic model, and explains its reasoning.*
 
 ## Author the held-out exam (do this once, then freeze)
 
-For the **holdout building only**, write open-ended questions that the deterministic scorer
-*cannot* grade — setpoint/curve lookups, control-sequence ordering, alarm reasoning, "what
-would you check" — each with a **grounded reference answer + citation**. Write them to
-`packs/building/eval_open.jsonl` (git-ignored), one JSON object per line:
+For the **holdout building only**, write the same kind of **realistic engineer/operator questions**
+(topology / control / factual / timeseries), each with a grounded reference answer + source. Write
+them to `packs/building/eval_open.jsonl` (git-ignored), one JSON object per line:
 
 ```json
-{"id": "...", "question": "...", "reference": "<the correct, grounded answer>", "citation": "<source file / entity>", "rubric": ["point 1 the answer must contain", "point 2", "..."]}
+{"id": "...", "persona": "engineer|operator", "category": "topology|control|factual|timeseries", "question": "...", "ground_truth": "<correct grounded answer; nail the anchors — values, tags, file paths, component names, windows>", "source": "<file / entity it came from>"}
 ```
 
-This is the **frozen exam** the `judge` skill grades the student against. Once written, treat it
-like `scorer.py`: **do not edit it to chase a score.** Never train on these questions.
+This is the **frozen exam** the `judge` skill grades the student against, on the 3-point rubric.
+Once written, treat it like `scorer.py`: **do not edit it to chase a score.** Never train on
+these questions.
 
 ## Hard rules
 

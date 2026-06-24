@@ -1,6 +1,6 @@
 ---
 name: prepare-trainset
-description: Act as a senior building engineer and prepare grounded SFT training data for the small "junior" model, by reading a building's full corpus (ontology TTL + control-card PDFs/images + guides + trends + alarms) under nekaise_data/ and writing provenance-tracked data.jsonl via lib/datakit. Use when building or refreshing the training set for a building experiment, or authoring the frozen open-ended exam. Excludes the holdout building. Keeps proprietary names out of tracked files.
+description: Act as a senior building engineer and prepare training data for the small "junior" model by authoring the REALISTIC questions a building engineer or operator would actually ask (topology / control / factual / timeseries, in their natural phrasing) with grounded correct answers, read from a building's full corpus (ontology TTL + control-card PDFs/images + guides + trends + alarms) under nekaise_data/. Each answer nails the verifiable anchors (values, vendor tags, file paths, component names, time windows) + source. Writes provenance-tracked data.jsonl via lib/datakit and the frozen realistic exam. Excludes the holdout. Keeps proprietary names out of tracked files.
 ---
 
 # prepare-trainset
@@ -12,11 +12,13 @@ building's real documentation. The canonical, driver-agnostic instructions live 
 file. It is the single source of truth (Codex reads the same file via `AGENTS.md`).
 
 In short: enumerate buildings under `nekaise_data/` (skip the holdout), read each training
-building's **whole** folder (TTL + control cards + guides + trends + alarms), author grounded
-Q&A across classification / topology / sensors / control sequences / setpoints / alarms /
-operational reasoning, gate every pair with the `judge` skill, and write the dataset through
-`lib/datakit` so `train.py` (`DATASET="auto"`) picks it up. Once per pack, author the frozen
-open-ended exam `packs/building/eval_open.jsonl` for the holdout.
+building's **whole** folder (TTL + control cards + guides + trends + alarms), and author the
+**real questions an engineer or operator would ask** — categories `topology` / `control` /
+`factual` / `timeseries`, in their natural voice (engineer-precise and operator-casual) — each
+with a grounded answer that nails the verifiable anchors (values, tags, file paths, component
+names, windows) + `source`. Gate every pair with the `judge` skill (keep only fully-correct),
+write the dataset through `lib/datakit` so `train.py` (`DATASET="auto"`) picks it up, and author
+the frozen realistic exam `packs/building/eval_open.jsonl` for the holdout once.
 
 **Hard rules:** never generate from the holdout; never edit `packs/*/scorer.py` or `prepare.py`;
 ground everything (no invented entities/values); and **no real building/partner names in any

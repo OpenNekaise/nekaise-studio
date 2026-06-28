@@ -33,6 +33,12 @@ nekaise_data/
 # Frozen open-ended exam — derived from the (proprietary) holdout building; grade-against-only
 packs/**/eval_open.jsonl
 
+# Workspace — the agent's local scratch (throwaway code, experiments, notes). Never pushed.
+workspace/
+# Emergent skills — written by the agent (crystallize-skill), per-user, different for everyone.
+# A local skill enters the shared kernel (skills/) only by eval-gated, human-reviewed PR.
+skills/local/
+
 # Secrets
 .env
 *.key

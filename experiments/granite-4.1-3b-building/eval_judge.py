@@ -55,7 +55,7 @@ def _contexts() -> dict:
     return {q["id"]: retrieve(corpus, q["question"], ignore=[HOLDOUT]) for q in EXAM}
 
 
-def answer(mode: str) -> None:
+def answer(mode: str, model_path: str | None = None) -> None:
     ANS_DIR.mkdir(parents=True, exist_ok=True)
     ctx = _contexts()
     out = []
@@ -66,7 +66,13 @@ def answer(mode: str) -> None:
             out.append({"id": q["id"], "intent": q.get("intent", ""), "candidate": cand})
     else:
         from unsloth import FastLanguageModel
-        src = "unsloth/granite-4.1-3b" if mode == "base" else str(EXP_DIR / "outputs" / "sft")
+        # mode is just the output label; model_path (relative to EXP_DIR) picks the checkpoint.
+        if model_path:
+            src = str(EXP_DIR / model_path)
+        elif mode == "base":
+            src = "unsloth/granite-4.1-3b"
+        else:
+            src = str(EXP_DIR / "outputs" / ("sft" if mode == "student" else mode))
         model, tok = FastLanguageModel.from_pretrained(model_name=src, max_seq_length=16384, load_in_4bit=True, dtype=None)
         FastLanguageModel.for_inference(model)
         for q in EXAM:
@@ -114,6 +120,6 @@ def judge(label: str) -> None:
 
 if __name__ == "__main__":
     if sys.argv[1] == "answer":
-        answer(sys.argv[2])
+        answer(sys.argv[2], sys.argv[3] if len(sys.argv) > 3 else None)
     elif sys.argv[1] == "judge":
         judge(sys.argv[2])

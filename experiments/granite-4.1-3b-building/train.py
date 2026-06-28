@@ -93,6 +93,10 @@ CPT = dict(seq_len=2048, packing=True, epochs=3, warmup_steps=10,
            # FULL-PARAMETER toggle. False = LoRA on the 7 linears (cheap, 124MB adapter).
            # True  = train all 3.43B params (bf16 + 8-bit Adam + grad-checkpointing ~ 25GB / 47GB).
            full_finetuning=True, lr=5e-5, lr_full=1e-5)
+# explore knowledge injection: crank epochs / LR without touching the committed defaults.
+CPT["epochs"] = int(_os.environ.get("NEKAISE_CPT_EPOCHS", CPT["epochs"]))
+CPT["lr_full"] = float(_os.environ.get("NEKAISE_CPT_LR", CPT["lr_full"]))
+CPT["lr"] = float(_os.environ.get("NEKAISE_CPT_LR_LORA", CPT["lr"]))
 # ===============================================================================
 
 

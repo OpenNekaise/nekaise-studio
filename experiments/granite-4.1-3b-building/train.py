@@ -74,6 +74,7 @@ SYSTEM_PROMPT = (
 # --- env overrides: select a stage without editing the committed knobs, e.g.
 #     NEKAISE_METHOD=cpt NEKAISE_STAGE=cpt NEKAISE_INIT_FROM=none python train.py
 import os as _os  # noqa: E402
+BASE_MODEL = _os.environ.get("NEKAISE_BASE_MODEL", BASE_MODEL)  # CPT other bases (e.g. unsloth/Qwen3.5-2B)
 METHOD = _os.environ.get("NEKAISE_METHOD", METHOD)
 STAGE = _os.environ.get("NEKAISE_STAGE", STAGE)
 if "NEKAISE_INIT_FROM" in _os.environ:
@@ -132,6 +133,8 @@ def load_model(init_from, seq_len=MAX_SEQ_LEN, four_bit=LOAD_IN_4BIT, full_ft=Fa
     model, tok = FastLanguageModel.from_pretrained(
         model_name=src, max_seq_length=seq_len, load_in_4bit=(four_bit and not full_ft),
         full_finetuning=full_ft, dtype=None, **vllm_kw)
+    if hasattr(tok, "tokenizer"):  # multimodal processor (e.g. Qwen3.5/VL) -> use the text tokenizer
+        tok = tok.tokenizer
     if full_ft:
         return model, tok  # all params trainable; no LoRA adapter
     # Attach a fresh LoRA unless we're continuing an existing adapter checkpoint (which already has
@@ -311,9 +314,11 @@ def _cpt_dir() -> Path:
 
 
 def cpt_train_texts() -> list[str]:
-    p = _cpt_dir() / "train.jsonl"
+    # NEKAISE_CPT_TRAIN lets a run point at an augmented corpus (augment_corpus.py).
+    p = (Path(_os.environ["NEKAISE_CPT_TRAIN"]) if "NEKAISE_CPT_TRAIN" in _os.environ
+         else _cpt_dir() / "train.jsonl")
     if not p.exists():
-        raise FileNotFoundError("CPT data missing -- run build_cpt_data.py first.")
+        raise FileNotFoundError(f"CPT data missing at {p} -- run build_cpt_data.py / augment_corpus.py.")
     return [json.loads(l)["text"] for l in p.read_text().splitlines() if l.strip()]
 
 

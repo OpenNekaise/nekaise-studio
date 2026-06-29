@@ -98,6 +98,7 @@ CPT = dict(seq_len=2048, packing=True, epochs=3, warmup_steps=10,
 CPT["epochs"] = int(_os.environ.get("NEKAISE_CPT_EPOCHS", CPT["epochs"]))
 CPT["lr_full"] = float(_os.environ.get("NEKAISE_CPT_LR", CPT["lr_full"]))
 CPT["lr"] = float(_os.environ.get("NEKAISE_CPT_LR_LORA", CPT["lr"]))
+CPT["full_finetuning"] = _os.environ.get("NEKAISE_CPT_FULL", "1") == "1"  # 0 = LoRA (gentler, keeps base)
 # ===============================================================================
 
 

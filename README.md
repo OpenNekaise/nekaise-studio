@@ -123,9 +123,10 @@ domain-smarter** — you need the ceiling probe alongside the gap probe.
 | `.claude/skills/`, `AGENTS.md` | Thin adapters so **both Claude Code and Codex** use the same skills. |
 | `experiments/<model>-<pack>/` | Editable recipes — `build_data.py` (WHAT data) + `train.py` (HOW: cpt/sft/grpo/dpo) — plus `eval_judge.py`, `eval_domain.py`, `domain_quiz*.jsonl`. `data/`, `outputs/`, `runs/`, `LOG.md` are git-ignored. |
 | `packs/<pack>/` | A **task pack** = data + `scorer.py` (the fixed referee) + the frozen exam. **Never edited.** |
-| `lib/` | Fixed plumbing: `pack.py`, `datakit.py` (dataset cache + provenance), `corpus.py` (load + retrieve), `llm.py` (teacher backends). |
+| `lib/` | Fixed plumbing: `pack.py`, `datakit.py` (dataset cache + provenance), `corpus.py` (load + retrieve), `llm.py` (teacher backends), `runlog.py` (run telemetry). |
 | `dashboard-ui/` | Zero-config Vite live dashboard reading `experiments/**/runs/`. |
 | `serve/` | Export a winning model to GGUF → Ollama (handoff to `nekaise-edge`). |
+| `tools/doctor.py` | Zero-dep preflight: GPU, packages, `.env`, data, holdout — run it first on a fresh clone. |
 
 ## Methods
 
@@ -170,8 +171,8 @@ cd dashboard-ui && npm install && npm run dev    # http://localhost:5273
 ```
 
 Run list with live status, training-loss / reward curves, before→after vs baseline, and CPT
-perplexity / domain results. Reachable over Tailscale by adding your MagicDNS name to
-`server.allowedHosts`.
+perplexity / domain results. To reach it over LAN / Tailscale, allow your hostname through
+Vite's guard: `NEKAISE_DASH_HOSTS=myhost,.tailXXXX.ts.net npm run dev`.
 
 ## Stack
 
@@ -181,13 +182,21 @@ perplexity / domain results. Reachable over Tailscale by adding your MagicDNS na
 
 ## Getting started
 
-You mostly don't run things by hand. Point Claude Code or Codex at the repo and say:
+```bash
+git clone https://github.com/OpenNekaise/nekaise-studio && cd nekaise-studio
+pip install -r requirements.txt        # needs a CUDA GPU for training
+cp .env.example .env                   # keys + NEKAISE_HOLDOUT (see comments inside)
+python tools/doctor.py                 # preflight — tells you exactly what's missing
+```
 
-> *"Read `skills/run-experiment`, then look at `experiments/granite-4.1-3b-gsm8k/` — establish the
-> baseline, then start improving it."*
+From there you mostly don't run things by hand. Open Claude Code or Codex in the repo —
+both auto-load the working agreement (`CLAUDE.md` → `AGENTS.md`) — and say:
 
-(First run: prime the cache once with `python packs/gsm8k/prepare.py`. Needs a CUDA GPU +
-`pip install -r requirements.txt`.)
+> *"Read `skills/run-experiment.md`, then look at `experiments/granite-4.1-3b-gsm8k/` —
+> establish the baseline, then start improving it."*
+
+(The gsm8k bootstrap works on a bare clone with no keys and no building data; prime its
+dataset cache once with `python packs/gsm8k/prepare.py`.)
 
 ## Method
 

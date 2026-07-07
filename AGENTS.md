@@ -6,6 +6,9 @@ small language models (<8B) by running an autoresearch loop, driven entirely thr
 
 ## How to work in this repo
 
+**First run on a fresh clone:** `python tools/doctor.py` — a zero-dep preflight that checks
+GPU, packages, `.env`, building data, and the holdout. Fix what it flags before training.
+
 The skills are the program you execute — and, over time, extend. Each is canonical under
 `skills/`, mirrored to `.claude/skills/`. Three core jobs:
 
@@ -48,6 +51,9 @@ reason we are a bootloader rather than a fixed pipeline:
   are git-ignored — keep them so; never `git add -f` them.
 - Never generate training data from the holdout building. One change per run. Honor the time
   box. Log every run, including failures.
+- **Always set `NEKAISE_HOLDOUT` explicitly** (in `.env`, see `.env.example`) before any
+  building-pack work. If unset, the scorer silently falls back to the first folder by name —
+  which can grade against the wrong building and leak training data into the exam.
 
 ## Bootloader vs workspace
 
@@ -77,5 +83,8 @@ stays on your machine:
   `data/<id>/` (cached datasets + provenance), `outputs/<stage>/` (checkpoints + `best.json`).
 - `packs/` — fixed task packs: dataset + scorer (`load_split` / `is_correct` / `reward`).
 - `lib/` — fixed plumbing: `pack.py` (load a pack), `datakit.py` (dataset cache+provenance),
-  `llm.py` (teacher/sampler backends: ollama/anthropic/openai).
+  `llm.py` (teacher/sampler backends: ollama/anthropic/openai), `runlog.py` (run telemetry
+  the dashboard reads).
 - `serve/` — export the winning checkpoint (`outputs/best`) to GGUF + Ollama (handoff to nekaise-edge).
+- `tools/` — maintainer utilities: `doctor.py` (preflight). Not part of the loop.
+- `dashboard-ui/` — optional live dashboard: `cd dashboard-ui && npm install && npm run dev`.

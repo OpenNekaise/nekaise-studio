@@ -57,9 +57,13 @@ function runApi() {
   }
 }
 
+// host:true binds 0.0.0.0 (reachable over LAN / Tailscale). To let extra hostnames through
+// Vite's DNS-rebinding guard, set NEKAISE_DASH_HOSTS to a comma-separated list, e.g.
+//   NEKAISE_DASH_HOSTS=myhost,.tailXXXX.ts.net npm run dev
+const allowedHosts = (process.env.NEKAISE_DASH_HOSTS || '')
+  .split(',').map((s) => s.trim()).filter(Boolean)
+
 export default defineConfig({
   plugins: [react(), runApi()],
-  // host:true binds 0.0.0.0 (reachable over the Tailscale interface). allowedHosts lets the
-  // MagicDNS names through Vite's DNS-rebinding guard ('afk' and any *.tail5ec85b.ts.net).
-  server: { port: 5273, host: true, allowedHosts: ['afk', '.tail5ec85b.ts.net'] },
+  server: { port: 5273, host: true, ...(allowedHosts.length ? { allowedHosts } : {}) },
 })

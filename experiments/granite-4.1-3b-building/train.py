@@ -6,7 +6,7 @@ build_data.py), then evaluate on the FIXED, verifiable ontology scorer over the 
 building — i.e. does learning to reason like a building engineer on the training buildings
 generalize to an unseen one? Saves a checkpoint and prints the METRIC line the loop reads.
 
-    set -a; source /home/zengp/Code/KebAgent/.env; set +a   # only needed if a method calls a teacher
+    set -a; source .env; set +a   # repo-root .env — only needed if a method calls a teacher
     python experiments/granite-4.1-3b-building/train.py
 
 Methods: sft (default) | dpo | grpo. Stages hand off via outputs/<stage>/. The eval is the
@@ -23,7 +23,6 @@ REPO = Path(__file__).resolve().parents[2]
 EXP_DIR = Path(__file__).resolve().parent
 OUT_DIR = EXP_DIR / "outputs"
 sys.path.insert(0, str(REPO / "lib"))
-sys.path.insert(0, str(REPO / "dashboard"))
 sys.path.insert(0, str(REPO / "packs" / "building"))
 
 import datakit  # noqa: E402

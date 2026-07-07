@@ -29,7 +29,6 @@ REPO = Path(__file__).resolve().parents[2]
 EXP_DIR = Path(__file__).resolve().parent
 OUT_DIR = EXP_DIR / "outputs"
 sys.path.insert(0, str(REPO / "lib"))
-sys.path.insert(0, str(REPO / "dashboard"))
 
 import datakit  # noqa: E402  (fixed plumbing)
 from pack import load as load_pack  # noqa: E402  (fixed referee loader)

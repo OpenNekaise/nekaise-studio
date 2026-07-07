@@ -94,7 +94,7 @@ propose one change; run it."* If `LOG.md` is empty, the first run establishes th
 Before a run, start the local dashboard so the human can watch if they want:
 
 ```bash
-python dashboard/server.py    # serves http://localhost:8765
+cd dashboard-ui && npm install && npm run dev    # serves http://localhost:5273
 ```
 
 Tell them the URL once. Training streams loss (SFT) or reward/kl (GRPO) plus the final eval
@@ -103,7 +103,10 @@ loop's decisions — don't block on it.
 
 ## Current targets
 
-- Active experiment: `experiments/granite-4.1-3b-gsm8k/` (base `unsloth/granite-4.1-3b`, pack `gsm8k`).
+- Flagship: `experiments/granite-4.1-3b-building/` (base `unsloth/granite-4.1-3b`, pack
+  `building`) — needs building data under `nekaise_data/` and `NEKAISE_HOLDOUT` set.
+- Bootstrap: `experiments/granite-4.1-3b-gsm8k/` — public pack, works on a bare clone;
+  start here to prove the loop end-to-end.
 - Planned: Granite-4.1-8B, Gemma-4, Qwen-3.5, sub-1B Granite. One folder per model.
 - `gsm8k` is a **public bootstrap** that proves the loop. It will later swap for a
   building-ontology pack with **no change to this skill, the loop, or the recipe files'

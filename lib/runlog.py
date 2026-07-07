@@ -1,10 +1,10 @@
-"""Tiny run-logger the training writes to, and the dashboard reads from.
+"""Tiny run-logger the training writes to, and the dashboard reads from. FIXED plumbing.
 
 Each run gets a directory under experiments/<exp>/runs/<run_id>/ with:
   - meta.json     : model, pack, metric, status, before/after, baseline, timings
   - events.jsonl  : one line per logging step {step, t, loss, lr, ...}
 
-Zero dependencies. The dashboard (dashboard/server.py) scans these files live.
+Zero dependencies. The live dashboard (dashboard-ui/, `npm run dev`) scans these files.
 """
 from __future__ import annotations
 

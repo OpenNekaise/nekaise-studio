@@ -7,7 +7,7 @@ recallable in any phrasing) the fact should appear in DIVERSE forms during train
 ways and writes a few QA pairs; we concatenate original + paraphrases + QA into an augmented corpus
 that `run_cpt` can train on.
 
-    set -a; source <KebAgent>/.env; set +a
+    set -a; source .env; set +a   # repo-root .env
     python augment_corpus.py --n 200            # augment all training docs
     NEKAISE_CPT_TRAIN=.../data/cpt/train_aug.jsonl NEKAISE_METHOD=cpt ... python train.py
 """

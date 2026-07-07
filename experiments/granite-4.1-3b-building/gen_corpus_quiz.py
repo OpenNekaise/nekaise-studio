@@ -9,7 +9,7 @@ source. Run base vs a CPT checkpoint CLOSED-BOOK via eval_domain.py --quiz.
   --source heldout  -> questions from the *held-out* docs (tests generalization; the model never
                        trained on these, so a gain there is real understanding, not recall)
 
-    set -a; source <KebAgent>/.env; set +a
+    set -a; source .env; set +a   # repo-root .env
     python gen_corpus_quiz.py --source heldout --windows 3 --n 40
     python eval_domain.py --quiz data/corpus_quiz_heldout.jsonl --model outputs/cpt_e15
 """

@@ -29,22 +29,22 @@ def check(status: str, msg: str, fix: str = "") -> None:
     print(line)
 
 
-def dotenv_keys() -> set[str]:
-    """Names of variables set in the repo-root .env (values never read into output)."""
+def dotenv() -> dict[str, str]:
+    """Variables set in the repo-root .env (secret values are only checked, never printed)."""
     env = REPO / ".env"
     if not env.exists():
-        return set()
-    keys = set()
+        return {}
+    out = {}
     for line in env.read_text().splitlines():
         line = line.strip()
         if line and not line.startswith("#") and "=" in line:
             k, v = line.split("=", 1)
             if v.strip():
-                keys.add(k.strip())
-    return keys
+                out[k.strip()] = v.strip()
+    return out
 
 
-def configured(name: str, envfile: set[str]) -> bool:
+def configured(name: str, envfile: dict[str, str]) -> bool:
     return bool(os.environ.get(name)) or name in envfile
 
 
@@ -62,7 +62,9 @@ def main() -> int:
     if missing:
         check("fail", f"packages missing: {', '.join(missing)}", "pip install -r requirements.txt")
     else:
-        check("pass", "training packages installed (unsloth, trl, transformers, datasets, accelerate)")
+        from importlib.metadata import version
+        vers = ", ".join(f"{p} {version(p)}" for p in ("unsloth", "trl", "transformers"))
+        check("pass", f"training packages installed ({vers})")
         try:
             import torch
             if torch.cuda.is_available():
@@ -74,7 +76,7 @@ def main() -> int:
             check("warn", f"torch present but unusable: {e}", "reinstall: pip install -r requirements.txt")
 
     # ── local config ──
-    envfile = dotenv_keys()
+    envfile = dotenv()
     if (REPO / ".env").exists():
         check("pass", ".env present")
     else:
@@ -91,21 +93,32 @@ def main() -> int:
                        if d.is_dir() and d.name != "hvac_corpus") if data.exists() else []
     if buildings:
         check("pass", f"nekaise_data/: {len(buildings)} building(s) found")
-        holdout = os.environ.get("NEKAISE_HOLDOUT") or ("NEKAISE_HOLDOUT" in envfile and "(.env)")
+        holdout = os.environ.get("NEKAISE_HOLDOUT") or envfile.get("NEKAISE_HOLDOUT")
         if not holdout:
-            check("fail", "NEKAISE_HOLDOUT unset — the eval silently picks the first folder by name, "
+            check("fail", "NEKAISE_HOLDOUT unset — the eval falls back to the first folder by name, "
                           "which can be the wrong building AND leak training data into the exam",
                   "set NEKAISE_HOLDOUT=<building folder> in .env")
-        elif holdout != "(.env)" and holdout not in buildings:
-            check("fail", f"NEKAISE_HOLDOUT does not match any folder under nekaise_data/",
+        elif holdout not in buildings:
+            check("fail", "NEKAISE_HOLDOUT does not match any folder under nekaise_data/",
                   f"pick one of: {', '.join(buildings)}")
         else:
-            check("pass", "NEKAISE_HOLDOUT set")
+            try:
+                sys.path.insert(0, str(REPO / "packs" / "building"))
+                import prepare  # noqa: PLC0415
+                exam_b = prepare.exam_building()
+            except Exception:
+                exam_b = None
+            if exam_b and exam_b != holdout:
+                check("fail", f"NEKAISE_HOLDOUT is set but the frozen exam is about a different building",
+                      f"set NEKAISE_HOLDOUT={exam_b} (the exam's building)")
+            else:
+                check("pass", "NEKAISE_HOLDOUT set" + (" and matches the frozen exam" if exam_b else ""))
         if (data / "hvac_corpus").exists():
             check("pass", "nekaise_data/hvac_corpus/ present (ceiling material)")
     else:
         check("warn", "no buildings under nekaise_data/ — building pack idle; gsm8k bootstrap still works",
-              "drop a building's data into nekaise_data/<building>/")
+              "drop real data into nekaise_data/<building>/, or try the synthetic demo: "
+              "cp -r examples/example-building nekaise_data/")
 
     # ── optional services ──
     base = os.environ.get("OLLAMA_BASE_URL", "http://localhost:11434").rstrip("/")
@@ -121,6 +134,17 @@ def main() -> int:
     else:
         check("warn", "dashboard-ui not installed (optional live dashboard)",
               "cd dashboard-ui && npm install && npm run dev")
+    try:
+        import subprocess
+        hooks = subprocess.run(["git", "-C", str(REPO), "config", "core.hooksPath"],
+                               capture_output=True, text=True).stdout.strip()
+    except Exception:
+        hooks = ""
+    if hooks == "tools/hooks":
+        check("pass", "privacy pre-commit hook active (core.hooksPath=tools/hooks)")
+    else:
+        check("warn", "privacy pre-commit hook not installed — leaks are only caught in CI",
+              "git config core.hooksPath tools/hooks")
 
     n_fail, n_warn = results.count("fail"), results.count("warn")
     print(f"\n{results.count('pass')} pass, {n_warn} warn, {n_fail} fail.")

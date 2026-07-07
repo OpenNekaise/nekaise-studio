@@ -1,5 +1,7 @@
 # Nekaise Studio
 
+[![ci](https://github.com/OpenNekaise/nekaise-studio/actions/workflows/ci.yml/badge.svg)](https://github.com/OpenNekaise/nekaise-studio/actions/workflows/ci.yml)
+
 > A **self-extending, AI-run training platform** for small language models. You don't run
 > scripts and you don't write the training logic. You **dump data into one folder**, point
 > Claude Code (or Codex) at the repo, and it trains a small, edge-deployable model for the
@@ -107,6 +109,10 @@ load-bearing part, and it is deliberately **multi-metric** — no single number 
 - **`domain_quiz` (the ceiling).** A **closed-book** multiple-choice exam over general
   building/HVAC/energy knowledge (easy + hard tiers). Measures what's in the *weights*, with no
   retrieval — exactly what `building_judge` cannot see. (`eval_domain.py`.)
+- **`nekaise_bench` (the independent check, advisory).** A closed-book benchmark
+  ([nekaise-bench](https://github.com/OpenNekaise/nekaise-bench)) authored and hardened *outside*
+  this repo's corpus — so corpus memorization (e.g. from CPT) that inflates corpus-derived quizzes
+  does not fool it. (`tools/eval_bench.py`, after exporting to Ollama.)
 
 Two hard-won lessons, now part of the method: **perplexity is not knowledge** (continued
 pretraining can cut held-out perplexity sharply while adding ~zero closed-book accuracy — it buys
@@ -126,7 +132,9 @@ domain-smarter** — you need the ceiling probe alongside the gap probe.
 | `lib/` | Fixed plumbing: `pack.py`, `datakit.py` (dataset cache + provenance), `corpus.py` (load + retrieve), `llm.py` (teacher backends), `runlog.py` (run telemetry). |
 | `dashboard-ui/` | Zero-config Vite live dashboard reading `experiments/**/runs/`. |
 | `serve/` | Export a winning model to GGUF → Ollama (handoff to `nekaise-edge`). |
-| `tools/doctor.py` | Zero-dep preflight: GPU, packages, `.env`, data, holdout — run it first on a fresh clone. |
+| `examples/example-building/` | Fully **synthetic** building — walk the whole building pipeline with zero proprietary data. |
+| `tools/` | `doctor.py` (preflight), `privacy_check.py` (leak guard, also a pre-commit hook), `eval_bench.py` (independent benchmark). |
+| `tests/` | CPU-only guardrail tests for the fixed parts (referee contract, plumbing, holdout guard). Run by CI. |
 
 ## Methods
 
@@ -196,7 +204,9 @@ both auto-load the working agreement (`CLAUDE.md` → `AGENTS.md`) — and say:
 > establish the baseline, then start improving it."*
 
 (The gsm8k bootstrap works on a bare clone with no keys and no building data; prime its
-dataset cache once with `python packs/gsm8k/prepare.py`.)
+dataset cache once with `python packs/gsm8k/prepare.py`. To try the **building** pipeline
+without proprietary data: `cp -r examples/example-building nekaise_data/` — a fully synthetic
+building that exercises the whole prepare → judge → train → eval chain.)
 
 ## Method
 
@@ -204,9 +214,15 @@ dataset cache once with `python packs/gsm8k/prepare.py`.)
 diagnose before you optimize (measure the teacher *and* the untrained base), separate ceiling from
 gap, open-book = data-in-hand + retrieval, task-aligned teacher distillation, and the pitfalls.
 
+## Contributing
+
+Local skills earn their way into the kernel through an eval-gated, human-reviewed PR — see
+[CONTRIBUTING.md](CONTRIBUTING.md) for the promotion path and the platform rules.
+
 ## Related
 
 - [opennekaise](https://github.com/OpenNekaise/opennekaise) — the cloud Nekaise Agent.
+- [nekaise-bench](https://github.com/OpenNekaise/nekaise-bench) — the independent building-energy QA benchmark.
 - [karpathy/autoresearch](https://github.com/karpathy/autoresearch) — the loop this is modeled on.
 
 ## License

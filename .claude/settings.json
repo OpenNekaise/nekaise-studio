@@ -2,8 +2,12 @@
   "permissions": {
     "allow": [
       "Bash(python tools/doctor.py)",
+      "Bash(python tools/privacy_check.py:*)",
+      "Bash(python -m pytest:*)",
+      "Bash(pytest:*)",
       "Bash(pip install -r requirements.txt)",
-      "Bash(python packs/gsm8k/prepare.py)"
+      "Bash(python packs/gsm8k/prepare.py)",
+      "Bash(python packs/building/prepare.py)"
     ]
   }
 }

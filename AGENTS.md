@@ -64,8 +64,10 @@ stays on your machine:
   `eval_domain.py`), `lib/*`, recipe templates, guardrails. The most load-bearing piece is the
   **eval harness** — it is the fitness function the self-improving loop trusts; getting it right
   matters more than any single training trick. The harness is plural on purpose: `building_judge`
-  (the gap, building-specific) *and* `domain_quiz` (the ceiling, closed-book) — never one number
-  to game. Perplexity is never a success metric.
+  (the gap, building-specific), `domain_quiz` (the ceiling, closed-book), and — advisory —
+  `nekaise_bench` (`tools/eval_bench.py`): an independently-authored closed-book benchmark that
+  catches corpus memorization inflating corpus-derived quizzes. Never one number to game;
+  perplexity is never a success metric.
 - **Workspace (git-ignored, yours):** `nekaise_data/`, `experiments/**/{data,outputs,runs,LOG.md}`,
   `workspace/` (throwaway scratch), and `skills/local/` (emergent skills you write).
 - **Promotion:** a local skill enters the shared kernel only by surviving the eval harness and a
@@ -86,5 +88,11 @@ stays on your machine:
   `llm.py` (teacher/sampler backends: ollama/anthropic/openai), `runlog.py` (run telemetry
   the dashboard reads).
 - `serve/` — export the winning checkpoint (`outputs/best`) to GGUF + Ollama (handoff to nekaise-edge).
-- `tools/` — maintainer utilities: `doctor.py` (preflight). Not part of the loop.
+- `tools/` — maintainer utilities, not part of the loop: `doctor.py` (preflight),
+  `privacy_check.py` (leak guard; pre-commit hook via `git config core.hooksPath tools/hooks`),
+  `eval_bench.py` (independent third metric, advisory).
+- `tests/` — CPU-only guardrails for the fixed parts (referee contract, plumbing, holdout
+  guard, skills mirror). Keep green (`pytest`); CI runs them plus the privacy scan.
+- `examples/example-building/` — fully synthetic building; `cp -r` it into `nekaise_data/` to
+  exercise the building pipeline without proprietary data. Never mix into real training runs.
 - `dashboard-ui/` — optional live dashboard: `cd dashboard-ui && npm install && npm run dev`.

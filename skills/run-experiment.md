@@ -113,3 +113,7 @@ loop's decisions — don't block on it.
   structure** — only the pack import changes.
 - To serve a winner: `python serve/to_ollama.py --exp <name> --name <ollama-name>` exports
   `outputs/best` to GGUF/Ollama, which `nekaise-edge` then runs (`OLLAMA_MODEL=<ollama-name>`).
+- Third probe (advisory, optional): after exporting to Ollama, run
+  `python tools/eval_bench.py --model <ollama-name>` — an **independently authored** closed-book
+  benchmark (nekaise-bench). It exposes corpus memorization that inflates corpus-derived quizzes;
+  log the `nekaise_bench` line in `LOG.md` next to the METRIC, but never use it for keep/revert.

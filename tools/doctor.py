@@ -121,6 +121,13 @@ def main() -> int:
               "cp -r examples/example-building nekaise_data/")
 
     # ── optional services ──
+    bench = Path(os.environ.get("NEKAISE_BENCH_DIR", REPO.parent / "nekaise-bench"))
+    if (bench / "eval_ollama.py").exists():
+        check("pass", f"nekaise-bench found ({bench.name}) — third metric available")
+    else:
+        check("warn", "nekaise-bench not found — ceiling-phase metric unavailable",
+              "git clone https://github.com/OpenNekaise/nekaise-bench next to this repo "
+              "(or set NEKAISE_BENCH_DIR)")
     base = os.environ.get("OLLAMA_BASE_URL", "http://localhost:11434").rstrip("/")
     try:
         with urllib.request.urlopen(f"{base}/api/tags", timeout=2) as r:

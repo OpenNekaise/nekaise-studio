@@ -103,17 +103,27 @@ loop's decisions — don't block on it.
 
 ## Current targets
 
-- Flagship: `experiments/granite-4.1-3b-building/` (base `unsloth/granite-4.1-3b`, pack
-  `building`) — needs building data under `nekaise_data/` and `NEKAISE_HOLDOUT` set.
+- **Current phase: the CEILING.** Bake general building-energy knowledge into the weights:
+  CPT over `nekaise_data/hvac_corpus/` (see `build_cpt_data.py` / `augment_corpus.py`), then
+  distill/SFT to restore instruction-following. The phase metric is **`nekaise_bench` on the
+  `dev` split**: `python tools/eval_bench.py --checkpoint <outputs/stage> --split dev` —
+  independent of the corpus, so memorization can't inflate it. The `test` split is FROZEN:
+  run it only at milestones, never for keep/revert. Always compare against the base model's
+  dev score (same command with the base id) — known failure mode: CPT *degrades* independent
+  knowledge while corpus-derived quizzes improve.
+- Deferred: the building **gap** (`experiments/granite-4.1-3b-building/`, pack `building`) —
+  building-specific grounding over `nekaise_data/<building>/`. Its holdout guard stays armed
+  when you touch it.
 - Bootstrap: `experiments/granite-4.1-3b-gsm8k/` — public pack, works on a bare clone;
-  start here to prove the loop end-to-end.
+  proves the loop end-to-end.
 - Planned: Granite-4.1-8B, Gemma-4, Qwen-3.5, sub-1B Granite. One folder per model.
 - `gsm8k` is a **public bootstrap** that proves the loop. It will later swap for a
   building-ontology pack with **no change to this skill, the loop, or the recipe files'
   structure** — only the pack import changes.
 - To serve a winner: `python serve/to_ollama.py --exp <name> --name <ollama-name>` exports
   `outputs/best` to GGUF/Ollama, which `nekaise-edge` then runs (`OLLAMA_MODEL=<ollama-name>`).
-- Third probe (advisory, optional): after exporting to Ollama, run
-  `python tools/eval_bench.py --model <ollama-name>` — an **independently authored** closed-book
-  benchmark (nekaise-bench). It exposes corpus memorization that inflates corpus-derived quizzes;
-  log the `nekaise_bench` line in `LOG.md` next to the METRIC, but never use it for keep/revert.
+- `nekaise_bench` plays two roles. **Ceiling phase:** the loop metric (checkpoint mode,
+  `--split dev`; frozen `test` at milestones; full official harness via `--model <ollama-name>`
+  after export, for deployment parity). **Building-pack loop:** advisory only — log it next to
+  the METRIC, never use it for keep/revert there. Checkpoint-mode and Ollama-mode numbers are
+  not interchangeable; compare like with like.

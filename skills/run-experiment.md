@@ -103,21 +103,20 @@ loop's decisions — don't block on it.
 
 ## Current targets
 
-- **Current phase: the CEILING.** Bake general building-energy knowledge into the weights:
-  CPT over `nekaise_data/hvac_corpus/` (see `build_cpt_data.py` / `augment_corpus.py`), then
-  distill/SFT to restore instruction-following. The phase metric is **`nekaise_bench` on the
-  `dev` split**: `python tools/eval_bench.py --checkpoint <outputs/stage> --split dev` — an
-  independently-authored corpus-mastery exam (grounded in corpus docs, hardened so 27Bs fail
-  closed-book): a gain means corpus knowledge entered the weights. The `test` split is FROZEN:
-  run it only at milestones, never for keep/revert. Always compare against the base model's
-  dev score (same command with the base id), and report paired flips (+n/−n), not just the
-  aggregate — the deltas are small relative to eval noise.
-- Deferred: the building **gap** (`experiments/granite-4.1-3b-building/`, pack `building`) —
-  building-specific grounding over `nekaise_data/<building>/`. Its holdout guard stays armed
-  when you touch it.
+**Read `STATUS.md` at the repo root** — it names the current phase, the active experiment,
+the phase metric, and the next levers. This skill describes the loop; STATUS.md says where
+to point it today. Durable protocol that does not change with the phase:
+
+- For matrices of runs (N models × M treatments), drive them with
+  `python tools/campaign.py <spec.json>` — declarative, resumable, results into the ledger —
+  instead of ad-hoc shell loops.
+- Every eval/train result lands in `experiments/<name>/results.jsonl` (lib/results.py);
+  `LOG.md` stays the narrative of hypotheses and verdicts.
+- When a metric has a frozen split (e.g. the bench `test` split), it is milestone-only,
+  never keep/revert. Compare against the base model, and report paired flips (+n/−n), not
+  just aggregates — deltas are usually small relative to eval noise.
 - Bootstrap: `experiments/granite-4.1-3b-gsm8k/` — public pack, works on a bare clone;
   proves the loop end-to-end.
-- Planned: Granite-4.1-8B, Gemma-4, Qwen-3.5, sub-1B Granite. One folder per model.
 - `gsm8k` is a **public bootstrap** that proves the loop. It will later swap for a
   building-ontology pack with **no change to this skill, the loop, or the recipe files'
   structure** — only the pack import changes.

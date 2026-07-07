@@ -8,6 +8,8 @@ small language models (<8B) by running an autoresearch loop, driven entirely thr
 
 **First run on a fresh clone:** `python tools/doctor.py` — a zero-dep preflight that checks
 GPU, packages, `.env`, building data, and the holdout. Fix what it flags before training.
+Then read **`STATUS.md`** for the current phase, active experiment, and next levers — this
+file and the skills describe the durable procedure; STATUS.md is the part that changes.
 
 The skills are the program you execute — and, over time, extend. Each is canonical under
 `skills/`, mirrored to `.claude/skills/`. Three core jobs:

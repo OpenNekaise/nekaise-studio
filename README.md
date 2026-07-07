@@ -137,8 +137,10 @@ domain-smarter** — you need the ceiling probe alongside the gap probe.
 | `dashboard-ui/` | Zero-config Vite live dashboard reading `experiments/**/runs/`. |
 | `serve/` | Export a winning model to GGUF → Ollama (handoff to `nekaise-edge`). |
 | `examples/example-building/` | Fully **synthetic** building — walk the whole building pipeline with zero proprietary data. |
-| `tools/` | `doctor.py` (preflight), `privacy_check.py` (leak guard, also a pre-commit hook), `eval_bench.py` (independent benchmark). |
-| `tests/` | CPU-only guardrail tests for the fixed parts (referee contract, plumbing, holdout guard). Run by CI. |
+| `tools/` | `doctor.py` (preflight), `privacy_check.py` (leak guard, also a pre-commit hook), `eval_bench.py` (bench CLI, batched), `campaign.py` (declarative run matrices). |
+| `tests/` | CPU-only guardrail tests for the fixed parts (referee contract, plumbing, holdout guard, bench split fingerprint). Run by CI. |
+| `STATUS.md` | The part that changes: current phase, active experiment, next levers. Read it first. |
+| [`docs/RESULTS.md`](docs/RESULTS.md) | Published, reproducible campaign results (public assets only). |
 
 ## Methods
 

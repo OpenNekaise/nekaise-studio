@@ -4,8 +4,10 @@ One folder per (base model × task pack). Each holds the two **editable recipe f
 autoresearch agent mutates — `train.py` (HOW to train: method, hyperparameters) and
 `build_data.py` (WHAT to train on: distilled / rejection-sampled data) — plus `LOG.md` (its
 journal). Runtime-only, git-ignored: `data/<id>/` (cached dataset artifacts + provenance),
-`outputs/<stage>/` (checkpoints; `best.json` tracks the winner for `serve/`), and `runs/`
-(dashboard telemetry). See [`../skills/run-experiment.md`](../skills/run-experiment.md).
+`outputs/<stage>/` (checkpoints, each with a provenance `meta.json`; `best.json` tracks the
+winner for `serve/`), `runs/` (dashboard telemetry), and `results.jsonl` (the measurement
+ledger every eval/train appends to). See
+[`../skills/run-experiment.md`](../skills/run-experiment.md) and the repo-root `STATUS.md`.
 
 | Experiment | Base model | Metric | Status |
 |------------|-----------|------|--------|

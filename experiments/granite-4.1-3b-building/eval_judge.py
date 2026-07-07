@@ -27,7 +27,8 @@ import prepare  # noqa: E402
 from corpus import building_corpus, retrieve  # noqa: E402
 
 TEACHER = "anthropic:claude-opus-4-8"
-HOLDOUT = os.environ.get("NEKAISE_HOLDOUT") or prepare.default_holdout()
+HOLDOUT = prepare.require_holdout_matches_exam(
+    os.environ.get("NEKAISE_HOLDOUT") or prepare.default_holdout())
 ANS_DIR = EXP_DIR / "data" / "answers"   # git-ignored (experiments/**/data/)
 EXAM = [json.loads(l) for l in (REPO / "packs" / "building" / "eval_open.jsonl").read_text().splitlines() if l.strip()]
 

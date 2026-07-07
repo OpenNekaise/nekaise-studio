@@ -55,6 +55,63 @@ def default_holdout() -> str | None:
     return dirs[0].name if dirs else None
 
 
+EXAM_PATH = REPO / "packs" / "building" / "eval_open.jsonl"
+
+
+def exam_building(exam_path: Path | None = None) -> str | None:
+    """Which building the frozen exam is about — inferred at runtime, never hardcoded (privacy).
+
+    Matches the known building folder names against each exam row's source / anchors /
+    ground_truth. Returns None when there is no exam, no local data, or no clear
+    (majority-of-rows) match.
+    """
+    p = Path(exam_path) if exam_path else EXAM_PATH
+    if not p.exists():
+        return None
+    names = [d.name for d in building_dirs()]
+    if not names:
+        return None
+    rows = [l for l in p.read_text().splitlines() if l.strip()]
+    counts: Counter = Counter()
+    for line in rows:
+        try:
+            r = json.loads(line)
+        except Exception:
+            continue
+        hay = " ".join((str(r.get("source", "")), str(r.get("ground_truth", "")),
+                        " ".join(str(a) for a in r.get("anchors", []))))
+        for n in names:
+            if n in hay:
+                counts[n] += 1
+    if not counts:
+        return None
+    name, hits = counts.most_common(1)[0]
+    return name if hits * 2 >= len(rows) else None
+
+
+def require_holdout_matches_exam(holdout: str | None, exam_path: Path | None = None) -> str | None:
+    """Fail LOUDLY when the configured holdout is not the frozen exam's building.
+
+    The exam grades one specific building. A holdout that silently points elsewhere breaks
+    building_judge (context from the wrong building) AND leaks the exam building into
+    training. Set NEKAISE_ALLOW_HOLDOUT_MISMATCH=1 to proceed knowingly (e.g. a
+    scorer-only experiment with a deliberately different split).
+    """
+    exam_b = exam_building(exam_path)
+    if exam_b is None or holdout == exam_b:
+        return holdout
+    if os.environ.get("NEKAISE_ALLOW_HOLDOUT_MISMATCH") == "1":
+        print(f"WARNING: holdout '{holdout}' != exam building '{exam_b}' "
+              f"(NEKAISE_ALLOW_HOLDOUT_MISMATCH=1, proceeding)", file=sys.stderr)
+        return holdout
+    raise SystemExit(
+        f"holdout mismatch: NEKAISE_HOLDOUT resolves to '{holdout}' but the frozen exam "
+        f"(packs/building/eval_open.jsonl) is about '{exam_b}'.\n"
+        f"This silently collapses building_judge and leaks the exam building into training.\n"
+        f"Fix: set NEKAISE_HOLDOUT={exam_b} (e.g. in .env), or set "
+        f"NEKAISE_ALLOW_HOLDOUT_MISMATCH=1 if the mismatch is intentional.")
+
+
 def parse_building(d: Path) -> list[dict]:
     """Merge a building's .ttl files into one graph and extract a flat entity list."""
     import rdflib

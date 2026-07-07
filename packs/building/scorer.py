@@ -28,7 +28,10 @@ import prepare  # noqa: E402  (fixed index builder)
 
 # Which building is held out for evaluation (cross-building generalization).
 # Configured via env; falls back to a positional default so no proprietary name is hardcoded.
-HOLDOUT_BUILDING = os.environ.get("NEKAISE_HOLDOUT") or prepare.default_holdout()
+# Guarded: if a frozen exam exists, the holdout MUST be the exam's building (else the metric
+# silently grades the wrong building and training leaks the exam building).
+HOLDOUT_BUILDING = prepare.require_holdout_matches_exam(
+    os.environ.get("NEKAISE_HOLDOUT") or prepare.default_holdout())
 
 
 # ------------------------------ task generation -------------------------------

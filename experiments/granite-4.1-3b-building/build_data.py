@@ -44,7 +44,8 @@ import prepare  # noqa: E402  (building data locator; default_holdout)
 from corpus import building_corpus, retrieve  # noqa: E402
 
 TEACHER = "anthropic:claude-opus-4-8"
-HOLDOUT = os.environ.get("NEKAISE_HOLDOUT") or prepare.default_holdout()
+HOLDOUT = prepare.require_holdout_matches_exam(
+    os.environ.get("NEKAISE_HOLDOUT") or prepare.default_holdout())
 N = 45                      # questions authored per training building (pre-gate)
 QA_DIR = EXP_DIR / "data" / "realistic_qa"   # git-ignored (experiments/**/data/)
 MIN_ANCHORS = 2             # drop demos with <2 in-slice anchors (too little signal)

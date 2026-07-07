@@ -1,9 +1,21 @@
-# Fine-tuning (what the agent's train.py uses)
-unsloth                 # fast LoRA fine-tuning for <8B models on a single GPU
-trl                     # SFT trainer
-transformers
-datasets                # task-pack datasets (e.g. openai/gsm8k)
-accelerate
+# Fine-tuning (what the agent's train.py uses).
+# The trio below is PINNED to the validated combination — TRL/Unsloth kwargs drift between
+# releases and silently break train.py. Bump all three together, then run the gsm8k
+# baseline to revalidate before committing the bump.
+unsloth==2026.6.9       # fast LoRA / full fine-tuning for <8B models on a single GPU
+trl==0.24.0             # SFT / DPO / GRPO trainers
+transformers==5.5.0
+datasets>=4.3           # task-pack datasets (e.g. openai/gsm8k)
+accelerate>=1.13
+# torch: installed by unsloth for your CUDA; don't pin here.
+
+# Data prep (building pack)
+rdflib>=7               # parse Brick / ASHRAE 223P .ttl ontologies (packs/building/prepare.py)
+openpyxl>=3.1           # .xlsx point lists (lib/corpus.py)
+pymupdf>=1.28           # PDF text layer: control cards, manuals (lib/corpus.py)
+
+# Dev (tests / CI)
+pytest>=8
 
 # Serving (serve/to_ollama.py) uses the external `ollama` CLI — install separately:
 #   https://ollama.com/download

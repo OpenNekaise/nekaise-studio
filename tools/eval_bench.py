@@ -2,14 +2,13 @@
 """Score a model on nekaise-bench — the independently-authored corpus-MASTERY benchmark.
 
 Third probe of the harness, next to `building_judge` (the gap) and `domain_quiz` (the
-ceiling). Its questions are grounded in corpus documents but authored and hardened OUTSIDE
-this training pipeline (verbatim-quote gate + dropped if two 27Bs answer closed-book), so
-it measures whether corpus knowledge actually entered the WEIGHTS — not general capability,
-and nothing the training code can game. Strict no-leak protocol: exclude each item's
-`source` doc ids from training. Two modes:
+ceiling). Questions are grounded in corpus documents but authored and hardened OUTSIDE this
+training pipeline (verbatim-quote gate + dropped if two 27Bs answer closed-book), so it
+measures whether corpus knowledge actually entered the WEIGHTS — and nothing the training
+code can game. The pack (`packs/bench/scorer.py`) is the single source of truth for the
+dev/test split and grading; this is the CLI over it. Two modes:
 
-  # Loop metric (ceiling phase): evaluate a checkpoint directly on GPU — fast, no export.
-  # Grading functions are IMPORTED from the bench so scoring matches the official harness.
+  # Loop metric (ceiling phase): evaluate a checkpoint directly on GPU — batched, no export.
   python tools/eval_bench.py --checkpoint experiments/<exp>/outputs/<stage> --split dev
   python tools/eval_bench.py --checkpoint unsloth/granite-4.1-3b --split dev   # baseline
 
@@ -17,23 +16,19 @@ and nothing the training code can game. Strict no-leak protocol: exclude each it
   python serve/to_ollama.py --exp <exp> --name nekaise-candidate
   python tools/eval_bench.py --model nekaise-candidate
 
-Splits (checkpoint mode) are deterministic by question-id hash and never touch the bench
-repo: `dev` (~75%) is the loop's keep/revert signal, `test` (~25%) stays FROZEN for rare
-milestone checks — optimizing against `test` (or running it often) burns the benchmark.
-Checkpoint mode generates greedily with a small token budget (no thinking); absolute
-numbers can differ slightly from the Ollama harness — compare checkpoint-mode numbers
-with checkpoint-mode numbers.
+The `test` split is FROZEN for milestones: it requires --milestone and every use is
+appended to workspace/bench_eval/test_split_audit.log. Optimizing against it (or running
+it casually) burns the benchmark.
 
-Needs a local clone of https://github.com/OpenNekaise/nekaise-bench ; location from
-NEKAISE_BENCH_DIR, defaulting to ../nekaise-bench next to this repo.
+Results are appended to the experiment's ledger (experiments/<exp>/results.jsonl) when the
+checkpoint lives inside an experiment, or when --exp names one (use for base-model
+baselines). Checkpoint-mode and Ollama-mode numbers are not interchangeable; compare like
+with like.
 """
 from __future__ import annotations
 
 import argparse
-import hashlib
-import importlib.util
 import json
-import os
 import re
 import subprocess
 import sys
@@ -41,70 +36,44 @@ import time
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[1]
-BENCH = Path(os.environ.get("NEKAISE_BENCH_DIR", REPO.parent / "nekaise-bench"))
+sys.path.insert(0, str(REPO / "lib"))
+from pack import load as load_pack  # noqa: E402
+from results import log_result  # noqa: E402
 
 
-def bench_module():
-    """Import the bench's eval module so grading is EXACTLY the official harness's."""
-    runner = BENCH / "eval_ollama.py"
-    if not runner.exists():
-        sys.exit(f"nekaise-bench not found at {BENCH} — clone "
-                 f"https://github.com/OpenNekaise/nekaise-bench there, or set NEKAISE_BENCH_DIR.")
-    spec = importlib.util.spec_from_file_location("nekaise_bench_eval", runner)
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
-    return mod
-
-
-def in_split(qid: str, split: str) -> bool:
-    if split == "all":
-        return True
-    frozen = int(hashlib.md5(qid.encode()).hexdigest(), 16) % 4 == 0   # ~25%, deterministic
-    return frozen if split == "test" else not frozen
-
-
-def load_questions(split: str, limit: int) -> list[dict]:
-    rows = [json.loads(l) for l in (BENCH / "questions.jsonl").open(encoding="utf-8") if l.strip()]
-    rows = [q for q in rows if in_split(q["id"], split)]
-    return rows[:limit] if limit else rows
-
-
-def eval_checkpoint(args) -> dict:
-    bench = bench_module()
-    questions = load_questions(args.split, args.limit)
+def eval_checkpoint(args, bench) -> dict:
+    rows = bench.load_split(args.split, args.limit or None)
     from unsloth import FastLanguageModel
     model, tok = FastLanguageModel.from_pretrained(
         model_name=args.checkpoint, max_seq_length=4096,
         load_in_4bit=args.load_4bit, dtype=None)
-    if hasattr(tok, "tokenizer"):  # multimodal processor (e.g. Qwen3.5/VL) -> use the text tokenizer
+    if hasattr(tok, "tokenizer"):  # multimodal processor (e.g. Qwen3.5/VL) -> text tokenizer
         tok = tok.tokenizer
     FastLanguageModel.for_inference(model)
+    tok.padding_side = "left"      # batch generation: pad on the left so slicing is uniform
+    if tok.pad_token is None:
+        tok.pad_token = tok.eos_token
 
     records, t0 = [], time.time()
-    for i, q in enumerate(questions):
-        if q["track"] == "mcq":
-            system, user = bench.MCQ_SYSTEM, bench.mcq_prompt(q)
-        else:
-            system, user = bench.OPEN_SYSTEM, q["question"]
-        prompt = tok.apply_chat_template(
-            [{"role": "system", "content": system}, {"role": "user", "content": user}],
-            tokenize=False, add_generation_prompt=True)
-        inp = tok(prompt, return_tensors="pt").to(model.device)
-        out = model.generate(**inp, max_new_tokens=args.max_new_tokens, do_sample=False,
-                             pad_token_id=tok.pad_token_id or tok.eos_token_id)
-        reply = tok.decode(out[0][inp.input_ids.shape[1]:], skip_special_tokens=True)
-        ans = bench.strip_think(reply)
-        if q["track"] == "mcq":
-            pred = bench.extract_letter(ans, len(q["choices"]), q["choices"])
-            ok = pred == q["answer"]
-        else:
-            pred, ok = ans, bench.grade_open(ans, q["answer"], q.get("aliases"))
-        records.append({"id": q["id"], "track": q["track"], "topic": q["topic"],
-                        "difficulty": q["difficulty"], "reply": reply,
-                        "pred": pred, "gold": q["answer"], "correct": ok})
-        if (i + 1) % 25 == 0:
-            print(f"  [{i+1}/{len(questions)}] running acc="
-                  f"{sum(r['correct'] for r in records)/(i+1):.3f}", flush=True)
+    for i in range(0, len(rows), args.batch_size):
+        batch = rows[i:i + args.batch_size]
+        prompts = [tok.apply_chat_template(
+            [{"role": "system", "content": bench.system_prompt(r["track"])},
+             {"role": "user", "content": r["question"]}],
+            tokenize=False, add_generation_prompt=True) for r in batch]
+        enc = tok(prompts, return_tensors="pt", padding=True).to(model.device)
+        out = model.generate(**enc, max_new_tokens=args.max_new_tokens, do_sample=False,
+                             pad_token_id=tok.pad_token_id)
+        for r, seq in zip(batch, out):
+            reply = tok.decode(seq[enc.input_ids.shape[1]:], skip_special_tokens=True)
+            records.append({"id": r["id"], "track": r["track"], "topic": r["topic"],
+                            "difficulty": r["difficulty"], "reply": reply,
+                            "pred": bench.extract_answer(reply), "gold": r["answer"],
+                            "correct": bench.is_correct(reply, r["answer"])})
+        done = len(records)
+        if done % (args.batch_size * 2) < args.batch_size or done == len(rows):
+            acc_so_far = sum(x["correct"] for x in records) / done
+            print(f"  [{done}/{len(rows)}] running acc={acc_so_far:.3f}", flush=True)
 
     def acc(rs):
         return round(sum(r["correct"] for r in rs) / len(rs), 4) if rs else None
@@ -117,14 +86,15 @@ def eval_checkpoint(args) -> dict:
     return {"model": str(args.checkpoint), "split": args.split, "n": len(records),
             "overall": acc(records),
             "by_track": {t: acc([r for r in records if r["track"] == t]) for t in ("mcq", "open")},
+            "mode": "checkpoint", "batch_size": args.batch_size,
             "minutes": round((time.time() - t0) / 60, 1)}
 
 
-def eval_ollama(args) -> dict | None:
-    cmd = [sys.executable, str(BENCH / "eval_ollama.py"), "--models", args.model]
+def eval_ollama(args, bench) -> dict | None:
+    cmd = [sys.executable, str(bench.BENCH_DIR / "eval_ollama.py"), "--models", args.model]
     if args.limit:
         cmd += ["--limit", str(args.limit)]
-    proc = subprocess.run(cmd, cwd=BENCH, capture_output=True, text=True)
+    proc = subprocess.run(cmd, cwd=bench.BENCH_DIR, capture_output=True, text=True)
     sys.stderr.write(proc.stderr)
     result = None
     for line in proc.stdout.splitlines():
@@ -134,8 +104,22 @@ def eval_ollama(args) -> dict | None:
     if proc.returncode != 0 or result is None:
         print("bench run failed", file=sys.stderr)
         return None
-    result["split"] = "all"
+    result.update(split="all", mode="ollama")
     return result
+
+
+def ledger_dir(args) -> Path | None:
+    """experiments/<exp>/ for the ledger: from --exp, or inferred from the checkpoint path."""
+    if args.exp:
+        return REPO / "experiments" / args.exp
+    if args.checkpoint:
+        p = Path(args.checkpoint).resolve()
+        try:
+            rel = p.relative_to(REPO / "experiments")
+            return REPO / "experiments" / rel.parts[0]
+        except ValueError:
+            return None
+    return None
 
 
 def main() -> int:
@@ -144,19 +128,33 @@ def main() -> int:
     who.add_argument("--model", help="Ollama model name (official harness, deployment parity)")
     who.add_argument("--checkpoint", help="local checkpoint dir or HF id (fast loop metric, GPU)")
     ap.add_argument("--split", choices=("dev", "test", "all"), default="dev",
-                    help="checkpoint mode only; test is FROZEN for milestones (default: dev)")
+                    help="checkpoint mode only; test is FROZEN and needs --milestone")
+    ap.add_argument("--milestone", action="store_true",
+                    help="required to run the frozen test split; every use is audited")
+    ap.add_argument("--exp", help="experiment name for the results ledger (e.g. for base-model "
+                                  "baselines whose checkpoint is a HF id)")
     ap.add_argument("--limit", type=int, default=0, help="only first N questions (smoke test)")
+    ap.add_argument("--batch-size", type=int, default=16)
     ap.add_argument("--max-new-tokens", type=int, default=128)
     ap.add_argument("--load-4bit", action="store_true", help="4-bit load (faster, less faithful)")
     args = ap.parse_args()
 
-    if args.model:
-        bench_module()                      # existence check with a clear error
-        result = eval_ollama(args)
-    else:
-        result = eval_checkpoint(args)
+    if args.split == "test" and args.checkpoint:
+        if not args.milestone:
+            sys.exit("the test split is FROZEN for milestone checks — pass --milestone "
+                     "(and log the verdict in LOG.md), or use --split dev for the loop")
+        audit = REPO / "workspace" / "bench_eval" / "test_split_audit.log"
+        audit.parent.mkdir(parents=True, exist_ok=True)
+        with audit.open("a") as f:
+            f.write(f"{time.strftime('%Y-%m-%d %H:%M')} {args.checkpoint}\n")
+
+    bench = load_pack("bench")
+    result = eval_ollama(args, bench) if args.model else eval_checkpoint(args, bench)
     if result is None:
         return 1
+    exp = ledger_dir(args)
+    if exp and exp.exists():
+        log_result(exp, kind="bench_eval", **result)
     # The studio-style line the loop logs next to METRIC.
     print(f"BENCH[{result['model']}@{result['split']}] nekaise_bench={result['overall']:.4f} "
           f"n={result['n']} by_track={result.get('by_track')}")

@@ -27,6 +27,8 @@ experiments/**/data/
 # Per-experiment training journal — your run-by-run results are PRIVATE (an intermediate log).
 # The platform ships the loop/skills, not anyone's specific training history.
 experiments/**/LOG.md
+# Measurement ledger (lib/results.py) — local run state, references local checkpoints
+experiments/**/results.jsonl
 
 # Real building data — NEVER commit (proprietary PDFs, control cards, BIM, PII)
 nekaise_data/

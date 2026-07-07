@@ -1,0 +1,62 @@
+# Fully synthetic semantic model for the fictional "Norrsken Demo Building".
+@prefix ex:   <http://example.org/norrsken-demo#> .
+@prefix s223: <http://data.ashrae.org/standard223#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+
+ex:AHU1 a s223:AirHandlingUnit ;
+    rdfs:comment "Main air handling unit LB01, serves zones 1-3" ;
+    s223:cnx ex:AHU1_SupplyOutlet ;
+    s223:cnx ex:AHU1_ReturnInlet ;
+    s223:hasProperty ex:GT11_SupplyAirTemp .
+
+ex:AHU1_SupplyOutlet a s223:OutletConnectionPoint ;
+    rdfs:comment "AHU1 supply air outlet to the duct riser" ;
+    s223:cnx ex:Duct_Riser1 .
+
+ex:AHU1_ReturnInlet a s223:InletConnectionPoint ;
+    rdfs:comment "AHU1 return air inlet" .
+
+ex:Duct_Riser1 a s223:Duct ;
+    rdfs:comment "Supply duct riser feeding VAV boxes on floors 1 and 2" ;
+    s223:cnx ex:VAV1_Inlet ;
+    s223:cnx ex:VAV2_Inlet .
+
+ex:VAV1 a s223:SingleDuctTerminal ;
+    rdfs:comment "VAV box serving zone 1 (open office, floor 1)" ;
+    s223:cnx ex:VAV1_Inlet ;
+    s223:hasProperty ex:GT31_Zone1Temp .
+
+ex:VAV1_Inlet a s223:InletConnectionPoint ;
+    rdfs:comment "VAV1 primary air inlet" .
+
+ex:VAV2 a s223:SingleDuctTerminal ;
+    rdfs:comment "VAV box serving zone 2 (meeting rooms, floor 2)" ;
+    s223:cnx ex:VAV2_Inlet ;
+    s223:hasProperty ex:GT32_Zone2Temp .
+
+ex:VAV2_Inlet a s223:InletConnectionPoint ;
+    rdfs:comment "VAV2 primary air inlet" .
+
+ex:GT11_SupplyAirTemp a s223:TemperatureSensor ;
+    rdfs:comment "Supply air temperature sensor GT11, mounted after the heating coil" .
+
+ex:GT21_OutdoorTemp a s223:TemperatureSensor ;
+    rdfs:comment "Outdoor air temperature sensor GT21, north facade" .
+
+ex:GT31_Zone1Temp a s223:TemperatureSensor ;
+    rdfs:comment "Zone 1 room temperature sensor GT31" .
+
+ex:GT32_Zone2Temp a s223:TemperatureSensor ;
+    rdfs:comment "Zone 2 room temperature sensor GT32" .
+
+ex:GP1_SupplyFan a s223:Fan ;
+    rdfs:comment "Supply fan GP1 with variable speed drive" ;
+    s223:cnx ex:AHU1_SupplyOutlet .
+
+ex:GP2_ReturnFan a s223:Fan ;
+    rdfs:comment "Return fan GP2" ;
+    s223:cnx ex:AHU1_ReturnInlet .
+
+ex:SV61_HeatingValve a s223:Valve ;
+    rdfs:comment "Heating coil valve SV61, 0-100% signal" ;
+    s223:hasProperty ex:GT11_SupplyAirTemp .

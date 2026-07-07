@@ -1,0 +1,5 @@
+2026-01-12 06:02:11  LB01  B  GT11 supply air temp low (16.2 degC < setpoint-2K) auto-reset 06:19
+2026-01-12 06:03:44  LB01  B  GP2 return fan VSD warning: speed deviation > 10%
+2026-01-19 03:41:07  LB01  A  FROST GUARD LB01 tripped (GX1) - unit stopped, manual reset
+2026-01-19 07:12:30  LB01  A  FROST GUARD LB01 reset by operator
+2026-02-02 14:55:19  LB01  C  GT32 zone 2 temp high (25.1 degC) during meeting-room occupancy

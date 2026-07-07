@@ -1,0 +1,9 @@
+tag,description,unit,system
+GT11,Supply air temperature after heating coil,degC,LB01
+GT21,Outdoor air temperature north facade,degC,LB01
+GT31,Zone 1 room temperature (open office floor 1),degC,LB01
+GT32,Zone 2 room temperature (meeting rooms floor 2),degC,LB01
+GP1,Supply fan speed command,%,LB01
+GP2,Return fan speed command,%,LB01
+SV61,Heating coil valve position,%,LB01
+GX1,Frost guard alarm contact,bool,LB01

@@ -1,10 +1,12 @@
 #!/usr/bin/env python3
-"""Score a model on nekaise-bench — the INDEPENDENT building-energy QA benchmark.
+"""Score a model on nekaise-bench — the independently-authored corpus-MASTERY benchmark.
 
 Third probe of the harness, next to `building_judge` (the gap) and `domain_quiz` (the
-ceiling): its questions were authored and hardened OUTSIDE this repo's corpus, so a model
-that merely memorized corpus text (e.g. via CPT) inflates corpus-derived quizzes but NOT
-this one. Two modes:
+ceiling). Its questions are grounded in corpus documents but authored and hardened OUTSIDE
+this training pipeline (verbatim-quote gate + dropped if two 27Bs answer closed-book), so
+it measures whether corpus knowledge actually entered the WEIGHTS — not general capability,
+and nothing the training code can game. Strict no-leak protocol: exclude each item's
+`source` doc ids from training. Two modes:
 
   # Loop metric (ceiling phase): evaluate a checkpoint directly on GPU — fast, no export.
   # Grading functions are IMPORTED from the bench so scoring matches the official harness.

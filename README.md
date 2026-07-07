@@ -109,13 +109,14 @@ load-bearing part, and it is deliberately **multi-metric** — no single number 
 - **`domain_quiz` (the ceiling).** A **closed-book** multiple-choice exam over general
   building/HVAC/energy knowledge (easy + hard tiers). Measures what's in the *weights*, with no
   retrieval — exactly what `building_judge` cannot see. (`eval_domain.py`.)
-- **`nekaise_bench` (the independent check).** A closed-book benchmark
-  ([nekaise-bench](https://github.com/OpenNekaise/nekaise-bench)) authored and hardened *outside*
-  this repo's corpus — so corpus memorization (e.g. from CPT) that inflates corpus-derived quizzes
-  does not fool it. `tools/eval_bench.py` scores checkpoints directly (deterministic `dev` split
-  for the loop, frozen `test` for milestones) or Ollama exports via the official harness. In the
-  current **ceiling phase** (CPT + distill over the corpus) this is the loop's metric; for the
-  building pack it stays advisory.
+- **`nekaise_bench` (the independent corpus-mastery check).** A closed-book benchmark
+  ([nekaise-bench](https://github.com/OpenNekaise/nekaise-bench)) *independently authored* from
+  corpus documents and hardened so frontier-local 27Bs fail it closed-book — it measures whether
+  corpus knowledge actually entered the **weights**, and nothing in this repo's training code can
+  game it. `tools/eval_bench.py` scores checkpoints directly (deterministic `dev` split for the
+  loop, frozen `test` for milestones) or Ollama exports via the official harness. In the current
+  **ceiling phase** (CPT + distill over the corpus) this is the loop's metric; for the building
+  pack it stays advisory.
 
 Two hard-won lessons, now part of the method: **perplexity is not knowledge** (continued
 pretraining can cut held-out perplexity sharply while adding ~zero closed-book accuracy — it buys

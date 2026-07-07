@@ -106,11 +106,12 @@ loop's decisions — don't block on it.
 - **Current phase: the CEILING.** Bake general building-energy knowledge into the weights:
   CPT over `nekaise_data/hvac_corpus/` (see `build_cpt_data.py` / `augment_corpus.py`), then
   distill/SFT to restore instruction-following. The phase metric is **`nekaise_bench` on the
-  `dev` split**: `python tools/eval_bench.py --checkpoint <outputs/stage> --split dev` —
-  independent of the corpus, so memorization can't inflate it. The `test` split is FROZEN:
+  `dev` split**: `python tools/eval_bench.py --checkpoint <outputs/stage> --split dev` — an
+  independently-authored corpus-mastery exam (grounded in corpus docs, hardened so 27Bs fail
+  closed-book): a gain means corpus knowledge entered the weights. The `test` split is FROZEN:
   run it only at milestones, never for keep/revert. Always compare against the base model's
-  dev score (same command with the base id) — known failure mode: CPT *degrades* independent
-  knowledge while corpus-derived quizzes improve.
+  dev score (same command with the base id), and report paired flips (+n/−n), not just the
+  aggregate — the deltas are small relative to eval noise.
 - Deferred: the building **gap** (`experiments/granite-4.1-3b-building/`, pack `building`) —
   building-specific grounding over `nekaise_data/<building>/`. Its holdout guard stays armed
   when you touch it.

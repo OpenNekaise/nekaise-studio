@@ -3,8 +3,9 @@
 
 Loads a sub-4B base (or a corpus-CPT checkpoint via NEKAISE_INIT_FROM — repo-relative or
 absolute path), LoRA-SFTs it on the corpus-QA distillation set (data/LATEST from
-build_data.py), saves outputs/<stage>/, then scores it on the PHASE METRIC — nekaise-bench
-dev split via tools/eval_bench.py — and prints the METRIC line the loop reads.
+build_data.py), saves outputs/<stage>/ with provenance, then scores the PHASE METRIC —
+nekaise-bench dev split — and prints the METRIC line the loop reads. Results land in the
+experiment ledger (results.jsonl).
 
     NEKAISE_BASE_MODEL=unsloth/Qwen3.5-0.8B \
     NEKAISE_INIT_FROM=experiments/granite-4.1-3b-building/outputs/cpt_qwen08_chunk \
@@ -14,12 +15,10 @@ The frozen bench `test` split is NEVER run here — milestones only (see run-exp
 """
 from __future__ import annotations
 
-import json
 import os
 import re
 import subprocess
 import sys
-import time
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[2]
@@ -27,6 +26,8 @@ EXP_DIR = Path(__file__).resolve().parent
 OUT_DIR = EXP_DIR / "outputs"
 sys.path.insert(0, str(REPO / "lib"))
 import datakit  # noqa: E402
+import trainkit  # noqa: E402
+from results import log_result  # noqa: E402
 
 try:
     from runlog import RunLogger, trainer_callback  # noqa: E402
@@ -50,43 +51,8 @@ TRAIN = dict(per_device_train_batch_size=4, gradient_accumulation_steps=4,
 # ===============================================================================
 
 
-def load_rows() -> list[dict]:
-    d = datakit.latest_dir(EXP_DIR)
-    if not d:
-        raise FileNotFoundError("no dataset — run build_data.py first")
-    print(f"[train] dataset {datakit.provenance(d)['dataset_id']} ({len(datakit.read_dir(d))} rows)")
-    return datakit.read_dir(d)
-
-
-def load_model():
-    from unsloth import FastLanguageModel
-    src = str(REPO / INIT_FROM) if INIT_FROM and not Path(INIT_FROM).is_absolute() else (INIT_FROM or BASE_MODEL)
-    model, tok = FastLanguageModel.from_pretrained(
-        model_name=src, max_seq_length=MAX_SEQ_LEN, load_in_4bit=False, dtype=None)
-    if hasattr(tok, "tokenizer"):  # multimodal processor (e.g. Qwen3.5/VL) -> text tokenizer
-        tok = tok.tokenizer
-    # A checkpoint that already carries a LoRA adapter continues training it; a merged/base
-    # model gets a fresh adapter (second get_peft_model on a peft model would error).
-    if not (Path(src) / "adapter_config.json").exists():
-        model = FastLanguageModel.get_peft_model(
-            model, use_gradient_checkpointing="unsloth", random_state=TRAIN["seed"], **LORA)
-    return model, tok, src
-
-
-def time_budget_callback():
-    from transformers import TrainerCallback
-
-    class _TB(TrainerCallback):
-        deadline = time.time() + TIME_BUDGET_MIN * 60
-        def on_step_end(self, args, state, control, **kw):
-            if time.time() > self.deadline:
-                control.should_training_stop = True
-            return control
-    return _TB()
-
-
 def bench_dev(stage_dir: Path) -> float | None:
-    """The phase metric: nekaise-bench dev, via the shared tool (fresh subprocess = clean VRAM)."""
+    """The phase metric via the shared tool (fresh subprocess = clean VRAM)."""
     proc = subprocess.run(
         [sys.executable, str(REPO / "tools" / "eval_bench.py"),
          "--checkpoint", str(stage_dir), "--split", "dev"],
@@ -97,40 +63,40 @@ def bench_dev(stage_dir: Path) -> float | None:
 
 
 def main() -> None:
-    rows = load_rows()
-    model, tok, src = load_model()
-    print(f"[train] SFT-distill {src} -> outputs/{STAGE} ({len(rows)} rows)")
-    logger = RunLogger("ceiling-sub4b", model=src, pack="nekaise-bench",
+    d = datakit.latest_dir(EXP_DIR)
+    if not d:
+        raise FileNotFoundError("no dataset — run build_data.py first")
+    rows = datakit.read_dir(d)
+    dataset_id = datakit.provenance(d)["dataset_id"]
+    src = str(REPO / INIT_FROM) if INIT_FROM and not Path(INIT_FROM).is_absolute() \
+        else (INIT_FROM or BASE_MODEL)
+    print(f"[train] SFT-distill {src} on {dataset_id} ({len(rows)} rows) -> outputs/{STAGE}")
+
+    model, tok = trainkit.load_model(src, max_seq_len=MAX_SEQ_LEN, lora=LORA,
+                                     seed=TRAIN["seed"])
+    logger = RunLogger("ceiling-sub4b", model=src, pack="bench",
                        metric="nekaise_bench_dev") if RunLogger else None
-    callbacks = [time_budget_callback()] + ([trainer_callback(logger)] if logger else [])
+    callbacks = [trainkit.time_budget_callback(TIME_BUDGET_MIN)] \
+        + ([trainer_callback(logger)] if logger else [])
+    trainkit.run_sft(model, tok, rows, max_seq_len=MAX_SEQ_LEN, train_args=TRAIN,
+                     out_dir=OUT_DIR, callbacks=callbacks)
 
-    from datasets import Dataset
-    from trl import SFTTrainer, SFTConfig
-    ds = Dataset.from_list([{"text": tok.apply_chat_template(r["messages"], tokenize=False)}
-                            for r in rows])
-    SFTTrainer(model=model, processing_class=tok, train_dataset=ds, callbacks=callbacks,
-               args=SFTConfig(dataset_text_field="text", max_length=MAX_SEQ_LEN,
-                              output_dir=str(OUT_DIR / "_trainer"), report_to="none", **TRAIN),
-               ).train()
-
-    dest = OUT_DIR / STAGE
-    dest.mkdir(parents=True, exist_ok=True)
-    model.save_pretrained(str(dest))
-    tok.save_pretrained(str(dest))
+    dest = trainkit.save_checkpoint(model, tok, OUT_DIR / STAGE, provenance={
+        "stage": STAGE, "method": "sft-distill", "base_model": BASE_MODEL,
+        "init_from": INIT_FROM, "dataset_id": dataset_id, "n_rows": len(rows),
+        "lora": LORA, "train": TRAIN})
     print(f"[train] saved -> {dest}")
 
-    # free training VRAM before the eval subprocess spins up its own copy
-    del model
+    del model  # free training VRAM before the eval subprocess spins up its own copy
     import torch
     torch.cuda.empty_cache()
 
     value = bench_dev(dest) if EVAL_AFTER else None
     if value is not None:
-        best_path = OUT_DIR / "best.json"
-        best = json.loads(best_path.read_text()) if best_path.exists() else None
-        if best is None or value > best.get("value", float("-inf")):
-            best_path.write_text(json.dumps({"stage": STAGE, "metric": "nekaise_bench_dev",
-                                             "value": value, "path": f"outputs/{STAGE}"}, indent=2))
+        trainkit.update_best(OUT_DIR, STAGE, "nekaise_bench_dev", value)
+        log_result(EXP_DIR, kind="train", stage=STAGE, method="sft-distill",
+                   base_model=BASE_MODEL, init_from=INIT_FROM, dataset_id=dataset_id,
+                   metric="nekaise_bench_dev", value=value)
         print(f"METRIC nekaise_bench_dev={value:.4f} stage={STAGE} init={src}")
     else:
         print(f"METRIC pending — run: python tools/eval_bench.py "

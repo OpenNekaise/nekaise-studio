@@ -74,6 +74,8 @@ def eval_checkpoint(args) -> dict:
     model, tok = FastLanguageModel.from_pretrained(
         model_name=args.checkpoint, max_seq_length=4096,
         load_in_4bit=args.load_4bit, dtype=None)
+    if hasattr(tok, "tokenizer"):  # multimodal processor (e.g. Qwen3.5/VL) -> use the text tokenizer
+        tok = tok.tokenizer
     FastLanguageModel.for_inference(model)
 
     records, t0 = [], time.time()

@@ -2,9 +2,10 @@
 
 The SAME input is given to the teacher and to the small model (fairness), and the ontology is
 just ONE source among tag/point lists, alarm exports, notes and trends — not the center. PDFs
-and images need OCR/captioning (not yet wired) so they are reported as `skipped`, never silently
-dropped. The text is capped so it fits the small model's context window; when a building's data
-is larger than that window, the principled path is *retrieval* (select the relevant slice per
+contribute their text layer (via pymupdf, when installed); scanned/image-only PDFs and images
+need OCR/captioning (not yet wired) so they are reported as `skipped`, never silently dropped.
+The text is capped so it fits the small model's context window; when a building's data is
+larger than that window, the principled path is *retrieval* (select the relevant slice per
 question), not a bigger dump.
 """
 from __future__ import annotations
@@ -16,8 +17,8 @@ from pathlib import Path
 MAX_CHARS = 48000
 _TEXT = (".ttl", ".txt", ".md", ".csv")
 # densest building facts first, so a cap drops the least-dense data last
-_ORDER = {".ttl": 0, ".txt": 1, ".csv": 2, ".md": 3, ".xlsx": 4}
-_SKIP = (".pdf", ".png", ".jpg", ".jpeg", ".pptx", ".docx")
+_ORDER = {".ttl": 0, ".txt": 1, ".csv": 2, ".pdf": 3, ".md": 4, ".xlsx": 5}
+_SKIP = (".png", ".jpg", ".jpeg", ".pptx", ".docx")
 
 
 def _xlsx_text(p: Path) -> str:
@@ -29,6 +30,15 @@ def _xlsx_text(p: Path) -> str:
         for row in ws.iter_rows(values_only=True):
             out.append("\t".join("" if c is None else str(c) for c in row))
     return "\n".join(out)
+
+
+def _pdf_text(p: Path) -> str:
+    """Text layer of a PDF (control cards, manuals). Empty for scanned/image-only PDFs —
+    the caller then reports the file as skipped, same as before PDFs were wired."""
+    import fitz  # pymupdf
+    with fitz.open(p) as doc:
+        pages = [page.get_text().strip() for page in doc]
+    return "\n\n".join(t for t in pages if t)
 
 
 def building_corpus(bdir, max_chars: int = MAX_CHARS) -> tuple[str, list[str]]:
@@ -44,6 +54,11 @@ def building_corpus(bdir, max_chars: int = MAX_CHARS) -> tuple[str, list[str]]:
                 body = p.read_text(errors="replace")
             elif s == ".xlsx":
                 body = _xlsx_text(p)
+            elif s == ".pdf":
+                body = _pdf_text(p)  # ImportError/no text layer -> except/skip below
+                if not body.strip():
+                    skipped.append(p.name)
+                    continue
             elif s in _SKIP:
                 skipped.append(p.name)
                 continue
@@ -51,6 +66,7 @@ def building_corpus(bdir, max_chars: int = MAX_CHARS) -> tuple[str, list[str]]:
                 continue
             parts.append(f"# FILE: {p.relative_to(bdir)}\n{body}")
         except Exception:
+            skipped.append(p.name)
             continue
     return ("\n\n".join(parts))[:max_chars], skipped
 

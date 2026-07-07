@@ -1,0 +1,7 @@
+# Tooling config only — the repo is driven through skills, not installed as a package.
+# (lib/ is imported via sys.path by the recipe scripts; tests get it via pythonpath below.)
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["lib", "tests"]
+addopts = "-q"

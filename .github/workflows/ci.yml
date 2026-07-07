@@ -1,0 +1,30 @@
+# CPU-only guardrail CI: proves the FIXED parts (referee, plumbing, privacy) still hold.
+# Training itself needs a GPU and is driven by the agent locally — it is not CI's job.
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      # Light deps only — no unsloth/torch in CI.
+      - name: Install test deps
+        run: pip install pytest openpyxl pymupdf rdflib
+
+      - name: Everything compiles
+        run: python -m compileall -q lib packs tools experiments serve tests
+
+      - name: Tests (referee contract, plumbing, holdout guard, hygiene)
+        run: pytest
+
+      - name: Privacy scan (all tracked files)
+        run: python tools/privacy_check.py

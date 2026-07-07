@@ -45,18 +45,23 @@ def generate(
     temperature: float = 0.0,
     max_tokens: int = 1024,
     timeout: float = 600.0,
+    think: bool | None = None,
 ) -> str:
-    """Generate a completion. Provide (system, user) or a full `messages` list."""
+    """Generate a completion. Provide (system, user) or a full `messages` list.
+
+    `think` (ollama only): thinking models (e.g. qwen3.6) put ALL tokens in
+    message.thinking and return empty content unless think=False. None omits the
+    flag (models that don't support it reject the request with an HTTP error).
+    """
     provider, _, model = backend.partition(":")
     msgs = _messages(system, user, messages)
 
     if provider == "ollama":
-        out = _post(
-            f"{OLLAMA_BASE_URL}/api/chat",
-            {"model": model, "messages": msgs, "stream": False,
-             "options": {"temperature": temperature, "num_predict": max_tokens}},
-            {}, timeout,
-        )
+        body: dict = {"model": model, "messages": msgs, "stream": False,
+                      "options": {"temperature": temperature, "num_predict": max_tokens}}
+        if think is not None:
+            body["think"] = think
+        out = _post(f"{OLLAMA_BASE_URL}/api/chat", body, {}, timeout)
         return out["message"]["content"]
 
     if provider == "anthropic":

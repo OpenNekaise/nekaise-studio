@@ -49,6 +49,9 @@ From the text below, write {k} standalone factual question-answer pairs about bu
 energy. Rules:
 - each question must stand alone, answerable by a knowledgeable engineer without seeing the
   text (never write "according to the text/study/table")
+- ask about TECHNICAL building-energy facts: systems, equipment, controls, physics,
+  protocols, standards, typical magnitudes. NEVER about authors, affiliations, publication
+  dates, report titles, or any document metadata
 - the answer is SHORT — a number (with unit), a term, or a name — and must appear in the text
 - cover different facts; no two questions about the same fact
 Output ONLY a JSON array: [{{"q": "...", "a": "..."}}, ...]
@@ -113,10 +116,12 @@ def corpus_chunks() -> list[dict]:
 
 
 def author(chunk: dict) -> list[dict]:
+    user = TEACHER_PROMPT.format(k=QA_PER_CHUNK, chunk=chunk["text"])
     try:
-        rep = llm.generate(TEACHER, system=None,
-                           user=TEACHER_PROMPT.format(k=QA_PER_CHUNK, chunk=chunk["text"]),
-                           temperature=0.3, max_tokens=1200)
+        try:  # thinking teachers (qwen3.6) need think=False or content comes back empty
+            rep = llm.generate(TEACHER, user=user, temperature=0.3, max_tokens=1200, think=False)
+        except Exception:
+            rep = llm.generate(TEACHER, user=user, temperature=0.3, max_tokens=1200)
         m = re.search(r"\[.*\]", rep, re.S)
         pairs = json.loads(m.group(0)) if m else []
     except Exception as e:

@@ -42,6 +42,8 @@ skills/local/
 # Secrets
 .env
 *.key
+# Local privacy denylist (real partner/building terms the privacy check screens for)
+.privacy-denylist
 
 # OS / editor
 .DS_Store

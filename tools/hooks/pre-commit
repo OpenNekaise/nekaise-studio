@@ -1,0 +1,4 @@
+#!/bin/sh
+# Nekaise Studio pre-commit: block proprietary/personal strings from entering history.
+# Installed via:  git config core.hooksPath tools/hooks   (tools/doctor.py checks this)
+exec python "$(git rev-parse --show-toplevel)/tools/privacy_check.py" --staged

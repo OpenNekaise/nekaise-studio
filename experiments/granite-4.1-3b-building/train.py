@@ -76,6 +76,7 @@ SYSTEM_PROMPT = (
 import os as _os  # noqa: E402
 BASE_MODEL = _os.environ.get("NEKAISE_BASE_MODEL", BASE_MODEL)  # CPT other bases (e.g. unsloth/Qwen3.5-2B)
 METHOD = _os.environ.get("NEKAISE_METHOD", METHOD)
+DATASET = _os.environ.get("NEKAISE_DATASET", DATASET)
 STAGE = _os.environ.get("NEKAISE_STAGE", STAGE)
 if "NEKAISE_INIT_FROM" in _os.environ:
     _v = _os.environ["NEKAISE_INIT_FROM"]
@@ -99,6 +100,10 @@ CPT["epochs"] = int(_os.environ.get("NEKAISE_CPT_EPOCHS", CPT["epochs"]))
 CPT["lr_full"] = float(_os.environ.get("NEKAISE_CPT_LR", CPT["lr_full"]))
 CPT["lr"] = float(_os.environ.get("NEKAISE_CPT_LR_LORA", CPT["lr"]))
 CPT["full_finetuning"] = _os.environ.get("NEKAISE_CPT_FULL", "1") == "1"  # 0 = LoRA (gentler, keeps base)
+CPT["load_in_4bit"] = _os.environ.get("NEKAISE_CPT_4BIT", "0") == "1"  # QLoRA: 4-bit base for big models
+CPT["per_device_train_batch_size"] = int(_os.environ.get("NEKAISE_CPT_BS", CPT["per_device_train_batch_size"]))
+CPT["seq_len"] = int(_os.environ.get("NEKAISE_CPT_SEQ", CPT["seq_len"]))          # lower seq for big-model VRAM
+CPT["load_seq_len"] = int(_os.environ.get("NEKAISE_CPT_SEQ", CPT["load_seq_len"]))
 # ===============================================================================
 
 

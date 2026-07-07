@@ -7,11 +7,12 @@ journal). Runtime-only, git-ignored: `data/<id>/` (cached dataset artifacts + pr
 `outputs/<stage>/` (checkpoints; `best.json` tracks the winner for `serve/`), and `runs/`
 (dashboard telemetry). See [`../skills/run-experiment.md`](../skills/run-experiment.md).
 
-| Experiment | Base model | Pack | Status |
+| Experiment | Base model | Metric | Status |
 |------------|-----------|------|--------|
-| `granite-4.1-3b-building` | `unsloth/granite-4.1-3b` | `building` | **flagship** — needs `nekaise_data/` + `NEKAISE_HOLDOUT` |
-| `granite-4.1-3b-gsm8k` | `unsloth/granite-4.1-3b` | `gsm8k` | bootstrap — works on a bare clone |
-| _granite-4.1-8b-*_ / _gemma-4-*_ / _qwen-3.5-*_ / _sub-1B granite_ | — | — | planned |
+| `ceiling-sub4b` | sub-4B bases (granite-4.1-3b, Qwen3.5-0.8B/2B via `NEKAISE_BASE_MODEL`) | `nekaise_bench` dev (independent) | **current phase** — CPT + corpus-QA distill |
+| `granite-4.1-3b-building` | `unsloth/granite-4.1-3b` | `building` pack + `building_judge` | deferred — needs `nekaise_data/` + `NEKAISE_HOLDOUT` |
+| `granite-4.1-3b-gsm8k` | `unsloth/granite-4.1-3b` | `gsm8k` pack | bootstrap — works on a bare clone |
+| _granite-4.1-8b-*_ / _gemma-4-*_ / _sub-1B granite_ | — | — | planned |
 
 The building experiment carries extra (still recipe-level, editable) files:
 

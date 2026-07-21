@@ -5,6 +5,8 @@
 unsloth==2026.6.9       # fast LoRA / full fine-tuning for <8B models on a single GPU
 trl==0.24.0             # SFT / DPO / GRPO trainers
 transformers==5.5.0
+# vllm==<PIN ON INSTALL>  # rollout/eval engine (SPEC.md §4): NOT yet installed — installing
+#                         # + pinning it is a HUMAN action; bump the whole quartet together.
 datasets>=4.3           # task-pack datasets (e.g. openai/gsm8k)
 accelerate>=1.13
 # torch: installed by unsloth for your CUDA; don't pin here.

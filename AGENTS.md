@@ -41,6 +41,11 @@ reason we are a bootloader rather than a fixed pipeline:
 
 ## Hard rules
 
+- **BOUNDARY.md Article 0:** studio contains gym, never the reverse — "extract the gym"
+  means carving a component out of studio, not renaming studio into gym. A repo's name
+  must equal its contents; gym's contents never include training code. When writing
+  instructions about container relationships, state both directions explicitly
+  (direction-ambiguous verbs caused a repo-level incident; see REFACTOR-NOTES D10).
 - **SPEC.md is the constitution** — algorithm card, ban list, null-hypothesis meta-rule,
   environment lock. Every keep/revert is bound by it; changing SPEC (or any `frozen:`
   config section) is human review, never a loop move.
@@ -88,7 +93,8 @@ stays on your machine:
 ## Map
 
 - `SPEC.md` — the constitution (bootloader): algorithm card, ban list, null-hypothesis
-  rule, environment lock, JustRL→TRL mapping. `REFACTOR.md` is the executed charter;
+  rule, environment lock, JustRL→TRL mapping. `BOUNDARY.md` — its sibling: gym/studio
+  definitions + containment direction (Article 0). `REFACTOR.md` is the executed charter;
   deviations in `docs/REFACTOR-NOTES.md`.
 - `gym/` — tasks (`gym/tasks/`, triple-checked intake: prompt + reference solution +
   verifier, gold must pass), verifiers (`gym/verifiers/`, pure `verify(prompt, response,

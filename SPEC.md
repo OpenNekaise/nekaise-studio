@@ -7,7 +7,9 @@
 
 Development and experiments are executed by an agent; an agent's behavior is determined by
 readable files. Consensus that is not written down will be re-invented or violated by the
-next agent instance. Hence this constitution.
+next agent instance. Hence this constitution. Its sibling **BOUNDARY.md** defines what
+gym and studio each are and fixes the containment direction (Article 0: studio contains
+gym, never the reverse) — equally binding.
 
 ## 1. Algorithm card
 
@@ -108,6 +110,8 @@ Complexity saved on algorithms transfers to three places where it compounds:
 - `gym/runner/` is the **runner** (batch generation + evaluation orchestration).
 - The word **harness** is reserved for the agent runtime (opennekaise / nekaise-edge).
   Do not use it for anything inside `gym/` or `studio/`.
+- Container identities and the gym/studio boundary live in **BOUNDARY.md** (Article 0:
+  containment direction; the examination-hall / workshop definitions).
 
 ---
 

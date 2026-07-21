@@ -1,11 +1,11 @@
-# Nekaise Gym
+# Nekaise Studio
 
 [![ci](https://github.com/OpenNekaise/nekaise-studio/actions/workflows/ci.yml/badge.svg)](https://github.com/OpenNekaise/nekaise-studio/actions/workflows/ci.yml)
 
 > An **agentic LLM-training platform: an LLM trains LLMs.** You don't run scripts and you
 > don't write the training logic. An agent (Claude Code / Codex) runs the whole training
 > lifecycle — chooses the method, builds the data, trains, evaluates, keeps or reverts, and
-> extends its own skills. **CPT, distillation SFT, GRPO/DPO are tools in its box, not the
+> extends its own skills. **CPT, distillation SFT, and GRPO-family RL (RLVR/OPD) are tools in its box, not the
 > identity of the project.**
 
 That is the core thesis, and everything else serves it. The training *method* is a per-phase
@@ -151,16 +151,22 @@ domain-smarter** — you need the ceiling probe alongside the gap probe.
 
 ## Methods
 
-The recipe is a *seed*, not a fixed pipeline — the agent improves it. What's validated so far:
+The method list IS the **algorithm card in [SPEC.md](SPEC.md) §1** — five frozen stages
+(CPT → SFT → RLVR → OPD → agentic), one movable knob each, all on Unsloth/TRL native
+trainers; the ban list (SPEC §2) is equally binding. What's validated so far:
 
 - **CPT** — continued (next-token) pretraining on the corpus to raise the domain ceiling. LoRA or
   **full-parameter** (a 3B fits ~26 GB on a 48 GB card with 8-bit Adam + grad checkpointing). Must
   be followed by SFT to restore instruction-following. *Lesson: it lifts fluency, not closed-book
   knowledge — the base is already domain-strong.*
 - **SFT** — supervised fine-tune on grounded, judge-gated teacher demos.
-- **GRPO** — anchor-recall reinforcement learning: verifiable reward = fraction of required anchors
-  the answer hits. No reward model, no reward hacking on the fact itself.
-- **DPO** — preference optimization (available).
+- **GRPO (RLVR)** — anchor-recall reinforcement learning: verifiable reward = fraction of required
+  anchors the answer hits. No reward model, no reward hacking on the fact itself.
+
+**Legacy methods** — pre-refactor experiment recipes carry `METHOD="dpo"`; that code is
+kept for reproducibility of archived results (REFACTOR-NOTES D8) and is banned for new
+work (SPEC §2). Archived code is not an algorithm in service — same status as the HF
+`generate()` paths in `attic/`.
 
 **The validated chain so far:** grounded gated SFT → anchor-recall GRPO closed **67% of the
 student→teacher gap** on a held-out building (`building_judge` 0.36 → 0.54). Whether ceiling-raising

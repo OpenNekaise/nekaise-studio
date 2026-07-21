@@ -3,10 +3,12 @@
 > Durable procedure lives in `SPEC.md` (the constitution), `skills/`, and `AGENTS.md`;
 > this page is the part that CHANGES. Last update: 2026-07-21.
 
-## Phase: POST-REFACTOR SHAKEDOWN (nekaise-gym)
+## Phase: POST-REFACTOR SHAKEDOWN
 
-This repo is the REFACTOR.md rebuild of nekaise-studio (R1–R12; deviations in
-docs/REFACTOR-NOTES.md). The algorithm card, ban list, null-hypothesis meta-rule, and
+The REFACTOR.md rebuild (R1–R12; deviations in docs/REFACTOR-NOTES.md) landed IN THIS
+REPO — **nekaise-studio is the one canonical repository**. The transient nekaise-gym
+repo is archived; containment direction is now constitutional (BOUNDARY.md Article 0:
+studio contains gym, never the reverse). The algorithm card, ban list, null-hypothesis meta-rule, and
 environment lock moved to **SPEC.md** — STATUS no longer carries them. Architecture:
 
 - **gym/** — tasks + verifiers + runner: the single definition of correct. One-way

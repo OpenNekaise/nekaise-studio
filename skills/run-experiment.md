@@ -13,7 +13,7 @@ experiment's two recipe files; the human only edits *this skill*.
 
 An **experiment** lives in `experiments/<name>/` and has **two editable recipe files**:
 
-- `train.py` — **HOW** to train. Picks a `METHOD` (sft / dpo / grpo), a dataset, and an
+- `train.py` — **HOW** to train. Picks a `METHOD` (sft / grpo; `dpo` survives only as a legacy value in archived recipes — ban list, SPEC §2), a dataset, and an
   init checkpoint; trains, evaluates on the pack, saves to `outputs/<stage>/`, prints a
   `METRIC` line. Tune hyperparameters, LoRA, optimizer, prompt/format, method.
 - `build_data.py` — **WHAT** to train on. The teacher authors the realistic questions an engineer
@@ -62,8 +62,9 @@ Repeat, one change at a time:
   `n_samples>1`; keep its correct samples; then SFT (`DATASET="auto"`).
 - **Distillation** — in `build_data.py`, set `source` to a teacher (`anthropic:claude-…` or
   `ollama:qwen3.6:27b`); keep its correct chain-of-thought; then SFT.
-- **GRPO / DPO** — `METHOD="grpo"` uses the pack's graded `reward()` as a verifiable reward;
-  `METHOD="dpo"` trains on preference pairs.
+- **GRPO** — `METHOD="grpo"` uses the pack's graded `reward()` (a gym verifier) as a
+  verifiable reward. (`METHOD="dpo"` exists in archived pre-refactor recipes only —
+  ban-listed for new work, SPEC §2; kept solely to reproduce old results.)
 
 **Pipelines hand off through checkpoints.** Each run saves to `outputs/<STAGE>/` and updates
 `outputs/best.json`. To polish an SFT model with RL: run SFT (`STAGE="sft"`), then run again
@@ -73,7 +74,7 @@ with `METHOD="grpo"`, `INIT_FROM="outputs/sft"`, `STAGE="grpo"`. The reference r
 
 ## What to vary (high-leverage first)
 
-Subject to the current **algorithm card** in STATUS.md — vary only the card's movable knobs
+Subject to the **algorithm card** in SPEC.md §1 — vary only the card's movable knobs
 for the active stage; everything below is the generic menu.
 
 - **Data** (`build_data.py`) — teacher vs student source, #samples, prompt/CoT style, size,

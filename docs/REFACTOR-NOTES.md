@@ -61,6 +61,22 @@ it and CI can enforce it, but a determined process could still write a file to
 `skills/local/` without calling the gate. Full enforcement would need a commit hook on
 `skills/local/` — noted as follow-up; the pre-commit hook currently guards privacy only.
 
+## D10. Containment direction executed backwards at the REPOSITORY level (corrected)
+
+The refactor was performed in a full working copy named `nekaise-gym` and pushed to
+OpenNekaise/nekaise-gym — "extract the gym" was misread as "the project becomes gym".
+The design is the opposite: studio is the project; gym is a component carved out of it
+(BOUNDARY.md Article 0). Correction (2026-07-21): nekaise-studio fast-forwarded to the
+three refactor commits and remains the ONLY canonical repository; the nekaise-gym
+GitHub repo is archived as a mislabeled working copy; a future standalone gym repo will
+contain only `gym/` + tests + README, without studio history. Package-level separation
+was correct throughout (isolation tests green) — the error lived at repo-identity level,
+where no test looks; countermeasures are BOUNDARY.md Article 0 and the
+instruction-writing norm (bidirectional containment statements). Secondary damage this
+also cleans up: studio's legacy docs briefly wore the gym label, which is how "DPO —
+available" appeared to sit inside gym (it never did; zero DPO in the gym package —
+tests/test_doc_drift.py now guards the docs side).
+
 ## D9. Findings forced by the new guardrails (not in REFACTOR.md)
 
 Two things the refactor's own done-when checks surfaced:

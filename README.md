@@ -52,6 +52,6 @@ python -m studio.stages.cpt --config configs/cpt.yaml --dry-run   # validate the
 | [skills/](skills/) | the agent's operating manual |
 | [docs/RESULTS.md](docs/RESULTS.md) | published, reproducible results (public assets only) |
 
-Part of [OpenNekaise](https://github.com/OpenNekaise). MIT.
+Part of [OpenNekaise](https://opennekaise.com/). MIT.
 
 *AI agents: start at [AGENTS.md](AGENTS.md), not here.*

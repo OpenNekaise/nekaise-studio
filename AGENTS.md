@@ -41,10 +41,15 @@ reason we are a bootloader rather than a fixed pipeline:
 
 ## Hard rules
 
-- Edit **only** the experiment's recipe files: `train.py` and/or `build_data.py`. Data is also
-  produced by the `prepare-trainset` skill (which writes `data/` via `datakit`).
-- **Never** edit `packs/*/{scorer,prepare}.py`, `packs/building/eval_open.jsonl`, or `lib/*` —
-  that's the fixed referee/plumbing. Using the scorer to *filter training data* is allowed (eval
+- **SPEC.md is the constitution** — algorithm card, ban list, null-hypothesis meta-rule,
+  environment lock. Every keep/revert is bound by it; changing SPEC (or any `frozen:`
+  config section) is human review, never a loop move.
+- Edit **only** the experiment's recipe files (`train.py` / `build_data.py`) or a stage
+  config's **`data:` section** (`configs/<stage>.yaml`). Data is also produced by the
+  `prepare-trainset` skill (which writes `data/` via `datakit`).
+- **Never** edit `gym/` (tasks + verifiers + runner — the single definition of correct,
+  one-way dependency studio → gym), `packs/*/scorer.py` (thin shims over gym),
+  `packs/building/eval_open.jsonl`, or `lib/*` — that's the fixed referee/plumbing. Using the scorer to *filter training data* is allowed (eval
   still runs on the held-out test split with the same scorer); never change how the metric is
   computed. The judge's `building_judge` is advisory — never the keep/revert decision.
 - **Privacy (proprietary partner data):** never write a real building/partner/address name into
@@ -81,6 +86,20 @@ stays on your machine:
   crystallize it locally, then propose it.
 
 ## Map
+
+- `SPEC.md` — the constitution (bootloader): algorithm card, ban list, null-hypothesis
+  rule, environment lock, JustRL→TRL mapping. `REFACTOR.md` is the executed charter;
+  deviations in `docs/REFACTOR-NOTES.md`.
+- `gym/` — tasks (`gym/tasks/`, triple-checked intake: prompt + reference solution +
+  verifier, gold must pass), verifiers (`gym/verifiers/`, pure `verify(prompt, response,
+  meta) -> float`), runner (`gym/runner/`, vLLM offline + OpenAI-compatible server — the
+  word "harness" is reserved for the agent runtime). `gym/tools/`: calibrate (difficulty
+  bands), monitors (anchor-density hacking watch).
+- `studio/` — stages (`python -m studio.stages.<stage> --config configs/<stage>.yaml`;
+  frozen sections asserted) + tools (explog schema'd LOG, variance_check noise band,
+  crystallize_gate ≥2-experiment admission).
+- `configs/` — one frozen config per stage; the agent edits `data:` sections only.
+- `attic/` — pre-refactor code kept unreferenced (old HF-generate eval paths).
 
 - `skills/` — core source-of-truth skills (mirrored under `.claude/skills/`): `prepare-trainset`
   (data prep), `judge` (gate + eval), `run-experiment` (loop), `crystallize-skill` + `prune-skills`

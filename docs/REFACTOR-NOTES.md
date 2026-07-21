@@ -61,6 +61,21 @@ it and CI can enforce it, but a determined process could still write a file to
 `skills/local/` without calling the gate. Full enforcement would need a commit hook on
 `skills/local/` — noted as follow-up; the pre-commit hook currently guards privacy only.
 
+## D9. Findings forced by the new guardrails (not in REFACTOR.md)
+
+Two things the refactor's own done-when checks surfaced:
+
+1. **numeric_cloze regex bug (real referee defect).** The R1 intake smoke test ("gold
+   must pass its own verifier") failed on 13 committed probes: the number regex's
+   comma-group branch matched "120" inside "1200" even with no comma present, so any
+   4+-digit uncomma'd gold was unwinnable for EVERY model. Fixed (comma branch now
+   requires a comma). Consequence: corpus_probes scores re-baseline slightly vs
+   pre-refactor numbers; pre-refactor comparisons remain valid among themselves.
+2. **The literal R4 grep has exactly one hit by design**: the vLLM offline engine's own
+   `self.llm.generate(...)` in gym/runner/generate.py — that IS the sanctioned rollout
+   engine, not an HF fallback. tests/test_no_hf_generate.py whitelists that single call
+   site and bans everything else.
+
 ## D8. Legacy experiments untouched
 
 `experiments/agentic-cpt/` and older recipe files still use the pre-refactor

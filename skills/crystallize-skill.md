@@ -9,6 +9,16 @@ Skipping this step is how the same wrong turns get re-discovered forever.
 
 ## When to crystallize
 
+**Gate first (code-enforced, R9):** a finding may crystallize only when it replicated
+across **≥2 independent experiments**. Tag the supporting `log.jsonl` records with
+`finding: <slug>` as you keep them, then run
+
+    python -m studio.tools.crystallize_gate --finding <slug>
+
+Exit 1 = do NOT write the skill — the finding goes back to `LOG.md` as a hypothesis until
+a second experiment replicates it. Put the same `finding: <slug>` line in the skill's
+frontmatter so `prune-skills` can re-audit it later.
+
 Save a finding as a skill only if ALL of these hold:
 
 - **Validated, not a hunch.** It was confirmed by the eval harness — a `METRIC` move, a

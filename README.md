@@ -1,4 +1,4 @@
-# Nekaise Studio
+# Nekaise Gym
 
 [![ci](https://github.com/OpenNekaise/nekaise-studio/actions/workflows/ci.yml/badge.svg)](https://github.com/OpenNekaise/nekaise-studio/actions/workflows/ci.yml)
 
@@ -111,7 +111,7 @@ load-bearing part, and it is deliberately **multi-metric** — no single number 
   building/HVAC/energy knowledge (easy + hard tiers). Measures what's in the *weights*, with no
   retrieval — exactly what `building_judge` cannot see. (`eval_domain.py`.)
 - **`corpus_probes` (the CPT loop signal).** Studio-owned numeric cloze probes minted once,
-  deterministically, from the cleaned corpus (`packs/corpus_probes/`): the model continues a
+  deterministically, from the cleaned corpus (`gym/tasks/corpus_probes/`): the model continues a
   sentence prefix and must produce the masked value. *Absorption* probes (from CPT train docs)
   are the pure-CPT phase's keep/revert metric — dense and sensitive where a hardened exam is
   not; *transfer* probes (held-out docs) are the generalization diagnostic. Frozen ~20% for

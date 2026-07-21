@@ -41,9 +41,18 @@ Repeat, one change at a time:
      dataset artifact), then run `train.py` with `DATASET="auto"`.
    - changed only `train.py`? → `python experiments/<name>/train.py`.
 5. **Read the metric** from the printed `METRIC ...` line.
-6. **Decide**: better than the best in `LOG.md` → keep + log (✅). Worse/equal → revert the
-   edit + log anyway (❌ — negative results stop you re-trying dead ends).
-7. **Repeat.**
+6. **Decide by the constitution (SPEC.md §3 + R5)** — not by eyeball:
+   `studio.tools.explog.decide(value, best, noise_band)` is the rule: **keep ⇔ effect
+   size > the measured noise band** (`experiments/<exp>/noise_band.json`, from
+   `python -m studio.tools.variance_check`). No band measured → the verdict is `pending`,
+   not keep: run variance_check first. An *algorithm* change additionally needs the
+   **null-hypothesis control** (SPEC §3): same baseline, equal extra compute, as its own
+   logged run — both rising equally = change ineffective, revert.
+7. **Log both formats** (R8): `studio.tools.explog.append(...)` writes the schema'd
+   `log.jsonl` row (hypothesis / variable / expectation / result / noise_band / verdict /
+   confidence) AND the human-readable `LOG.md` line. Tag records that support a reusable
+   finding with `finding: <slug>` — the crystallize gate counts those.
+8. **Repeat.**
 
 ## Methods you can reach (all use the same fixed referee)
 
@@ -76,19 +85,23 @@ for the active stage; everything below is the generic menu.
 ## Rules
 
 - **One change per run**, in one recipe file. You can't attribute a result to two changes.
-- **Algorithm changes must beat the null hypothesis.** Before any *algorithmic* change
-  (method, loss, schedule, RL trick — anything that is not a data recipe) is kept, it must
-  beat the control: **the unchanged baseline trained for the same additional compute**.
-  "Adding X gained 2 points" only counts if "no X, equal extra steps" does not also gain
-  2 points; log the control like any run. Data-recipe changes (`build_data.py`) compete at
-  equal wall-clock as usual, no control needed. The current **algorithm card in STATUS.md**
-  says which knobs are even eligible per stage; its frozen parts are human spec-review
-  territory, never loop moves, and its **ban list** is binding — a banned technique enters
-  only when the dashboard shows the specific pathology it treats.
-- **Never edit `packs/*/{scorer,prepare}.py` or `lib/*`.** That's the fixed referee/plumbing.
-  Using the scorer to *filter training data* in `build_data.py` is allowed and expected —
-  it's not cheating, because **evaluation always runs on the held-out test split with the
-  same fixed scorer.** What you must never do is change how the metric itself is computed.
+- **SPEC.md is the constitution — read it before proposing anything.** The **algorithm
+  card** (SPEC §1) says which knob is even eligible per stage (the `data:` section /
+  `build_data.py`; everything `frozen:` is human spec-review, never a loop move — the
+  stage entry point refuses to run on drift). The **ban list** (SPEC §2) is binding: a
+  banned technique enters only with dashboard-shown pathology AND human approval. The
+  **environment lock** (SPEC §4): you have no authority to change dependency versions.
+- **Algorithm changes must beat the null hypothesis (SPEC §3).** Before any *algorithmic*
+  change (method, loss, schedule, RL trick — anything that is not a data recipe) is kept,
+  it must beat the control: **the unchanged baseline trained for the same additional
+  compute**. "Adding X gained 2 points" only counts if "no X, equal extra steps" does not
+  also gain 2 points; log the control like any run (variable="null-control: ...").
+  Data-recipe changes compete at equal wall-clock as usual, no control needed.
+- **Never edit `gym/`** (tasks + verifiers + runner — the single definition of correct),
+  **`packs/*/scorer.py`** (thin shims over gym), **or `lib/*`.** Using a gym verifier to
+  *filter training data* is allowed and expected — it's not cheating, because
+  **evaluation always runs on the held-out split with the same verifier.** What you must
+  never do is change how the metric itself is computed.
 - **Honor the time box.** Comparisons are only fair at equal wall-clock.
 - **Log everything**, including failures. `LOG.md` is the memory across the whole search.
 - Built datasets are **cached + provenance-tracked** (`data/<id>/provenance.json`): same
@@ -115,9 +128,12 @@ loop's decisions — don't block on it.
 
 ## Current targets
 
-**Read `STATUS.md` at the repo root** — it names the current phase, the active experiment,
-the phase metric, and the next levers. This skill describes the loop; STATUS.md says where
-to point it today. Durable protocol that does not change with the phase:
+**Read `SPEC.md` (the constitution) and `STATUS.md` (the current phase) at the repo
+root.** SPEC binds every decision (card / ban list / null hypothesis / environment lock);
+STATUS names the active experiment, the phase metric, and the next levers. Stage entry
+points are `python -m studio.stages.<cpt|sft|rlvr|opd> --config configs/<stage>.yaml`
+(`--dry-run` validates the frozen section). Durable protocol that does not change with
+the phase:
 
 - For matrices of runs (N models × M treatments), drive them with
   `python tools/campaign.py <spec.json>` — declarative, resumable, results into the ledger —

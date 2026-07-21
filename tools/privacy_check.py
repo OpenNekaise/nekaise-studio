@@ -11,6 +11,8 @@ What it flags:
   - real building names                folder names under nekaise_data/ (derived at runtime,
                                        never hardcoded here) + terms from .privacy-denylist
                                        (one per line, git-ignored — partner names, addresses)
+                                       + NEKAISE_DENYLIST (absolute path to a wordlist kept
+                                       entirely OUTSIDE the repo — R10; set it in .env)
 
 A line ending in `privacy-ok` is exempt (for documented, deliberate exceptions).
 Lockfiles are skipped (base64 blobs false-positive on short terms). Exit 1 on any finding.
@@ -19,6 +21,7 @@ Install as a pre-commit hook (doctor checks this):  git config core.hooksPath to
 """
 from __future__ import annotations
 
+import os
 import re
 import subprocess
 import sys
@@ -43,9 +46,11 @@ def denied_terms() -> list[str]:
         terms += [d.name for d in data.iterdir()
                   if d.is_dir() and not d.name.startswith((".", "_"))
                   and d.name not in ("hvac_corpus", "documentations", "example-building")]
-    if DENYLIST_FILE.exists():
-        terms += [l.strip() for l in DENYLIST_FILE.read_text().splitlines()
-                  if l.strip() and not l.startswith("#")]
+    env_list = os.environ.get("NEKAISE_DENYLIST")
+    for f in (DENYLIST_FILE, Path(env_list) if env_list else None):
+        if f and f.exists():
+            terms += [l.strip() for l in f.read_text().splitlines()
+                      if l.strip() and not l.startswith("#")]
     return [t for t in terms if len(t) >= 4]  # very short terms false-positive too easily
 
 

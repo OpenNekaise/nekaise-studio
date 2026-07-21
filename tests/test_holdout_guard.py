@@ -21,7 +21,7 @@ def env(tmp_path, monkeypatch):
     exam.write_text("\n".join(json.dumps(r) for r in rows))
     monkeypatch.setenv("NEKAISE_DATA", str(data))
     monkeypatch.delenv("NEKAISE_ALLOW_HOLDOUT_MISMATCH", raising=False)
-    prepare = load_module(REPO / "packs" / "building" / "prepare.py")
+    prepare = load_module(REPO / "gym" / "tasks" / "building" / "prepare.py")
     return prepare, exam
 
 

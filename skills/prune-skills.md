@@ -7,7 +7,18 @@ Run this periodically, or whenever `skills/local/` has grown noticeably.
 
 ## What to do
 
-Read every skill in `skills/local/` (and re-read the core `skills/` for context). Look for:
+**Run the evidence audit first (code-enforced, R9):**
+
+    python -m studio.tools.crystallize_gate --audit
+
+It re-checks every local skill's `finding: <slug>` tag against the experiments' structured
+logs (`log.jsonl`). Skills whose evidence no longer clears the ≥2-experiment bar — or that
+carry no tag at all — are DEMOTED to hypothesis (marked `status: unverified`, moved back
+to LOG-level confidence), not silently kept. The null-hypothesis rule (SPEC.md §3) applies
+retroactively: a skill whose gain would not have beaten "same baseline, more compute" is
+overfit advice.
+
+Then read every skill in `skills/local/` (and re-read the core `skills/` for context). Look for:
 
 - **Duplicates** — two skills making the same point → merge into the sharper one.
 - **Contradictions** — a skill contradicted by a newer, better-validated finding → the newer

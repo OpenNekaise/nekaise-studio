@@ -1,0 +1,28 @@
+# CPT stage config. `frozen:` is SPEC (asserted against studio/stages/cpt.py — drift
+# refuses to run). The agent edits `data:` ONLY (domain/replay mix, annealing subset).
+# `run:` is operational (experiment name, budget, batch geometry) — not a search space.
+
+frozen:
+  optimizer: adamw_8bit
+  schedule: wsd
+  warmup_ratio: 0.03
+  decay_ratio: 0.10
+  max_seq_len: 2048
+  learning_rate: 1.0e-4
+  peft: {kind: lora, r: 32, alpha: 64, dropout: 0.0}
+
+data:                       # ← the one movable knob (data recipe)
+  sources:
+    - {dataset: auto, weight: 1}       # datakit LATEST from build_data.py
+    # - {jsonl: experiments/agentic-cpt/data/replay.jsonl, field: text, weight: 1}
+  epochs: 1
+
+run:
+  experiment: agentic-cpt
+  base_model: unsloth/Qwen3.5-0.8B     # 1B-class mainline (R12); product: Nekaise-1B
+  init_from: null
+  stage: cpt
+  seed: 3407
+  max_minutes: 45
+  per_device_batch: 2
+  grad_accum: 8

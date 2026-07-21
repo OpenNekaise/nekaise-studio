@@ -2,8 +2,7 @@
 
 > 目的:把 studio 从"当前可用"重构到"目标架构"。每一项写明动机 (why)、改造内容 (what)、验收标准 (done when)。
 > 执行者注意:本文档基于架构描述而非逐行代码审查,遇到与现状冲突处,以本文档的原则为准、以最小改动路径实现,并在 PR 描述中记录偏差。
-> (收到于 2026-07-21;已在本仓库 nekaise-studio 内执行(R1–R12);偏差记录在 docs/REFACTOR-NOTES.md;
-> 包含方向声明见 BOUNDARY.md 第零条——studio 包含 gym,永远不反过来。)
+> (收到于 2026-07-21;已执行(R1–R12);偏差记录在 docs/REFACTOR-NOTES.md;包含方向见 BOUNDARY.md 第零条。)
 
 ---
 

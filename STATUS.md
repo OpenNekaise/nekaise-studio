@@ -5,10 +5,9 @@
 
 ## Phase: POST-REFACTOR SHAKEDOWN
 
-The REFACTOR.md rebuild (R1–R12; deviations in docs/REFACTOR-NOTES.md) landed IN THIS
-REPO — **nekaise-studio is the one canonical repository**. The transient nekaise-gym
-repo is archived; containment direction is now constitutional (BOUNDARY.md Article 0:
-studio contains gym, never the reverse). The algorithm card, ban list, null-hypothesis meta-rule, and
+The REFACTOR.md rebuild (R1–R12; deviations in docs/REFACTOR-NOTES.md) is in place.
+The gym/studio boundary is constitutional (BOUNDARY.md Article 0: studio contains gym,
+never the reverse). The algorithm card, ban list, null-hypothesis meta-rule, and
 environment lock moved to **SPEC.md** — STATUS no longer carries them. Architecture:
 
 - **gym/** — tasks + verifiers + runner: the single definition of correct. One-way

@@ -1,10 +1,6 @@
-"""Docs may not advertise ban-listed techniques as available (SPEC §2).
-
-Born from a real drift: README said "DPO — preference optimization (available)." while
-SPEC.md bans DPO stacking — one repo simultaneously said available and banned. Guard: in
-tracked markdown, a ban-list term must not co-occur with availability language on a line,
-unless that line itself marks the legacy/banned status.
-"""
+"""Docs must not advertise ban-listed techniques (SPEC §2): in tracked markdown, a
+ban-list term may not co-occur with availability language on one line, unless the line
+itself marks legacy/banned status."""
 from __future__ import annotations
 
 import re

@@ -44,8 +44,7 @@ reason we are a bootloader rather than a fixed pipeline:
 - **BOUNDARY.md Article 0:** studio contains gym, never the reverse — "extract the gym"
   means carving a component out of studio, not renaming studio into gym. A repo's name
   must equal its contents; gym's contents never include training code. When writing
-  instructions about container relationships, state both directions explicitly
-  (direction-ambiguous verbs caused a repo-level incident; see REFACTOR-NOTES D10).
+  instructions about container relationships, state both directions explicitly.
 - **SPEC.md is the constitution** — algorithm card, ban list, null-hypothesis meta-rule,
   environment lock. Every keep/revert is bound by it; changing SPEC (or any `frozen:`
   config section) is human review, never a loop move.

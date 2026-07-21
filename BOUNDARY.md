@@ -5,16 +5,10 @@
 ## Article 0: containment direction
 
 **studio contains gym. Never the reverse.** Stated both ways because direction-ambiguous
-verbs caused a real incident: *studio ⊃ gym; gym ⊄ studio-container roles; gym never
-contains studio.* "Extract the gym" means carving a component OUT OF studio — not
-renaming or upgrading studio into gym.
-
-Why this article exists: the 2026-07-21 refactor executed the extraction backwards at the
-REPOSITORY level — the whole project (training code, skills, experiments) was committed
-and pushed into a repo named `nekaise-gym`. Package-level separation was correct
-throughout (isolation tests green); the inversion lived at repo-identity level, where no
-test looks. See docs/REFACTOR-NOTES.md D10. The judgment rule: **a repository's name must
-equal its contents, and gym's contents never include training code.**
+verbs admit two readings: *studio ⊃ gym; gym never contains studio.* "Extract the gym"
+means carving a component OUT OF studio — not renaming or upgrading studio into gym.
+The judgment rule: **a repository's name must equal its contents, and gym's contents
+never include training code.**
 
 ## gym = the examination hall
 
@@ -54,7 +48,7 @@ its tests + a README — no studio history, no training code, no skills.
 
 ## Instruction-writing norm
 
-Tests cannot catch identity-level errors — 73 green tests coexisted with an inverted repo
-topology. The only defense is at the instruction layer: when writing about container
-relationships, never rely on direction-ambiguous verbs ("extract", "migrate", "set up");
-state the relation bidirectionally ("A contains B; B does not contain A") or with ⊂.
+Tests cannot catch identity-level errors; the defense is at the instruction layer. When
+writing about container relationships, never rely on direction-ambiguous verbs
+("extract", "migrate", "set up"); state the relation bidirectionally ("A contains B;
+B does not contain A") or with ⊂.

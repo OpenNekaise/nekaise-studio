@@ -40,4 +40,4 @@ to evaluate GPT. If that stops being true, the boundary broke.
 
 *Currently a component of [nekaise-studio](https://github.com/OpenNekaise/nekaise-studio);
 becomes a standalone repo once its API is frozen and an external consumer exists. Part of
-[OpenNekaise](https://github.com/OpenNekaise). MIT.*
+[OpenNekaise](https://opennekaise.com/). MIT.*

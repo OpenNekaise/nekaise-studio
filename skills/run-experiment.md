@@ -64,8 +64,11 @@ with `METHOD="grpo"`, `INIT_FROM="outputs/sft"`, `STAGE="grpo"`. The reference r
 
 ## What to vary (high-leverage first)
 
+Subject to the current **algorithm card** in STATUS.md — vary only the card's movable knobs
+for the active stage; everything below is the generic menu.
+
 - **Data** (`build_data.py`) — teacher vs student source, #samples, prompt/CoT style, size,
-  filtering. Often the biggest lever.
+  filtering. Often the biggest lever, and the one dimension the card always leaves open.
 - **Method** — sft → rft → grpo. With a verifiable scorer, RFT/GRPO usually beat tuning SFT.
 - **Prompt / format**, **LoRA** (r, alpha, dropout, target_modules), **optimization** (lr,
   schedule, warmup, batch/grad-accum), **steps** within the time budget.
@@ -73,6 +76,15 @@ with `METHOD="grpo"`, `INIT_FROM="outputs/sft"`, `STAGE="grpo"`. The reference r
 ## Rules
 
 - **One change per run**, in one recipe file. You can't attribute a result to two changes.
+- **Algorithm changes must beat the null hypothesis.** Before any *algorithmic* change
+  (method, loss, schedule, RL trick — anything that is not a data recipe) is kept, it must
+  beat the control: **the unchanged baseline trained for the same additional compute**.
+  "Adding X gained 2 points" only counts if "no X, equal extra steps" does not also gain
+  2 points; log the control like any run. Data-recipe changes (`build_data.py`) compete at
+  equal wall-clock as usual, no control needed. The current **algorithm card in STATUS.md**
+  says which knobs are even eligible per stage; its frozen parts are human spec-review
+  territory, never loop moves, and its **ban list** is binding — a banned technique enters
+  only when the dashboard shows the specific pathology it treats.
 - **Never edit `packs/*/{scorer,prepare}.py` or `lib/*`.** That's the fixed referee/plumbing.
   Using the scorer to *filter training data* in `build_data.py` is allowed and expected —
   it's not cheating, because **evaluation always runs on the held-out test split with the
@@ -122,8 +134,11 @@ to point it today. Durable protocol that does not change with the phase:
   structure** — only the pack import changes.
 - To serve a winner: `python serve/to_ollama.py --exp <name> --name <ollama-name>` exports
   `outputs/best` to GGUF/Ollama, which `nekaise-edge` then runs (`OLLAMA_MODEL=<ollama-name>`).
-- `nekaise_bench` plays two roles. **Ceiling phase:** the loop metric (checkpoint mode,
-  `--split dev`; frozen `test` at milestones; full official harness via `--model <ollama-name>`
-  after export, for deployment parity). **Building-pack loop:** advisory only — log it next to
-  the METRIC, never use it for keep/revert there. Checkpoint-mode and Ollama-mode numbers are
-  not interchangeable; compare like with like.
+- `nekaise_bench` is **milestone-only in every loop** (decoupling reform 2026-07-20): never a
+  keep/revert signal. At a phase gate, run `tools/eval_bench.py` (frozen `test` needs
+  `--milestone`; full official harness via `--model <ollama-name>` after export, for deployment
+  parity) and report paired flips vs base. Results record the bench dataset version — compare
+  only within one version. The loop metric is whatever STATUS.md names for the phase (pure-CPT:
+  `corpus_probes` dev-absorption via `tools/eval_probes.py`; its `frozen` split is likewise
+  milestone-only). Checkpoint-mode and Ollama-mode numbers are not interchangeable; compare
+  like with like.

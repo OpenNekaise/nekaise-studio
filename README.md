@@ -1,249 +1,57 @@
 # Nekaise Studio
 
+**An AI agent that fine-tunes small LLMs — no human runs Python here.**
+
 [![ci](https://github.com/OpenNekaise/nekaise-studio/actions/workflows/ci.yml/badge.svg)](https://github.com/OpenNekaise/nekaise-studio/actions/workflows/ci.yml)
 
-> An **agentic LLM-training platform: an LLM trains LLMs.** You don't run scripts and you
-> don't write the training logic. An agent (Claude Code / Codex) runs the whole training
-> lifecycle — chooses the method, builds the data, trains, evaluates, keeps or reverts, and
-> extends its own skills. **CPT, distillation SFT, and GRPO-family RL (RLVR/OPD) are tools in its box, not the
-> identity of the project.**
-
-That is the core thesis, and everything else serves it. The training *method* is a per-phase
-choice the agent makes and revises: pure CPT to inject a corpus, teacher distillation when a
-stronger model's reading helps, RL when a verifiable reward exists. What stays fixed is the
-**agentic loop** — hypothesize → one change → train → measure on a fixed referee → keep/revert
-→ crystallize what worked into a skill. We (the maintainers) ship a **bootloader**: seed
-skills, an eval harness, recipe templates. From there the agent decides what to do — and edits
-its own operating instructions as it learns. Bounded, today, by the frontier model driving it,
-which means a better Claude makes the whole system better for free.
-
-**The application:** Nekaise Studio is the **model factory** behind
-[OpenNekaise](https://github.com/OpenNekaise/opennekaise). It trains small models (sub-1B–8B)
-for the **building / building-energy** domain that run on-prem via
-[`nekaise-edge`](https://github.com/OpenNekaise/nekaise-edge) — no frontier cloud dependency.
-The long-term target is **one general building-energy small model**, locally adaptable to any
-specific building: a small *junior engineer* that works on-site — cheaply, offline, grounded
-in the building's own data.
-
-## The core idea: just dump data into `nekaise_data/`
-
-The most important design decision: **there is one folder you feed, and the AI does everything
-else.** Drop a building's real data into `nekaise_data/<building>/` — HVAC and control PDFs,
-control cards, the ontology / semantic model (Brick / ASHRAE 223P `.ttl`), tag lists, BIM, sensor
-exports — one subfolder per building, and that's it. You don't clean it, label it, or hand-write
-any training data.
-
-A second kind of dump raises the **general** ceiling: `nekaise_data/hvac_corpus/` is a maintained,
-provenance-tracked corpus of public building / HVAC / building-energy reference material (Wikipedia,
-arXiv, DOE/PNNL/LBNL reports, ASHRAE guides) across five topics — controls/BAS, equipment & systems,
-building energy, commissioning & FDD, standards & protocols. Building-specific dumps close the
-*gap* (this building); the corpus raises the *ceiling* (the domain).
-
-> ⚠️ **`nekaise_data/` is git-ignored and never committed.** It holds proprietary, real building
-> data — it stays on your machine. API keys (e.g. the teacher's `ANTHROPIC_API_KEY`) are read from
-> a local `.env` and are never committed.
+Point Claude Code (or Codex) at this repo and it runs the whole training lifecycle for
+small (≤8B) **building-energy** models: builds the data, trains, measures, keeps or
+reverts, and writes down what it learned — then improves its own instructions. The
+resulting models run on-prem via [nekaise-edge](https://github.com/OpenNekaise/nekaise-edge),
+no frontier cloud dependency.
 
 ## How it works
 
 ```
-  You: drop a building into nekaise_data/<building>/   ·   "train a junior on it"
-            │
-            ▼
-  Claude Code / Codex  ──drive──►  skills (the program it executes AND extends):
-            │
-            ├─ prepare-trainset ─► senior engineer reads the WHOLE corpus
-            │                      (ontology + control cards + trends), writes grounded Q&A
-            ├─ judge (gate) ─────► drops any ungrounded / hallucinated example
-            │
-            ▼   then the autoresearch loop (skills/run-experiment), run autonomously:
-   ┌─────────────────────────────────────────────────────────────┐
-   │  1. propose ONE change to a recipe (train.py / build_data.py)│
-   │  2. fine-tune the small model with Unsloth (cpt/sft/grpo/dpo)│
-   │  3. score on the FIXED eval harness — over a HELD-OUT        │
-   │     building it never trained on (+ a closed-book domain quiz)│
-   │  4. better than best?  keep + log.  worse?  revert + log.    │
-   │  5. crystallize what worked into a skill; repeat             │
-   └─────────────────────────────────────────────────────────────┘
-            │
-            ▼
-   serve/to_ollama.py ─► GGUF in Ollama ─► nekaise-edge  (runs on-prem, in the building)
+      ┌────────────────────────────────────────────────────────┐
+      │  propose ONE change            (data recipe only)      │
+      │      ↓                                                 │
+      │  train      python -m studio.stages.<stage>            │
+      │      ↓                                                 │
+      │  measure    gym verifiers → METRIC + noise band        │
+      │      ↓                                                 │
+      │  keep ⇔ effect > noise band          (else revert)     │
+      │      ↓                                                 │
+      │  log → replicate ×2 → crystallize into a new skill ────┼──▶ the loop improves
+      └────────────────────────────────────────────────────────┘      itself
 ```
 
-(The public **`gsm8k`** pack runs the exact same loop with a one-line scorer — the bootstrap that
-proves the machinery before building data is in play.)
+The algorithms are deliberately boring and **frozen** — five stages (CPT → SFT → RLVR →
+OPD → agentic) on stock Unsloth/TRL trainers, JustRL-style single recipes, no tricks.
+That's the philosophy: an agent-run loop converges only when the knobs are few, so all
+creativity is spent where complexity compounds — **data recipes, verifiers, and
+measurement** — and none where it doesn't.
 
-## Architecture: bootloader vs workspace
-
-Like an OS, the repo splits into an **immutable kernel** we maintain and a **mutable userland**
-that stays on each user's machine:
-
-| | **Bootloader** (pushed, versioned, ours) | **Workspace** (local, git-ignored, the agent's) |
-|---|---|---|
-| What | seed skills, the eval harness, recipe templates, `lib/`, guardrails | data dumps, generated datasets, checkpoints, run telemetry, journals, **agent-written skills** |
-| Paths | `skills/` (core), `packs/`, `lib/`, `experiments/<exp>/train.py` | `nekaise_data/`, `experiments/**/{data,outputs,runs,LOG.md}` |
-| Who changes it | maintainers (+ promoted contributions) | each user's Claude Code, freely |
-
-**Skills split into two tiers.** *Core skills* (pushed, stable) are the kernel of expertise.
-*Emergent skills* are what each user's Claude Code writes for its data — kept local, never pushed,
-different for everyone. A skill earns its way into the bootloader through a **promotion path**:
-validated against the eval harness, then reviewed as a PR. Local skills are the *mutation pool*;
-promotion is the *selection* that feeds the shared kernel — without it the kernel freezes and the
-project loses its network effect.
-
-**One general model, local adaptation.** The commons is a general building-energy base model the
-maintainers train from the shared corpus via the recipe. Each user's Claude Code adapts it to
-*their* building locally (private, not pushed). Generic, validated improvements — skills,
-benchmark items, anonymized signal — flow back by opt-in promotion and make the shared base
-stronger over time. That is how private data and a shared general model coexist.
-
-## The eval harness is the fitness function
-
-In a self-extending loop the metric is everything: if the agent optimizes a flawed measure, it
-will Goodhart it *confidently* across iterations. So the harness is the bootloader's most
-load-bearing part, and it is deliberately **multi-metric** — no single number to game:
-
-- **`building_judge` (the gap).** Answer a *frozen, realistic operator exam* about a **held-out
-  building**, open-book over its data; a blind frontier judge scores each answer by the fraction
-  of its required **anchors** (values, vendor tags, file paths, component names, time windows)
-  present. Measures whether the junior can *use this building's data*. (`eval_judge.py` /
-  `skills/judge`.)
-- **`domain_quiz` (the ceiling).** A **closed-book** multiple-choice exam over general
-  building/HVAC/energy knowledge (easy + hard tiers). Measures what's in the *weights*, with no
-  retrieval — exactly what `building_judge` cannot see. (`eval_domain.py`.)
-- **`corpus_probes` (the CPT loop signal).** Studio-owned numeric cloze probes minted once,
-  deterministically, from the cleaned corpus (`gym/tasks/corpus_probes/`): the model continues a
-  sentence prefix and must produce the masked value. *Absorption* probes (from CPT train docs)
-  are the pure-CPT phase's keep/revert metric — dense and sensitive where a hardened exam is
-  not; *transfer* probes (held-out docs) are the generalization diagnostic. Frozen ~20% for
-  milestones. (`tools/eval_probes.py`.)
-- **`nekaise_bench` (the external milestone referee — never a loop metric).** A closed-book
-  benchmark ([nekaise-bench](https://github.com/OpenNekaise/nekaise-bench)) *independently
-  authored* from corpus documents and hardened so frontier-local 27Bs score ~0.45 — it measures
-  whether corpus knowledge actually entered the **weights**, and nothing in this repo's training
-  code can game it. Since the decoupling reform it is consulted only at **milestones**
-  (`tools/eval_bench.py`; frozen `test` split needs `--milestone`; every result records the
-  bench's dataset **version**, and numbers are only comparable within one version). The loop
-  never optimizes against it — that independence is exactly what makes its verdicts credible.
-
-Two hard-won lessons, now part of the method: **perplexity is not knowledge** (continued
-pretraining can cut held-out perplexity sharply while adding ~zero closed-book accuracy — it buys
-fluency, not facts), and **a single building-specific score can't tell you if the model got
-domain-smarter** — you need the ceiling probe alongside the gap probe.
-
-## Layout
-
-| Path | What it is |
-|------|-----------|
-| `nekaise_data/<building>/` | **The one folder you feed** — raw building data per building. **Git-ignored.** |
-| `nekaise_data/hvac_corpus/` | Maintained general building/HVAC/energy corpus (ceiling material); `build_corpus.py` + `manifest.jsonl`. |
-| `skills/` | **The product.** Driver-agnostic skills: `prepare-trainset`, `judge`, `run-experiment` (core today; meta-skills for crystallize/prune are the next seeds). |
-| `.claude/skills/`, `AGENTS.md` | Thin adapters so **both Claude Code and Codex** use the same skills. |
-| `experiments/<model>-<pack>/` | Editable recipes — `build_data.py` (WHAT data) + `train.py` (HOW: cpt/sft/grpo/dpo) — plus `eval_judge.py`, `eval_domain.py`, `domain_quiz*.jsonl`. `data/`, `outputs/`, `runs/`, `LOG.md` are git-ignored. |
-| `packs/<pack>/` | A **task pack** = data + `scorer.py` (the fixed referee) + the frozen exam. **Never edited.** |
-| `lib/` | Fixed plumbing: `pack.py`, `datakit.py` (dataset cache + provenance), `corpus.py` (load + retrieve), `llm.py` (teacher backends), `runlog.py` (run telemetry). |
-| `dashboard-ui/` | Zero-config Vite live dashboard reading `experiments/**/runs/`. |
-| `serve/` | Export a winning model to GGUF → Ollama (handoff to `nekaise-edge`). |
-| `examples/example-building/` | Fully **synthetic** building — walk the whole building pipeline with zero proprietary data. |
-| `tools/` | `doctor.py` (preflight), `privacy_check.py` (leak guard, also a pre-commit hook), `eval_bench.py` (bench CLI, batched), `campaign.py` (declarative run matrices). |
-| `tests/` | CPU-only guardrail tests for the fixed parts (referee contract, plumbing, holdout guard, bench split fingerprint). Run by CI. |
-| `STATUS.md` | The part that changes: current phase, active experiment, next levers. Read it first. |
-| [`docs/RESULTS.md`](docs/RESULTS.md) | Published, reproducible campaign results (public assets only). |
-
-## Methods
-
-The method list IS the **algorithm card in [SPEC.md](SPEC.md) §1** — five frozen stages
-(CPT → SFT → RLVR → OPD → agentic), one movable knob each, all on Unsloth/TRL native
-trainers; the ban list (SPEC §2) is equally binding. What's validated so far:
-
-- **CPT** — continued (next-token) pretraining on the corpus to raise the domain ceiling. LoRA or
-  **full-parameter** (a 3B fits ~26 GB on a 48 GB card with 8-bit Adam + grad checkpointing). Must
-  be followed by SFT to restore instruction-following. *Lesson: it lifts fluency, not closed-book
-  knowledge — the base is already domain-strong.*
-- **SFT** — supervised fine-tune on grounded, judge-gated teacher demos.
-- **GRPO (RLVR)** — anchor-recall reinforcement learning: verifiable reward = fraction of required
-  anchors the answer hits. No reward model, no reward hacking on the fact itself.
-
-**Legacy methods** — pre-refactor experiment recipes carry `METHOD="dpo"`; that code is
-kept for reproducibility of archived results (REFACTOR-NOTES D8) and is banned for new
-work (SPEC §2). Archived code is not an algorithm in service — same status as the HF
-`generate()` paths in `attic/`.
-
-**The validated chain so far:** grounded gated SFT → anchor-recall GRPO closed **67% of the
-student→teacher gap** on a held-out building (`building_judge` 0.36 → 0.54). Whether ceiling-raising
-CPT adds to that, and where to invest (ceiling vs gap), is what the harness now decides per dataset.
-
-## Design principles
-
-- **The agent is the user.** No human runs Python; you direct agents through skills.
-- **We are the bootloader.** We seed skills + harness + recipe; the agent extends them. The durable
-  core we guard is the **eval harness**, not any one training trick.
-- **Edit the recipe, not the referee.** Recipes (`train.py`, `build_data.py`) and emergent skills
-  are mutable; scorers, held-out split, and frozen exams are fixed so the metric can't be gamed.
-- **The metric is the boss — and it's plural.** A gap probe *and* a ceiling probe; perplexity is
-  never the success metric.
-- **Generalize, don't memorize.** Train on some buildings, grade on a **held-out** one. Bake the
-  general domain into weights; ground the specific building at inference.
-- **Proprietary data stays local; validated skills can flow back.** Real data and exams are
-  git-ignored; emergent skills are local until promoted by PR.
-- **Small only.** Target <8B: Granite 4.1 (3B/8B), Gemma, Qwen, down to sub-1B. Start:
-  **`unsloth/granite-4.1-3b`**.
-
-## Dashboard
-
-A zero-config, fully-local live dashboard (Vite + React, Scandinavian light theme) reads the
-per-run telemetry directly off disk — no separate backend, no wandb, no CDN:
+## Try it
 
 ```bash
-cd dashboard-ui && npm install && npm run dev    # http://localhost:5273
+python tools/doctor.py                                            # preflight
+python -m studio.stages.cpt --config configs/cpt.yaml --dry-run   # validate the card
+# then point Claude Code at the repo — it reads AGENTS.md and drives the loop itself
 ```
 
-Run list with live status, training-loss / reward curves, before→after vs baseline, and CPT
-perplexity / domain results. To reach it over LAN / Tailscale, allow your hostname through
-Vite's guard: `NEKAISE_DASH_HOSTS=myhost,.tailXXXX.ts.net npm run dev`.
+## Map
 
-## Stack
+| where | what |
+|---|---|
+| [SPEC.md](SPEC.md) | the constitution: algorithm card, ban list, null-hypothesis rule, environment lock |
+| [BOUNDARY.md](BOUNDARY.md) | what studio is, what gym is, and which contains which |
+| [STATUS.md](STATUS.md) | current phase + next levers — the only part that changes |
+| [gym/](gym/) | the examination hall: tasks + verifiers + runner ([own README](gym/README.md)) |
+| [studio/stages/](studio/stages/) + [configs/](configs/) | five frozen training entry points |
+| [skills/](skills/) | the agent's operating manual |
+| [docs/RESULTS.md](docs/RESULTS.md) | published, reproducible results (public assets only) |
 
-- **Training:** [Unsloth](https://unsloth.ai) — fast LoRA / full fine-tuning on a single GPU.
-- **Serving:** [Ollama](https://ollama.com) (llama.cpp) — what `nekaise-edge` runs.
-- **Drivers:** Claude Code and Codex, via the skills in `skills/`.
+Part of [OpenNekaise](https://github.com/OpenNekaise). MIT.
 
-## Getting started
-
-```bash
-git clone https://github.com/OpenNekaise/nekaise-studio && cd nekaise-studio
-pip install -r requirements.txt        # needs a CUDA GPU for training
-cp .env.example .env                   # keys + NEKAISE_HOLDOUT (see comments inside)
-python tools/doctor.py                 # preflight — tells you exactly what's missing
-```
-
-From there you mostly don't run things by hand. Open Claude Code or Codex in the repo —
-both auto-load the working agreement (`CLAUDE.md` → `AGENTS.md`) — and say:
-
-> *"Read `skills/run-experiment.md`, then look at `experiments/granite-4.1-3b-gsm8k/` —
-> establish the baseline, then start improving it."*
-
-(The gsm8k bootstrap works on a bare clone with no keys and no building data; prime its
-dataset cache once with `python packs/gsm8k/prepare.py`. To try the **building** pipeline
-without proprietary data: `cp -r examples/example-building nekaise_data/` — a fully synthetic
-building that exercises the whole prepare → judge → train → eval chain.)
-
-## Method
-
-[`docs/METHOD.md`](docs/METHOD.md) — the playbook for driving the loop toward **teacher parity**:
-diagnose before you optimize (measure the teacher *and* the untrained base), separate ceiling from
-gap, open-book = data-in-hand + retrieval, task-aligned teacher distillation, and the pitfalls.
-
-## Contributing
-
-Local skills earn their way into the kernel through an eval-gated, human-reviewed PR — see
-[CONTRIBUTING.md](CONTRIBUTING.md) for the promotion path and the platform rules.
-
-## Related
-
-- [opennekaise](https://github.com/OpenNekaise/opennekaise) — the cloud Nekaise Agent.
-- [nekaise-bench](https://github.com/OpenNekaise/nekaise-bench) — the independent building-energy QA benchmark.
-- [karpathy/autoresearch](https://github.com/karpathy/autoresearch) — the loop this is modeled on.
-
-## License
-
-MIT — see [LICENSE](LICENSE).
+*AI agents: start at [AGENTS.md](AGENTS.md), not here.*

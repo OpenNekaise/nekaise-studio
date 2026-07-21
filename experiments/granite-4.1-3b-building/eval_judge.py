@@ -22,7 +22,7 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parents[2]
 EXP_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(REPO / "lib"))
-sys.path.insert(0, str(REPO / "packs" / "building"))
+sys.path.insert(0, str(REPO / "gym" / "tasks" / "building"))
 import prepare  # noqa: E402
 from corpus import building_corpus, retrieve  # noqa: E402
 

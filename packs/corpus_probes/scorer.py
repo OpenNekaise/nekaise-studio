@@ -1,68 +1,38 @@
-"""corpus_probes pack — the studio-owned loop metric for pure-CPT phases. Do NOT edit.
+"""corpus_probes pack — THIN SHIM over gym (R1). The logic lives in gym/, once.
 
-Numeric cloze continuations minted once from the cleaned HVAC corpus (build_probes.py) and
-committed: the model continues a sentence prefix, and is correct iff the FIRST number in its
-continuation equals the gold value. Deliberately independent of nekaise-bench (which is a
-milestone-only external referee since the decoupling reform) and deliberately dense: a small
-model under CPT moves here long before it moves on a hardened exam.
-
-Splits (id-hashed, deterministic):
-    dev    (~80%) — the loop's keep/revert signal
-    frozen (~20%) — milestone confirmation only; report paired flips, never tune on it
-
-Row schema matches the pack contract: {"question","answer","id","track","topic"} where
-`question` is the raw continuation prompt (NO chat template — CPT probes run in base-model
-completion mode) and `answer` is a JSON-encoded gold {"value","answer"}.
-
-Contract: load_split / is_correct / reward / extract_answer.
+Legacy pack contract (load_split / is_correct / reward / extract_answer) preserved for
+existing experiment recipes and lib/pack.py. Grading is gym.verifiers.numeric_cloze — the
+same function the TRL reward wrapper and the eval runner import. Do not add logic here.
 """
 from __future__ import annotations
 
-import hashlib
 import json
-import re
+import sys
 from pathlib import Path
 
-PACK_DIR = Path(__file__).resolve().parent
-_NUM = re.compile(r"-?\d{1,3}(?:,\d{3})*(?:\.\d+)?|-?\d+(?:\.\d+)?")
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
+from gym.tasks import corpus_probes as _t  # noqa: E402
+from gym.verifiers import numeric_cloze as _v  # noqa: E402
 
-def _rows() -> list[dict]:
-    path = PACK_DIR / "probes.jsonl"
-    if not path.exists():
-        raise FileNotFoundError(f"{path} missing — mint it once: python {PACK_DIR}/build_probes.py")
-    return [json.loads(l) for l in path.read_text().splitlines() if l.strip()]
-
-
-def in_split(probe_id: str, split: str) -> bool:
-    frozen = int(hashlib.md5(probe_id.encode()).hexdigest(), 16) % 5 == 0
-    return frozen if split == "frozen" else (not frozen) if split == "dev" else True
+in_split = _t.in_split
 
 
 def load_split(split: str = "dev", n: int = 0) -> list[dict]:
-    """dev | frozen | all; absorption AND transfer rows (filter by `track` downstream)."""
-    rows = [{"question": p["prompt"],
-             "answer": json.dumps({"value": p["value"], "answer": p["answer"]}),
-             "id": p["id"], "track": p["kind"], "topic": p["topic"]}
-            for p in _rows() if in_split(p["id"], split)]
+    rows = [{"question": t.prompt,
+             "answer": json.dumps({"value": t.meta["value"], "answer": t.ref_solution}),
+             "id": t.id, "track": t.tags["track"], "topic": t.tags["topic"]}
+            for t in _t.load(split=split)]
     return rows[:n] if n else rows
 
 
 def extract_answer(text: str) -> str | None:
-    m = _NUM.search(str(text))
-    return m.group(0).replace(",", "") if m else None
+    return _v.first_number(text)
 
 
 def is_correct(pred: str, gold: str) -> bool:
-    g = json.loads(gold)
-    first = extract_answer(str(pred)[:80])   # first number in the continuation window
-    if first is None:
-        return False
-    try:
-        return abs(float(first) - float(g["value"])) < 1e-9
-    except ValueError:
-        return False
+    return _v.verify("", pred, {"value": json.loads(gold)["value"]}) >= 0.999
 
 
 def reward(pred: str, gold: str) -> float:
-    return 1.0 if is_correct(pred, gold) else 0.0
+    return _v.verify("", pred, {"value": json.loads(gold)["value"]})

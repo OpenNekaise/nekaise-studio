@@ -23,7 +23,7 @@ REPO = Path(__file__).resolve().parents[2]
 EXP_DIR = Path(__file__).resolve().parent
 OUT_DIR = EXP_DIR / "outputs"
 sys.path.insert(0, str(REPO / "lib"))
-sys.path.insert(0, str(REPO / "packs" / "building"))
+sys.path.insert(0, str(REPO / "gym" / "tasks" / "building"))
 
 import datakit  # noqa: E402
 from pack import load as load_pack  # noqa: E402
@@ -167,7 +167,7 @@ def time_budget_callback():
 
 def holdout_corpus(pack, max_chars=300000):
     """Full text data-in-hand for the held-out building (retrieval source). Shared: lib/corpus.py."""
-    import prepare  # packs/building/prepare.py (fixed data locator)
+    import prepare  # gym/tasks/building/prepare.py (fixed data locator)
     from corpus import building_corpus
     text, _ = building_corpus(prepare.DATA / pack.HOLDOUT_BUILDING, max_chars)
     return text

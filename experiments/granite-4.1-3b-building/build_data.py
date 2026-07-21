@@ -37,7 +37,7 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parents[2]
 EXP_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(REPO / "lib"))
-sys.path.insert(0, str(REPO / "packs" / "building"))
+sys.path.insert(0, str(REPO / "gym" / "tasks" / "building"))
 import datakit  # noqa: E402
 import llm  # noqa: E402
 import prepare  # noqa: E402  (building data locator; default_holdout)

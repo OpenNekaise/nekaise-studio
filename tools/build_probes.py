@@ -13,11 +13,14 @@ Two kinds, split by the shared corpusprep.is_heldout_doc rule:
 
 Probe ids are content-derived; dev/frozen split is id-hashed (md5 % 5 == 0 -> frozen).
 Output (COMMITTED — the referee is fixed once minted; rebuild only as a versioned reform):
-    packs/corpus_probes/probes.jsonl
-    packs/corpus_probes/provenance.json   (counts + corpus fingerprint)
+    gym/tasks/corpus_probes/probes.jsonl
+    gym/tasks/corpus_probes/provenance.json   (counts + corpus fingerprint)
 
-    python packs/corpus_probes/build_probes.py            # refuses to overwrite
-    python packs/corpus_probes/build_probes.py --force
+    python tools/build_probes.py            # refuses to overwrite
+    python tools/build_probes.py --force
+
+Minting is data PRODUCTION and lives on the studio side (this file may import lib/*);
+the minted task set under gym/ is the fixed product (R1 one-way dependency).
 """
 from __future__ import annotations
 
@@ -28,8 +31,8 @@ import sys
 import time
 from pathlib import Path
 
-PACK_DIR = Path(__file__).resolve().parent
-REPO = PACK_DIR.parents[1]
+REPO = Path(__file__).resolve().parents[1]
+PACK_DIR = REPO / "gym" / "tasks" / "corpus_probes"
 sys.path.insert(0, str(REPO / "lib"))
 import corpusprep  # noqa: E402
 

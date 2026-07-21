@@ -103,7 +103,7 @@ def main() -> int:
                   f"pick one of: {', '.join(buildings)}")
         else:
             try:
-                sys.path.insert(0, str(REPO / "packs" / "building"))
+                sys.path.insert(0, str(REPO / "gym" / "tasks" / "building"))
                 import prepare  # noqa: PLC0415
                 exam_b = prepare.exam_building()
             except Exception:

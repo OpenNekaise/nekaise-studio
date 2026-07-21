@@ -39,7 +39,7 @@ If you are ever unsure whether something is safe to write to a tracked file, lea
 ## The setup
 
 - A **building** = one folder under `nekaise_data/<building>/`. Use
-  `packs/building/prepare.py:building_dirs()` to enumerate them (it already skips `_index`,
+  `gym/tasks/building/prepare.py:building_dirs()` to enumerate them (it already skips `_index`,
   `documentations`, and dotfolders). Each folder may contain:
   - `*.ttl` — the semantic model (Brick / 223P / REC). The backbone.
   - control cards / driftkort (PDF, PNG), operation guides (`.md`) — sequences, setpoints, interlocks.
@@ -57,7 +57,7 @@ If you are ever unsure whether something is safe to write to a tracked file, lea
 1. **Discover.** List building folders; drop the holdout. Read the env: `NEKAISE_HOLDOUT`.
 2. **Read everything in the folder. Study it like a senior.**
    - Parse the `*.ttl` into entities/topology (use `rdflib` via Bash, or read
-     `nekaise_data/_index/<building>.json` produced by `packs/building/prepare.py`).
+     `nekaise_data/_index/<building>.json` produced by `gym/tasks/building/prepare.py`).
    - **Read the control-card PDFs and images** (`Read` handles them) — extract control
      strategies, setpoint/compensation curves, startup/shutdown, interlocks, fire/freeze logic.
    - Read operation guides (`.md`). Sample alarm exports and trend CSVs via Bash (`head`,

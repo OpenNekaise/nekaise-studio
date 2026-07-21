@@ -7,7 +7,7 @@ Each building is a subfolder of `nekaise_data/` with one or more Turtle (.ttl) o
 deterministically-verifiable ontology/topology questions. Unparseable files are skipped
 with a warning (real building exports aren't always clean Turtle).
 
-    python packs/building/prepare.py        # (re)build the index, print a summary
+    python gym/tasks/building/prepare.py        # (re)build the index, print a summary
 
 The index is written under `nekaise_data/_index/` so it stays git-ignored with the raw
 (proprietary) data. Set NEKAISE_DATA to point elsewhere.
@@ -20,7 +20,7 @@ import sys
 from collections import Counter
 from pathlib import Path
 
-REPO = Path(__file__).resolve().parents[2]
+REPO = Path(__file__).resolve().parents[3]
 DATA = Path(os.environ.get("NEKAISE_DATA", REPO / "nekaise_data"))
 INDEX_DIR = DATA / "_index"
 

@@ -1,113 +1,46 @@
-"""bench pack — nekaise-bench as a task pack: the FIXED referee of the ceiling phase. Do NOT edit.
+"""bench pack — THIN SHIM over gym (R1). The logic lives in gym/, once.
 
-Wraps the external, independently-authored corpus-mastery benchmark
-(https://github.com/OpenNekaise/nekaise-bench) in the studio's standard pack contract, so
-training, GRPO rewards, and eval tooling consume it like any other pack. Grading functions
-are IMPORTED from the bench's own harness — never reimplemented — and the dev/test split is
-defined HERE, canonically:
-
-    dev  (~75%): the loop's keep/revert signal
-    test (~25%): FROZEN — milestone checks only (tools/eval_bench.py enforces --milestone)
-
-Needs a local clone of the bench; location from NEKAISE_BENCH_DIR (default: ../nekaise-bench
-next to this repo).
-
-Contract: load_split / is_correct / reward / extract_answer.
-Row schema: {"question", "answer", "id", "track", "topic", "difficulty"} where `question` is
-the full prompt text (mcq rows include lettered choices + instruction) and `answer` is a
-JSON-encoded gold {"track", "answer", "choices"?, "aliases"?} passed verbatim to
-is_correct/reward. `system_prompt(track)` gives the matching system message.
+Split rule + version + grading all come from gym.tasks.bench / gym.verifiers.bench_qa
+(which itself imports the EXTERNAL benchmark's own grading — never reimplemented).
+Legacy contract + the extras tools/eval_bench.py uses (BENCH_DIR, bench_version,
+system_prompt). Do not add logic here.
 """
 from __future__ import annotations
 
-import hashlib
-import importlib.util
 import json
-import os
+import sys
 from pathlib import Path
 
-REPO = Path(__file__).resolve().parents[2]
-BENCH_DIR = Path(os.environ.get("NEKAISE_BENCH_DIR", REPO.parent / "nekaise-bench"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-_harness = None
+from gym.tasks import bench as _t  # noqa: E402
+from gym.verifiers import bench_qa as _v  # noqa: E402
 
-
-def harness():
-    """The bench's own eval module (prompts + grading) — the single grading truth."""
-    global _harness
-    if _harness is None:
-        runner = BENCH_DIR / "eval_ollama.py"
-        if not runner.exists():
-            raise FileNotFoundError(
-                f"nekaise-bench not found at {BENCH_DIR} — clone "
-                f"https://github.com/OpenNekaise/nekaise-bench there, or set NEKAISE_BENCH_DIR")
-        spec = importlib.util.spec_from_file_location("nekaise_bench_eval", runner)
-        mod = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(mod)
-        _harness = mod
-    return _harness
-
-
-def bench_version() -> str:
-    """The bench's dataset version (VERSION file in the bench repo, e.g. "v4").
-
-    The item SET is versioned upstream (see the bench's SPLIT.md): any add/drop/rewrite
-    re-baselines both splits, so scores are only comparable within one version. Every
-    recorded result must carry this string; comparing across versions is a bug.
-    """
-    p = BENCH_DIR / "VERSION"
-    return p.read_text().strip() if p.exists() else "unversioned"
-
-
-def in_split(qid: str, split: str) -> bool:
-    """Deterministic id-hash split. NEVER change this rule — every recorded score depends
-    on it (tests pin a fingerprint)."""
-    if split == "all":
-        return True
-    frozen = int(hashlib.md5(qid.encode()).hexdigest(), 16) % 4 == 0   # ~25% -> test
-    return frozen if split == "test" else not frozen
+BENCH_DIR = _v.bench_dir()
+harness = _v.harness
+bench_version = _t.version
+in_split = _t.in_split
 
 
 def system_prompt(track: str) -> str:
-    h = harness()
+    h = _v.harness()
     return h.MCQ_SYSTEM if track == "mcq" else h.OPEN_SYSTEM
 
 
 def load_split(split: str = "dev", n: int | None = None) -> list[dict]:
-    """Rows {question, answer(JSON gold), id, track, topic, difficulty} for dev|test|all."""
-    h = harness()
-    rows = []
-    for line in (BENCH_DIR / "questions.jsonl").open(encoding="utf-8"):
-        if not line.strip():
-            continue
-        q = json.loads(line)
-        if not in_split(q["id"], split):
-            continue
-        if q["track"] == "mcq":
-            question = h.mcq_prompt(q)
-            gold = {"track": "mcq", "answer": q["answer"], "choices": q["choices"]}
-        else:
-            question = q["question"]
-            gold = {"track": "open", "answer": q["answer"], "aliases": q.get("aliases") or []}
-        rows.append({"question": question, "answer": json.dumps(gold, ensure_ascii=False),
-                     "id": q["id"], "track": q["track"], "topic": q.get("topic", ""),
-                     "difficulty": q.get("difficulty", "")})
+    rows = [{"question": t.prompt, "answer": json.dumps(t.meta["gold"], ensure_ascii=False),
+             "id": t.id, "track": t.tags["track"], "topic": t.tags["topic"],
+             "difficulty": t.tags["difficulty"]}
+            for t in _t.load(split=split)]
     return rows[:n] if n else rows
 
 
 def extract_answer(text: str) -> str:
-    return harness().strip_think(text).strip()
+    return _v.harness().strip_think(text).strip()
 
 
 def reward(prediction: str, gold_answer: str) -> float:
-    """1.0/0.0 by the bench's own grading (letter match for mcq; alias/numeric for open)."""
-    h = harness()
-    g = json.loads(gold_answer)
-    ans = h.strip_think(prediction)
-    if g["track"] == "mcq":
-        pred = h.extract_letter(ans, len(g["choices"]), g["choices"])
-        return 1.0 if pred == g["answer"] else 0.0
-    return 1.0 if h.grade_open(ans, g["answer"], g.get("aliases")) else 0.0
+    return _v.verify("", prediction, {"gold": gold_answer})
 
 
 def is_correct(prediction: str, gold_answer: str) -> bool:
@@ -115,5 +48,4 @@ def is_correct(prediction: str, gold_answer: str) -> bool:
 
 
 def load_test(n: int | None = None) -> list[dict]:
-    """Back-compat alias."""
     return load_split("test", n)

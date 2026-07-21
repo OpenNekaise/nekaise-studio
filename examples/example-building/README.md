@@ -8,7 +8,7 @@ Use it by copying it into the (git-ignored) data folder:
 
 ```bash
 cp -r examples/example-building nekaise_data/
-python packs/building/prepare.py     # index it; scorer questions come from the ontology
+python gym/tasks/building/prepare.py     # index it; scorer questions come from the ontology
 ```
 
 Contents mirror what a real dump looks like:

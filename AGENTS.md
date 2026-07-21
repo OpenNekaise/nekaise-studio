@@ -65,12 +65,14 @@ stays on your machine:
 - **Bootloader (pushed):** core `skills/*.md`, the eval harness (`packs/*`, `eval_judge.py`,
   `eval_domain.py`), `lib/*`, recipe templates, guardrails. The most load-bearing piece is the
   **eval harness** — it is the fitness function the self-improving loop trusts; getting it right
-  matters more than any single training trick. The harness is plural on purpose: `building_judge`
-  (the gap, building-specific), `domain_quiz` (the ceiling, closed-book), and `nekaise_bench`
-  (`tools/eval_bench.py`): an independently-authored closed-book exam of corpus MASTERY (grounded
-  in corpus docs, hardened so 27Bs fail it) that the training code cannot game — the **current
-  (ceiling) phase's loop metric** on its `dev` split (frozen `test` for milestones; advisory in
-  the building-pack loop). Never one number to game; perplexity is never a success metric.
+  matters more than any single training trick. The harness is plural on purpose, and split by
+  ROLE: **loop metrics** (dense, studio-owned, phase-picked in `STATUS.md` — e.g.
+  `corpus_probes` for pure-CPT phases, `building_acc` for the building pack) drive keep/revert;
+  **milestone referees** (`nekaise_bench` via `tools/eval_bench.py` — independently authored,
+  hardened, version-recorded; frozen splits everywhere) are consulted only at phase gates and
+  never optimized against. `building_judge` and `domain_quiz` stay advisory diagnostics. Never
+  one number to game; perplexity is never a success metric (loss curves are diagnostics —
+  probe/exam accuracy is what counts as knowledge).
 - **Workspace (git-ignored, yours):** `nekaise_data/`, `experiments/**/{data,outputs,runs,LOG.md}`,
   `workspace/` (throwaway scratch), and `skills/local/` (emergent skills you write).
 - **Promotion:** a local skill enters the shared kernel only by surviving the eval harness and a

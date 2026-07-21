@@ -48,6 +48,17 @@ def harness():
     return _harness
 
 
+def bench_version() -> str:
+    """The bench's dataset version (VERSION file in the bench repo, e.g. "v4").
+
+    The item SET is versioned upstream (see the bench's SPLIT.md): any add/drop/rewrite
+    re-baselines both splits, so scores are only comparable within one version. Every
+    recorded result must carry this string; comparing across versions is a bug.
+    """
+    p = BENCH_DIR / "VERSION"
+    return p.read_text().strip() if p.exists() else "unversioned"
+
+
 def in_split(qid: str, split: str) -> bool:
     """Deterministic id-hash split. NEVER change this rule — every recorded score depends
     on it (tests pin a fingerprint)."""

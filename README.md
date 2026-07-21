@@ -2,27 +2,28 @@
 
 [![ci](https://github.com/OpenNekaise/nekaise-studio/actions/workflows/ci.yml/badge.svg)](https://github.com/OpenNekaise/nekaise-studio/actions/workflows/ci.yml)
 
-> A **self-extending, AI-run training platform** for small language models. You don't run
-> scripts and you don't write the training logic. You **dump data into one folder**, point
-> Claude Code (or Codex) at the repo, and it trains a small, edge-deployable model for the
-> **building / building-energy** domain by *following* skills — and, over time, *writing* them.
+> An **agentic LLM-training platform: an LLM trains LLMs.** You don't run scripts and you
+> don't write the training logic. An agent (Claude Code / Codex) runs the whole training
+> lifecycle — chooses the method, builds the data, trains, evaluates, keeps or reverts, and
+> extends its own skills. **CPT, distillation SFT, GRPO/DPO are tools in its box, not the
+> identity of the project.**
 
-Nekaise Studio is the **model factory** behind [OpenNekaise](https://github.com/OpenNekaise/opennekaise).
-It fine-tunes small models (1B–8B, and smaller) that run on-prem in a building via
+That is the core thesis, and everything else serves it. The training *method* is a per-phase
+choice the agent makes and revises: pure CPT to inject a corpus, teacher distillation when a
+stronger model's reading helps, RL when a verifiable reward exists. What stays fixed is the
+**agentic loop** — hypothesize → one change → train → measure on a fixed referee → keep/revert
+→ crystallize what worked into a skill. We (the maintainers) ship a **bootloader**: seed
+skills, an eval harness, recipe templates. From there the agent decides what to do — and edits
+its own operating instructions as it learns. Bounded, today, by the frontier model driving it,
+which means a better Claude makes the whole system better for free.
+
+**The application:** Nekaise Studio is the **model factory** behind
+[OpenNekaise](https://github.com/OpenNekaise/opennekaise). It trains small models (sub-1B–8B)
+for the **building / building-energy** domain that run on-prem via
 [`nekaise-edge`](https://github.com/OpenNekaise/nekaise-edge) — no frontier cloud dependency.
-
-**The mission:** distill a frontier *senior building engineer* (Claude / Opus) into a small
-*junior* that understands real building systems well enough to work on-site — cheaply, offline,
-grounded in the building's own data. The long-term target is **one general building-energy small
-model**, locally adaptable to any specific building.
-
-**The bigger idea (why this is more than autoML):** the apprenticeship is **run by an AI**, and
-the AI doesn't only search model-space — it edits its own operating instructions. We (the
-maintainers) ship a **bootloader**: a seed of skills, an eval harness, and a training recipe.
-From there Claude Code decides *what to do, which experiments to run, and which new skills to
-write*. We are the bootloader; the system is meant to extend itself. That is the recursive part —
-bounded, today, by the frontier model driving it (which means a better Claude makes the whole
-system better for free).
+The long-term target is **one general building-energy small model**, locally adaptable to any
+specific building: a small *junior engineer* that works on-site — cheaply, offline, grounded
+in the building's own data.
 
 ## The core idea: just dump data into `nekaise_data/`
 
@@ -109,14 +110,20 @@ load-bearing part, and it is deliberately **multi-metric** — no single number 
 - **`domain_quiz` (the ceiling).** A **closed-book** multiple-choice exam over general
   building/HVAC/energy knowledge (easy + hard tiers). Measures what's in the *weights*, with no
   retrieval — exactly what `building_judge` cannot see. (`eval_domain.py`.)
-- **`nekaise_bench` (the independent corpus-mastery check).** A closed-book benchmark
-  ([nekaise-bench](https://github.com/OpenNekaise/nekaise-bench)) *independently authored* from
-  corpus documents and hardened so frontier-local 27Bs fail it closed-book — it measures whether
-  corpus knowledge actually entered the **weights**, and nothing in this repo's training code can
-  game it. `tools/eval_bench.py` scores checkpoints directly (deterministic `dev` split for the
-  loop, frozen `test` for milestones) or Ollama exports via the official harness. In the current
-  **ceiling phase** (CPT + distill over the corpus) this is the loop's metric; for the building
-  pack it stays advisory.
+- **`corpus_probes` (the CPT loop signal).** Studio-owned numeric cloze probes minted once,
+  deterministically, from the cleaned corpus (`packs/corpus_probes/`): the model continues a
+  sentence prefix and must produce the masked value. *Absorption* probes (from CPT train docs)
+  are the pure-CPT phase's keep/revert metric — dense and sensitive where a hardened exam is
+  not; *transfer* probes (held-out docs) are the generalization diagnostic. Frozen ~20% for
+  milestones. (`tools/eval_probes.py`.)
+- **`nekaise_bench` (the external milestone referee — never a loop metric).** A closed-book
+  benchmark ([nekaise-bench](https://github.com/OpenNekaise/nekaise-bench)) *independently
+  authored* from corpus documents and hardened so frontier-local 27Bs score ~0.45 — it measures
+  whether corpus knowledge actually entered the **weights**, and nothing in this repo's training
+  code can game it. Since the decoupling reform it is consulted only at **milestones**
+  (`tools/eval_bench.py`; frozen `test` split needs `--milestone`; every result records the
+  bench's dataset **version**, and numbers are only comparable within one version). The loop
+  never optimizes against it — that independence is exactly what makes its verdicts credible.
 
 Two hard-won lessons, now part of the method: **perplexity is not knowledge** (continued
 pretraining can cut held-out perplexity sharply while adding ~zero closed-book accuracy — it buys

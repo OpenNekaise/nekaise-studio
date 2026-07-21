@@ -1,0 +1,11 @@
+{
+  "built": "2026-07-20T11:37:17Z",
+  "n_docs": 1200,
+  "n_probes": 2094,
+  "by_kind": {
+    "absorption": 1980,
+    "transfer": 114
+  },
+  "n_frozen": 415,
+  "fingerprint": "b9ce252734f82ab6"
+}

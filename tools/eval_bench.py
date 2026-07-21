@@ -8,7 +8,8 @@ measures whether corpus knowledge actually entered the WEIGHTS — and nothing t
 code can game. The pack (`packs/bench/scorer.py`) is the single source of truth for the
 dev/test split and grading; this is the CLI over it. Two modes:
 
-  # Loop metric (ceiling phase): evaluate a checkpoint directly on GPU — batched, no export.
+  # Milestone / advisory check (NOT a loop metric since the decoupling reform — the loop's
+  # keep/revert signal is a studio-owned pack, e.g. corpus_probes): checkpoint mode, GPU.
   python tools/eval_bench.py --checkpoint experiments/<exp>/outputs/<stage> --split dev
   python tools/eval_bench.py --checkpoint unsloth/granite-4.1-3b --split dev   # baseline
 
@@ -152,11 +153,14 @@ def main() -> int:
     result = eval_ollama(args, bench) if args.model else eval_checkpoint(args, bench)
     if result is None:
         return 1
+    result["bench_version"] = bench.bench_version()
     exp = ledger_dir(args)
     if exp and exp.exists():
         log_result(exp, kind="bench_eval", **result)
-    # The studio-style line the loop logs next to METRIC.
-    print(f"BENCH[{result['model']}@{result['split']}] nekaise_bench={result['overall']:.4f} "
+    # The studio-style line the loop logs next to METRIC. bench_version is part of the
+    # record: scores are only comparable within one bench dataset version.
+    print(f"BENCH[{result['model']}@{result['split']}|{result['bench_version']}] "
+          f"nekaise_bench={result['overall']:.4f} "
           f"n={result['n']} by_track={result.get('by_track')}")
     return 0
 

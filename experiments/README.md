@@ -11,7 +11,8 @@ ledger every eval/train appends to). See
 
 | Experiment | Base model | Metric | Status |
 |------------|-----------|------|--------|
-| `ceiling-sub4b` | sub-4B bases (granite-4.1-3b, Qwen3.5-0.8B/2B via `NEKAISE_BASE_MODEL`) | `nekaise_bench` dev (independent) | **current phase** — CPT + corpus-QA distill |
+| `agentic-cpt` | sub-4B bases via `NEKAISE_BASE_MODEL` (default Qwen3.5-0.8B) | `corpus_probes` dev-absorption (studio-owned) | **current phase** — pure agentic CPT |
+| `ceiling-sub4b` | sub-4B bases (granite-4.1-3b, Qwen3.5-0.8B/2B via `NEKAISE_BASE_MODEL`) | was `nekaise_bench` dev (pre-decoupling) | paused — distill recipe validated on 0.8B; revisit after pure-CPT phase |
 | `granite-4.1-3b-building` | `unsloth/granite-4.1-3b` | `building` pack + `building_judge` | deferred — needs `nekaise_data/` + `NEKAISE_HOLDOUT` |
 | `granite-4.1-3b-gsm8k` | `unsloth/granite-4.1-3b` | `gsm8k` pack | bootstrap — works on a bare clone |
 | _granite-4.1-8b-*_ / _gemma-4-*_ / _sub-1B granite_ | — | — | planned |

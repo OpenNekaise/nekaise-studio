@@ -1,5 +1,12 @@
 # Results — ceiling phase, sub-4B campaign (2026-07-07)
 
+> **Historical note (2026-07-20).** Every number below was measured with nekaise-bench **v1**
+> (677 items; dev 523 / test 154) as the loop metric. The bench has since been rebuilt (v4:
+> 311 items, hardened to 27B≈0.45, results now version-stamped) and **decoupled from the
+> training loop** — the loop metric is the studio-owned `corpus_probes` pack; the bench is a
+> milestone-only referee. These results remain valid as v1-relative evidence for the
+> CPT→distill recipe direction, but are not comparable to any v4 number.
+
 Everything here uses public assets only (public base models, the public
 [nekaise-bench](https://github.com/OpenNekaise/nekaise-bench) benchmark, the public
 [nekaise-corpus](https://github.com/OpenNekaise/nekaise-corpus) recipe) and is reproducible

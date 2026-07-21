@@ -71,6 +71,20 @@ def run_sft(model, tok, rows: list[dict], *, max_seq_len: int, train_args: dict,
     ).train()
 
 
+def run_cpt(model, tok, texts: list[str], *, max_seq_len: int, train_args: dict,
+            out_dir: Path, callbacks: list | None = None) -> None:
+    """Continued pretraining: next-token on raw corpus text (EOS-joined, packed)."""
+    from datasets import Dataset
+    from trl import SFTConfig, SFTTrainer
+    ds = Dataset.from_list([{"text": t + tok.eos_token} for t in texts])
+    SFTTrainer(
+        model=model, processing_class=tok, train_dataset=ds, callbacks=callbacks or [],
+        args=SFTConfig(dataset_text_field="text", max_length=max_seq_len, packing=True,
+                       output_dir=str(Path(out_dir) / "_trainer"), report_to="none",
+                       **train_args),
+    ).train()
+
+
 def _git_sha() -> str:
     try:
         return subprocess.run(["git", "-C", str(REPO), "rev-parse", "--short", "HEAD"],

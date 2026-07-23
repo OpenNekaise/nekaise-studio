@@ -15,9 +15,10 @@ data:                       # ← the one movable knob (judge-gated data recipe)
   epochs: 2
 
 run:
-  experiment: agentic-cpt
-  base_model: unsloth/Qwen3.5-0.8B
-  init_from: experiments/agentic-cpt/outputs/cpt
+  experiment: sft
+  # Fallback only; the normal SFT input is the full-parameter CPT checkpoint below.
+  base_model: openbmb/MiniCPM5-1B-Base
+  init_from: latest:cpt
   stage: sft
   metric: corpus_probes_dev
   seed: 3407

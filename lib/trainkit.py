@@ -1,7 +1,7 @@
 """trainkit — the training scaffolding every recipe shares. FIXED plumbing.
 
-Recipes (experiments/<name>/train.py) stay small and mutable: knobs + method choice. The
-mechanics that must not drift between experiments live here:
+Stage entry points stay small and fixed. The mechanics that must not drift between
+experiments live here:
 
   load_model(src, ...)        unsloth load; multimodal-tokenizer unwrap; LoRA attach rules
   run_sft(...)                chat-template render + TRL SFTTrainer
@@ -24,7 +24,7 @@ def load_model(src: str, *, max_seq_len: int = 2048, load_in_4bit: bool = False,
                full_finetuning: bool = False, lora: dict | None = None, seed: int = 3407):
     """Load a base / checkpoint with unsloth and return (model, tok).
 
-    - multimodal processors (Qwen3.5/VL) are unwrapped to their text tokenizer
+    - multimodal processors are unwrapped to their text tokenizer
     - if `lora` is given: a fresh adapter is attached UNLESS `src` already carries one
       (continuing an adapter checkpoint; a second get_peft_model would error)
     - full_finetuning=True trains all params (no adapter)
@@ -71,15 +71,34 @@ def run_sft(model, tok, rows: list[dict], *, max_seq_len: int, train_args: dict,
     ).train()
 
 
-def run_cpt(model, tok, texts: list[str], *, max_seq_len: int, train_args: dict,
-            out_dir: Path, callbacks: list | None = None) -> None:
-    """Continued pretraining: next-token on raw corpus text (EOS-joined, packed)."""
-    from datasets import Dataset
+def run_cpt(model, tok, data_paths: list[Path], *, max_seq_len: int, train_args: dict,
+            out_dir: Path, cache_dir: Path | None = None,
+            callbacks: list | None = None) -> None:
+    """Continued pretraining from memory-mapped JSONL (EOS-joined, packed).
+
+    The source corpus is never materialized as a Python list. Hugging Face datasets
+    converts each immutable JSONL artifact to an Arrow cache once, then maps it from
+    disk across runs and seeds.
+    """
+    from datasets import load_dataset
     from trl import SFTConfig, SFTTrainer
-    ds = Dataset.from_list([{"text": t + tok.eos_token} for t in texts])
+    paths = [str(Path(path)) for path in data_paths]
+    if not paths:
+        raise ValueError("run_cpt requires at least one dataset path")
+    if cache_dir is not None:
+        Path(cache_dir).mkdir(parents=True, exist_ok=True)
+    ds = load_dataset(
+        "json", data_files=paths, split="train", keep_in_memory=False,
+        cache_dir=str(cache_dir) if cache_dir is not None else None,
+    ).select_columns(["text"])
+
+    if not tok.eos_token:
+        raise ValueError("CPT tokenizer has no eos_token")
+    workers = max(1, int(train_args.pop("dataset_num_proc", 1)))
     SFTTrainer(
         model=model, processing_class=tok, train_dataset=ds, callbacks=callbacks or [],
         args=SFTConfig(dataset_text_field="text", max_length=max_seq_len, packing=True,
+                       dataset_num_proc=workers,
                        output_dir=str(Path(out_dir) / "_trainer"), report_to="none",
                        **train_args),
     ).train()
@@ -93,24 +112,20 @@ def _git_sha() -> str:
         return ""
 
 
-def save_checkpoint(model, tok, stage_dir: Path, provenance: dict) -> Path:
-    """Save weights + tokenizer + meta.json so the checkpoint is traceable to its recipe."""
-    stage_dir = Path(stage_dir)
-    stage_dir.mkdir(parents=True, exist_ok=True)
-    model.save_pretrained(str(stage_dir))
-    tok.save_pretrained(str(stage_dir))
-    (stage_dir / "meta.json").write_text(json.dumps(
-        {"saved": time.time(), "recipe_git_sha": _git_sha(), **provenance}, indent=2))
-    return stage_dir
-
-
-def update_best(out_dir: Path, stage: str, metric: str, value: float) -> bool:
-    """Track the experiment's best checkpoint (outputs/best.json). Returns True if new best."""
-    best_path = Path(out_dir) / "best.json"
-    best = json.loads(best_path.read_text()) if best_path.exists() else None
-    if best is None or value > best.get("value", float("-inf")):
-        best_path.write_text(json.dumps({"stage": stage, "metric": metric,
-                                         "value": round(value, 4),
-                                         "path": f"outputs/{stage}"}, indent=2))
-        return True
-    return False
+def save_checkpoint(model, tok, *, store, run_id: str, provenance: dict) -> dict:
+    """Atomically commit an immutable, content-addressed checkpoint artifact."""
+    temporary = store.artifact_temp("checkpoint", run_id)
+    try:
+        model.save_pretrained(str(temporary))
+        tok.save_pretrained(str(temporary))
+        (temporary / "meta.json").write_text(json.dumps(
+            {"saved": time.time(), "recipe_git_sha": _git_sha(),
+             "run_id": run_id, **provenance}, indent=2))
+        return store.commit_artifact(
+            temporary, kind="checkpoint", run_id=run_id, role="checkpoint",
+            metadata=provenance,
+        )
+    except BaseException:
+        # Leave the uniquely named temp directory for forensic inspection. GC may remove
+        # it later; never risk deleting a committed artifact after a partial failure.
+        raise

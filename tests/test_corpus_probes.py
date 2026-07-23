@@ -24,13 +24,19 @@ def test_splits_disjoint_and_cover():
     assert dev | frozen == allr
 
 
-def test_split_rule_is_deterministic():
-    # id-hash md5 % 5 == 0 -> frozen; pin the rule (not the minted ids, which are
-    # corpus-dependent) so a silent rule change can't reshuffle recorded metrics
-    import hashlib
-    for r in probes.load_split("all", 50):
-        frozen = int(hashlib.md5(r["id"].encode()).hexdigest(), 16) % 5 == 0
-        assert probes.in_split(r["id"], "frozen") is frozen
+def test_split_is_explicit_and_source_documents_are_disjoint():
+    raw = [json.loads(line) for line in
+           (REPO / "gym/tasks/corpus_probes/probes.jsonl").read_text().splitlines()]
+    dev_docs = {row["doc_id"] for row in raw if row["split"] == "dev"
+                and row["kind"] == "transfer"}
+    frozen_docs = {row["doc_id"] for row in raw if row["split"] == "frozen"}
+    absorption_docs = {row["doc_id"] for row in raw if row["kind"] == "absorption"}
+    assert dev_docs and frozen_docs and absorption_docs
+    assert dev_docs.isdisjoint(frozen_docs)
+    assert dev_docs.isdisjoint(absorption_docs)
+    assert frozen_docs.isdisjoint(absorption_docs)
+    for row in raw[:50]:
+        assert probes.in_split(row["id"], row["split"])
 
 
 def test_rows_are_completion_ready():

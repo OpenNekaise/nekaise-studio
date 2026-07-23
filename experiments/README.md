@@ -1,29 +1,43 @@
 # Experiments
 
-One folder per (base model × task pack). Each holds the two **editable recipe files** the
-autoresearch agent mutates — `train.py` (HOW to train: method, hyperparameters) and
-`build_data.py` (WHAT to train on: distilled / rejection-sampled data) — plus `LOG.md` (its
-journal). Runtime-only, git-ignored: `data/<id>/` (cached dataset artifacts + provenance),
-`outputs/<stage>/` (checkpoints, each with a provenance `meta.json`; `best.json` tracks the
-winner for `serve/`), `runs/` (dashboard telemetry), and `results.jsonl` (the measurement
-ledger every eval/train appends to). See
-[`../skills/run-experiment.md`](../skills/run-experiment.md) and the repo-root `STATUS.md`.
+The repository carries two experiments: **`coapt/`** (the active nekaise-coapt loop — its
+`build_data.py` is the round toolkit: `init-pool`, `emit-docs`, `select-frontier`,
+`make-drafts`, `build`) and **`cpt/`** (the raw-corpus stream builder, kept as the
+equal-token control for the null-hypothesis rule, SPEC.md §3).
 
-| Experiment | Base model | Metric | Status |
-|------------|-----------|------|--------|
-| `agentic-cpt` | sub-4B bases via `NEKAISE_BASE_MODEL` (default Qwen3.5-0.8B) | `corpus_probes` dev-absorption (studio-owned) | **current phase** — pure agentic CPT |
-| `ceiling-sub4b` | sub-4B bases (granite-4.1-3b, Qwen3.5-0.8B/2B via `NEKAISE_BASE_MODEL`) | was `nekaise_bench` dev (pre-decoupling) | paused — distill recipe validated on 0.8B; revisit after pure-CPT phase |
-| `granite-4.1-3b-building` | `unsloth/granite-4.1-3b` | `building` pack + `building_judge` | deferred — needs `nekaise_data/` + `NEKAISE_HOLDOUT` |
-| `granite-4.1-3b-gsm8k` | `unsloth/granite-4.1-3b` | `gsm8k` pack | bootstrap — works on a bare clone |
-| _granite-4.1-8b-*_ / _gemma-4-*_ / _sub-1B granite_ | — | — | planned |
+An experiment owns its mutable data recipe (`build_data.py`) and ignored runtime state:
+immutable `data/objects/` and `runs/<run_id>/` records. The global ignored
+`experiments/.studio/` directory contains the SQLite query index and checkpoint CAS. The training algorithm and
+hyperparameters do not live in the experiment; they are frozen in `studio/stages/` and
+asserted against the corresponding `configs/<stage>.yaml` `frozen:` section.
 
-The building experiment carries extra (still recipe-level, editable) files:
+For a CoAPT round (driven by `skills/coapt-round.md`):
 
-- `build_cpt_data.py` / `augment_corpus.py` — continued-pretraining corpus prep + augmentation.
-- `eval_judge.py` — grades the frozen realistic exam by anchors → `building_judge` (the gap).
-- `eval_domain.py` + `domain_quiz*.jsonl` — closed-book domain quiz → `domain_quiz` (the ceiling).
-- `gen_corpus_quiz.py` — generates corpus-knowledge probes.
+```bash
+python -m studio.cli build coapt --config configs/coapt.yaml
+python -m studio.cli train cpt --config configs/coapt.yaml
+```
 
-To add a model: copy an existing folder, change `BASE_MODEL` in `train.py` (or set
-`NEKAISE_BASE_MODEL`), reset `LOG.md`. The task pack, the loop, and the recipe-file
-structure stay identical.
+For the raw-CPT control:
+
+```bash
+python experiments/cpt/build_data.py
+python -m studio.cli train cpt --config configs/cpt.yaml
+```
+
+With an external user workspace, run the same flow through the overlay:
+
+```bash
+python -m studio.cli --workspace ../nekaise-user-workspace build cpt \
+  --config configs/cpt.yaml
+python -m studio.cli --workspace ../nekaise-user-workspace train cpt \
+  --config configs/cpt.yaml
+```
+
+The workspace's `experiments/<name>/build_data.py` overrides the core recipe when it
+exists; otherwise `build` falls back to this directory. Data, runs, and artifacts always
+land in the active workspace.
+
+Direct stage entry points are implementation/debug interfaces, not the agent control
+surface. During the autoresearch loop, the agent may change only
+`experiments/cpt/build_data.py` or `configs/cpt.yaml`'s `data:` section.

@@ -1,32 +1,33 @@
-"""R9: crystallize admission is code-enforced — ≥2 independent experiments or no skill."""
+"""A skill needs keep decisions from two independently named experiments."""
 from __future__ import annotations
 
-import json
-
+from lib.runstore import RunStore
 from studio.tools import crystallize_gate as gate
 
 
-def _log(root, exp, records):
-    d = root / "experiments" / exp
-    d.mkdir(parents=True)
-    (d / "log.jsonl").write_text(
-        "".join(json.dumps(r) + "\n" for r in records))
+def _decision(store, exp, run_id, finding, verdict):
+    store.create_run(experiment=exp, stage="cpt", kind="experiment", run_id=run_id)
+    store.record_decision(
+        run_id, metric="acc", value=0.5, verdict=verdict, reason="test",
+        metadata={"finding": finding},
+    )
 
 
 def test_gate_requires_two_experiments(tmp_path):
-    _log(tmp_path, "exp-a", [{"finding": "wsd-wins", "verdict": "keep"}])
-    ok, msg = gate.check("wsd-wins", root=tmp_path)
+    store = RunStore(tmp_path)
+    _decision(store, "exp-a", "r1", "data-wins", "keep")
+    ok, msg = gate.check("data-wins", root=tmp_path)
     assert not ok and "need ≥2" in msg
 
-    _log(tmp_path, "exp-b", [{"finding": "wsd-wins", "verdict": "keep"},
-                             {"finding": "other", "verdict": "keep"}])
-    ok, msg = gate.check("wsd-wins", root=tmp_path)
+    _decision(store, "exp-b", "r2", "data-wins", "keep")
+    ok, msg = gate.check("data-wins", root=tmp_path)
     assert ok and "PASS" in msg
 
 
 def test_reverts_do_not_count(tmp_path):
-    _log(tmp_path, "exp-a", [{"finding": "x", "verdict": "keep"}])
-    _log(tmp_path, "exp-b", [{"finding": "x", "verdict": "revert"}])
+    store = RunStore(tmp_path)
+    _decision(store, "exp-a", "r1", "x", "keep")
+    _decision(store, "exp-b", "r2", "x", "revert")
     ok, _ = gate.check("x", root=tmp_path)
     assert not ok
 
@@ -36,5 +37,5 @@ def test_mark_unverified(tmp_path):
     md.write_text("---\nfinding: x\n---\n# Skill\n")
     gate.mark_unverified(md)
     assert "status: unverified" in md.read_text()
-    gate.mark_unverified(md)                                   # idempotent
+    gate.mark_unverified(md)
     assert md.read_text().count("status: unverified") == 1

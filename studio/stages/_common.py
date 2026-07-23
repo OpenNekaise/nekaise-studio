@@ -8,22 +8,31 @@ What every stage entry point gets from here:
                                   changes are human review, not loop moves)
     wsd_kwargs(...)               WSD schedule geometry from frozen ratios
     make_reward(tasks)            thin TRL adapter over gym verifiers (R1: logic in gym)
-    finish_stage(...)             provenance save + retention (best+last only, R9) +
-                                  schema'd log row (R8) + METRIC line
+    finish_stage(...)             immutable content-addressed checkpoint commit
     Budget                        wall-clock hard cap (R9): stop callback + abort record
 """
 from __future__ import annotations
 
 import json
 import math
-import shutil
 import sys
 import time
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO))            # gym.*
-sys.path.insert(0, str(REPO / "lib"))    # trainkit/datakit/runlog/results (legacy plumbing)
+sys.path.insert(0, str(REPO / "lib"))    # trainkit/datakit/runlog/runstore
+
+
+# ------------------------------- workspace ------------------------------------
+def active_workspace():
+    from workspace import Workspace
+    return Workspace.resolve(REPO).apply_environment()
+
+
+def experiment_dir(name: str) -> Path:
+    """Runtime experiment directory in the active user workspace."""
+    return active_workspace().experiment_dir(name)
 
 
 # ------------------------------- config ---------------------------------------
@@ -51,12 +60,16 @@ def assert_frozen(cfg: dict, frozen: dict, stage: str) -> None:
 
 
 def wsd_kwargs(total_steps: int, warmup_ratio: float, decay_ratio: float) -> dict:
-    """Warmup–stable–decay geometry (CPT card row). Returns TrainingArguments kwargs."""
+    """Warmup–stable–decay geometry (CPT card row). Returns TrainingArguments kwargs.
+
+    ``total_steps`` is an estimate made before TRL tokenizes and packs the dataset. Do
+    not pin ``num_stable_steps`` from it: Transformers receives the actual step count
+    from Trainer and derives the stable phase so decay always finishes at the real end.
+    """
     warmup = max(1, math.ceil(total_steps * warmup_ratio))
     decay = max(1, math.ceil(total_steps * decay_ratio))
-    stable = max(1, total_steps - warmup - decay)
     return {"lr_scheduler_type": "warmup_stable_decay", "warmup_steps": warmup,
-            "lr_scheduler_kwargs": {"num_stable_steps": stable, "num_decay_steps": decay}}
+            "lr_scheduler_kwargs": {"num_decay_steps": decay}}
 
 
 # ------------------------------- rewards --------------------------------------
@@ -97,50 +110,25 @@ class Budget:
         return round((time.time() - self.t0) / 60, 1)
 
 
-# ------------------------------- retention (R9) --------------------------------
-def retain_best_and_last(out_dir: Path, last_stage: str) -> list[str]:
-    """Keep outputs/<best> + outputs/<last_stage>; delete every other stage dir."""
-    out_dir = Path(out_dir)
-    best_path = out_dir / "best.json"
-    keep = {last_stage}
-    if best_path.exists():
-        keep.add(Path(json.loads(best_path.read_text()).get("path", "")).name)
-    removed = []
-    for d in out_dir.iterdir() if out_dir.exists() else []:
-        if d.is_dir() and d.name not in keep and (d / "meta.json").exists():
-            shutil.rmtree(d)
-            removed.append(d.name)
-    return removed
-
-
 # ------------------------------- finish ---------------------------------------
 def finish_stage(*, exp_dir: Path, stage: str, metric: str, value: float | None,
-                 cfg: dict, budget: Budget, model=None, tok=None,
-                 log_fields: dict | None = None) -> None:
-    """Checkpoint provenance + retention + schema'd log + METRIC line (one exit path)."""
-    import trainkit
-    from studio.tools import explog
+                 cfg: dict, budget: Budget, run_logger,
+                 model=None, tok=None, log_fields: dict | None = None) -> dict | None:
+    """Commit one immutable checkpoint and advance only mutable pointer aliases.
 
-    out_dir = exp_dir / "outputs"
+    Training never chooses ``best``: independent evaluation records the metric and an
+    explicit decision moves a best pointer later.
+    """
+    import trainkit
+
     if model is not None:
-        trainkit.save_checkpoint(model, tok, out_dir / stage,
-                                 {"stage": stage, "config": cfg, "metric": metric,
-                                  "value": value, "minutes": budget.minutes,
-                                  "timeboxed": budget.exceeded})
-        if value is not None:
-            trainkit.update_best(out_dir, stage, metric, value)
-        removed = retain_best_and_last(out_dir, stage)
-        if removed:
-            print(f"[retention] removed {removed} (best+last policy)")
-    explog.append(exp_dir, **{
-        "hypothesis": (log_fields or {}).get("hypothesis", ""),
-        "variable": (log_fields or {}).get("variable", f"{stage}: config run"),
-        "expectation": (log_fields or {}).get("expectation", ""),
-        "result": f"{metric}={value}" if value is not None else "no metric",
-        "noise_band": explog.load_noise_band(exp_dir, metric),
-        "verdict": "aborted-timebox" if budget.exceeded and value is None
-                   else (log_fields or {}).get("verdict", "pending"),
-        "confidence": (log_fields or {}).get("confidence", "n/a"),
-        "stage": stage, "metric": metric, "value": value, "minutes": budget.minutes})
-    if value is not None:
-        print(f"METRIC {metric}={value:.4f}")
+        artifact = trainkit.save_checkpoint(
+            model, tok, store=run_logger.store, run_id=run_logger.run_id,
+            provenance={"stage": stage, "config": cfg, "metric": metric,
+                        "value": value, "minutes": budget.minutes,
+                        "timeboxed": budget.exceeded, **(log_fields or {})},
+        )
+        run_logger.store.set_pointer(exp_dir.name, "latest", run_logger.run_id,
+                                     artifact["digest"])
+        return artifact
+    return None

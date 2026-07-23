@@ -2,8 +2,8 @@
 """crystallize_gate — code-enforced admission for crystallized skills (R9).
 
 A finding may become a local skill ONLY when it replicated across ≥2 independent
-experiments (distinct experiments/<name>/log.jsonl files with verdict=keep records
-tagged `finding: <slug>`). The crystallize-skill runs this gate FIRST and aborts on
+experiments (distinct experiment names with SQLite decision records tagged by
+``metadata.finding`` and verdict=keep). The crystallize-skill runs this gate FIRST and aborts on
 exit 1; prune-skills uses --audit to re-review the existing library and demote what
 lacks evidence (status: unverified → hypothesis, not deleted).
 
@@ -14,7 +14,6 @@ lacks evidence (status: unverified → hypothesis, not deleted).
 from __future__ import annotations
 
 import argparse
-import json
 import re
 import sys
 from pathlib import Path
@@ -24,18 +23,17 @@ MIN_EXPERIMENTS = 2
 
 
 def evidence(finding: str, root: Path | None = None) -> dict[str, int]:
-    """{experiment name: #keep records tagged with this finding} across all logs."""
+    """{experiment name: #keep decisions tagged with this finding}."""
+    import sys
+    repo = (root or REPO).resolve()
+    sys.path.insert(0, str(repo / "lib"))
+    from runstore import RunStore
+
     out: dict[str, int] = {}
-    for log in sorted(((root or REPO) / "experiments").glob("*/log.jsonl")):
-        n = 0
-        for line in log.read_text().splitlines():
-            if not line.strip():
-                continue
-            r = json.loads(line)
-            if r.get("finding") == finding and r.get("verdict") == "keep":
-                n += 1
-        if n:
-            out[log.parent.name] = n
+    for decision in RunStore(repo).list_decisions(verdict="keep"):
+        if decision.get("metadata", {}).get("finding") == finding:
+            exp = decision["experiment"]
+            out[exp] = out.get(exp, 0) + 1
     return out
 
 
@@ -65,9 +63,11 @@ def mark_unverified(path: Path) -> None:
 
 
 def audit() -> int:
-    local = sorted((REPO / "skills" / "local").glob("*.md"))
+    sys.path.insert(0, str(REPO / "lib"))
+    from workspace import Workspace
+    local = sorted(Workspace.resolve(REPO).local_skills_dir.glob("*.md"))
     if not local:
-        print("skills/local/ is empty — nothing to audit")
+        print(f"{Workspace.resolve(REPO).local_skills_dir} is empty — nothing to audit")
         return 0
     bad = 0
     for p in local:
@@ -85,6 +85,18 @@ def audit() -> int:
     return 0
 
 
+def local_skill_path(value: str) -> Path:
+    path = Path(value).expanduser()
+    if path.is_absolute():
+        return path
+    sys.path.insert(0, str(REPO / "lib"))
+    from workspace import Workspace
+    workspace = Workspace.resolve(REPO)
+    if path.parts[:2] == ("skills", "local"):
+        return workspace.local_skills_dir.joinpath(*path.parts[2:])
+    return path
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser()
     g = ap.add_mutually_exclusive_group(required=True)
@@ -97,8 +109,9 @@ def main(argv=None) -> int:
     if args.audit:
         return audit()
     if args.mark_unverified:
-        mark_unverified(Path(args.mark_unverified))
-        print(f"marked unverified: {args.mark_unverified}")
+        path = local_skill_path(args.mark_unverified)
+        mark_unverified(path)
+        print(f"marked unverified: {path}")
         return 0
     ok, msg = check(args.finding, args.min_experiments)
     print(msg)

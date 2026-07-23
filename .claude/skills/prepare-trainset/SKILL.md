@@ -18,7 +18,7 @@ think in their head and span lookups, structure, control logic, **diagnostics**,
 in their natural voice (engineer-precise, operator-casual), tagging each with a free-form `intent`.
 Each pair carries a grounded answer plus its **`anchors`** (the must-match facts) + `source`. Gate
 every pair with the `judge` skill (keep only `score==1.0`), write the dataset through `lib/datakit`
-so `train.py` (`DATASET="auto"`) picks it up, and author the frozen realistic exam
+so the fixed SFT stage picks it up from `data/LATEST`, and author the frozen realistic exam
 `packs/building/eval_open.jsonl` for the holdout once.
 
 **Hard rules:** never generate from the holdout; never edit `packs/*/scorer.py` or `prepare.py`;

@@ -1,6 +1,6 @@
 # [DRAFT — file against OpenNekaise/opennekaise] Headless programmable mode
 
-> Cross-repo dependency of nekaise-gym's agentic training stage (REFACTOR.md R11).
+> Cross-repo dependency of the agentic training stage.
 > Not yet filed; this draft is the interface definition the studio codes against.
 
 ## Ask

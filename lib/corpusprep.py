@@ -1,7 +1,7 @@
 """corpusprep — shared corpus loading + cleaning for CPT-style recipes. FIXED plumbing.
 
-Extracted from experiments/granite-4.1-3b-building/build_cpt_data.py so recipes stop
-carrying private copies of the cleaner. Also absorbs the corpus's manifest reshard:
+Recipes share this implementation instead of carrying private copies of the cleaner.
+It supports both corpus manifest layouts:
 `manifest.jsonl` (single file, legacy) and `manifest/*.jsonl` (sharded) both load.
 
     load_manifest(corpus_dir)   -> [{"id","topic","status","text_path",...}, ...]

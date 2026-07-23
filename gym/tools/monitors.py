@@ -1,9 +1,9 @@
 """monitors — reward-hacking watch for soft verifiers (R7). Defense by measurement.
 
 anchor_recall is gameable by stuffing anchor strings; judge-style grading by
-ingratiation. These monitors quantify the two known hacking signatures so the dashboard
-can plot them and the loop can flag anomalies for human review — the algorithm itself is
-never patched (SPEC §6).
+ingratiation. These monitors quantify the two known hacking signatures so the agent can
+query them and flag anomalies for review — the algorithm itself is never patched
+(SPEC §6).
 
     anchor_density(response, anchors)  anchors matched per 100 words — stuffing inflates it
     listiness(response)                fraction of lines that are bullets/enumerations

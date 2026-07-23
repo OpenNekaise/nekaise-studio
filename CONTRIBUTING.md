@@ -5,8 +5,8 @@ each user's agent extends locally. Contributions flow back through two doors.
 
 ## Door 1: promote a skill (the main path)
 
-Your agent writes emergent skills into `skills/local/` (git-ignored) as it works. A local
-skill enters the shared kernel like this:
+Your agent writes emergent skills into the active user workspace's `skills/local/` as it
+works. A local skill enters the shared kernel like this:
 
 1. **Validate.** The skill's advice must be confirmed by the eval harness — a kept run (or
    several) where following it beat the previous best. Building-specific facts never qualify;
@@ -27,8 +27,8 @@ skill enters the shared kernel like this:
   frozen exams, or how a metric is computed need a maintainer discussion *first* — the whole
   self-improving loop trusts these files.
 - `lib/` is fixed plumbing: additive, backward-compatible changes only.
-- Recipes (`experiments/*/train.py`, `build_data.py`) are meant to evolve — improvements
-  welcome, with a `LOG.md`-style before/after where possible.
+- Data recipes (`experiments/*/build_data.py`) are meant to evolve. Link improvements to
+  exact run IDs, checkpoint digests, and typed before/after metrics.
 
 ## Dev setup
 
@@ -38,6 +38,11 @@ git config core.hooksPath tools/hooks   # pre-commit privacy guard
 python tools/doctor.py                  # preflight
 pytest                                  # must stay green (CPU-only, no GPU needed)
 ```
+
+Use `python -m studio.cli workspace init ../nekaise-user-workspace` for normal
+experimentation. That keeps local recipes, config overlays, run records, data, weights,
+skills, and integrations out of the bootloader Git worktree. Promotion into a PR is then
+an explicit copy of the minimal sanitized source change, not an accidental `git add`.
 
 CI (`.github/workflows/ci.yml`) runs compile + tests + the privacy scan on every PR.
 

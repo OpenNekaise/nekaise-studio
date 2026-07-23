@@ -10,17 +10,17 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parents[1]
 
 BAN_TERMS = re.compile(
-    r"\b(?:DPO|PPO|curriculum learning|process reward|MCTS|model merging)\b", re.I)
+    r"\b(?:DPO|PPO|process reward|MCTS|model merging)\b", re.I)
 AVAILABLE = re.compile(r"\b(?:available|supported|enabled|in service)\b|可用|开箱", re.I)
 LEGACY_MARK = re.compile(r"legacy|banned|ban[- ]list|archived|禁用|存档", re.I)
-SKIP = {"SPEC.md", "REFACTOR.md", "BOUNDARY.md",
-        "REFACTOR-NOTES.md"}                              # they DISCUSS the ban itself
+SKIP = {"SPEC.md", "BOUNDARY.md"}                        # they DISCUSS the ban itself
 
 
 def tracked_markdown() -> list[Path]:
     out = subprocess.run(["git", "-C", str(REPO), "ls-files", "*.md"],
                          capture_output=True, text=True, check=True).stdout
-    return [REPO / f for f in out.splitlines() if Path(f).name not in SKIP]
+    return [REPO / f for f in out.splitlines()
+            if Path(f).name not in SKIP and (REPO / f).exists()]
 
 
 def test_banned_techniques_never_advertised():

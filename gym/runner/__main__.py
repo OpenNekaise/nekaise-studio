@@ -2,7 +2,7 @@
 
     python -m gym.runner --base-url http://localhost:8000/v1 --model MiniCPM5-1B \
         --task corpus_probes --split dev [--limit 200]
-    python -m gym.runner --checkpoint experiments/<exp>/outputs/<stage> --task bench
+    python -m gym.runner --checkpoint <resolved-checkpoint-path> --task bench
 
 Any OpenAI-compatible endpoint (vllm serve / Ollama /v1 / frontier API) or a local
 checkpoint via the vLLM offline engine. Scores come from gym verifiers — the same

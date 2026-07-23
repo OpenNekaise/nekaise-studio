@@ -41,7 +41,7 @@ GENERIC = [
 def denied_terms() -> list[str]:
     """Building folder names (from local data) + the local denylist. Empty in CI — fine."""
     terms = []
-    data = REPO / "nekaise_data"
+    data = Path(os.environ.get("NEKAISE_DATA", REPO / "nekaise_data"))
     if data.exists():
         terms += [d.name for d in data.iterdir()
                   if d.is_dir() and not d.name.startswith((".", "_"))

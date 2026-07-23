@@ -7,7 +7,7 @@ memory. Two modes, both **outside** the fine-tuning hot loop.
 ## Privacy — read first (HARD RULE)
 
 The building data is **proprietary partner data**. Never write a real building/partner/address
-name into any *tracked* file (your logs, the dashboard, `LOG.md`, commit messages). Refer to
+name into any *tracked* file (skills, code, documentation, commit messages). Refer to
 buildings generically. Your verdict logs are scratch — keep names out of anything committed.
 
 ## The integrity rule (why this judge is trustworthy, not vibes)
@@ -57,9 +57,9 @@ answers like an engineer/operator.
 **Inputs:**
 - The frozen `packs/building/eval_open.jsonl` (each row: `persona`, `intent`, `question`,
   `ground_truth`, `anchors`, `source`).
-- The **student's answers** — generate them from the experiment's checkpoint
-  (`experiments/<exp>/outputs/<stage>`) or its exported Ollama model, using the same `SYSTEM_PROMPT`
-  and chat template as `train.py`, greedy decoding. Judge them **blind**.
+- The **student's answers** — resolve the exact experiment `run_id` with
+  `python -m studio.cli resolve --run-id <id>`, or use its exported Ollama model, using the same `SYSTEM_PROMPT`
+  and chat template as the fixed SFT stage, greedy decoding. Judge them **blind**.
 
 **Grade** each answer by its `anchors` (fraction matched, above). **Aggregate:**
 `building_judge = mean(score)` over the exam, and also report the mean **per `intent`** so you see

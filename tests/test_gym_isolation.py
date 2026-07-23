@@ -6,7 +6,7 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[1]
 FORBIDDEN = re.compile(
-    r"^\s*(?:from|import)\s+(?:studio|lib|packs|tools|experiments|attic)\b", re.M)
+    r"^\s*(?:from|import)\s+(?:studio|lib|packs|tools|experiments)\b", re.M)
 
 
 def test_gym_never_imports_studio_side():

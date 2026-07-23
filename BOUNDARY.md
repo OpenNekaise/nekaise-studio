@@ -30,12 +30,11 @@ One job: train a model until it passes the examination hall.
 
     SPEC.md / BOUNDARY.md   constitution: algorithm card, ban list, null-hypothesis
                             rule, environment lock, this boundary
-    configs/                five frozen stage configs (cpt/sft/rlvr/opd/agentic)
-    studio/stages/          five training entry points; frozen-section drift refuses
+    configs/                frozen stage configs (cpt, sft) + the CoAPT round recipe
+    studio/stages/          training entry points; frozen-section drift refuses
     lib/                    training scaffolding, checkpoint provenance
     skills/                 the agent's operating manual
-    experiments/            the ledger + archived history (incl. legacy DPO code —
-                            archived status, ban-listed for new work)
+    experiments/            active data recipes + local runtime ledger
 
 It NEVER contains: task definitions or grading logic — it does `import gym` like a
 third-party library. Health check: *would this code change if you swapped the model or

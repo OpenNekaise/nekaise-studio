@@ -1,57 +1,68 @@
 # STATUS — current phase and targets
 
-> Durable procedure lives in `SPEC.md` (the constitution), `skills/`, and `AGENTS.md`;
-> this page is the part that CHANGES. Last update: 2026-07-21.
+> Durable procedure lives in `SPEC.md`, `BOUNDARY.md`, `skills/`, and `AGENTS.md`.
+> This file contains only the active state. Last update: 2026-07-23.
 
-## Phase: POST-REFACTOR SHAKEDOWN
+## Phase: NEKAISE-COAPT MVP (two rounds)
 
-The REFACTOR.md rebuild (R1–R12; deviations in docs/REFACTOR-NOTES.md) is in place.
-The gym/studio boundary is constitutional (BOUNDARY.md Article 0: studio contains gym,
-never the reverse). The algorithm card, ban list, null-hypothesis meta-rule, and
-environment lock moved to **SPEC.md** — STATUS no longer carries them. Architecture:
+Active model: **`openbmb/MiniCPM5-1B-Base`**. The campaign is the first full
+**nekaise-coapt** loop (SPEC.md §1): two chained rounds, R0 and R1, driven by the
+`coapt-round` skill. The goal is NOT a score target — it is to demonstrate that the
+closed loop is real: training changes the student, the changed student changes the
+diagnosis, and the changed diagnosis changes the data.
 
-- **gym/** — tasks + verifiers + runner: the single definition of correct. One-way
-  dependency (studio → gym), enforced by tests.
-- **studio/stages/** — `python -m studio.stages.<cpt|sft|rlvr|opd> --config
-  configs/<stage>.yaml`; frozen sections asserted against the card.
-- **studio/tools/** — explog (schema'd LOG), variance_check (noise band),
-  crystallize_gate (≥2-experiment admission).
+The CPT data-scaling ladder (R0/4M/40M/400M/1B/2B, stream plan `nekaise-1b-cpt-v1`) is
+**closed by human directive 2026-07-23**, superseding the 2026-07-22 finish-the-ladder
+directive. Its runs, datasets, and the 40M noise band (0.003143 on
+`corpus_transfer_macro_dev`, seeds 0.1221/0.1181/0.1159) remain in the RunStore as
+evidence; nothing from it chains into this campaign.
 
-Mainline: **1B-class (Qwen3.5-0.8B → product name Nekaise-1B)**; 3B parked as an optional
-verification line (re-verify any 3B conclusion on 1B before adopting — learnability gap).
+## Success criteria (fixed before R0)
 
-## Best known (corpus_probes dev, absorption)
+1. **Pipeline** — both rounds run end to end through the skills; every round artifact
+   (pool, frontier, drafts, teacher rows, gate verdicts, token ledger, run ids, evals)
+   exists with provenance.
+2. **Loop closure** (the MVP's core evidence, checked at R1 entry):
+   R0 teacher-text NLL falls under S1; R0 questions answer better under S1 (vs the
+   recorded `student_verdict` rate); the frontier turns over. The first two are hard
+   requirements — if either fails, stop and report.
+3. **Learning** — `coapt_pool_absorption_dev`: S1 > S0 and S2 > S1 beyond the R0
+   three-seed noise band, with `corpus_transfer_macro_dev` never falling more than the
+   band below the previous student (guardrail; a breach reverts the round).
 
-| model | base | best treatment |
-|---|--:|---|
-| Qwen3.5-0.8B | 0.1148 (transfer 0.0968) | **0.1318** (transfer 0.1075) — LoRA r32 CPT smoke (pre-refactor run 1, cosine) |
+## Agent control path
 
-nekaise-bench stays DECOUPLED: milestone-only external referee (`tools/eval_bench.py`),
-version-stamped, never keep/revert.
+1. `python tools/doctor.py`
+2. Follow `skills/coapt-round.md`. R0 sequence in brief:
+   `build_data.py init-pool` → baseline reference (full dev + pool view) →
+   `emit-docs` → `student.py score` → `select-frontier` → `make-drafts` →
+   branch skills (`coapt-cpt`, `coapt-sft`) →
+   `python -m studio.cli build coapt --config configs/coapt.yaml` →
+   `python -m studio.cli train cpt --config configs/coapt.yaml --seed {3407,3408,3409}` →
+   pool + transfer eval per seed → noise band `max(std, half_range)` →
+   `python -m studio.cli decide <run_id> --metric coapt_pool_absorption_dev ...` →
+   round report.
+3. R1 chains from **seed 3407's** R0 checkpoint (fixed in advance): set
+   `run.init_from: run:<r0 seed-3407 run_id>`, `data.round: 1`,
+   `data.round_dir: coapt/rounds/r1`; run the loop-closure checks before generating.
 
-## Next levers (strict order — R5 before any new experiment)
+All commands emit bounded JSON or stable `RUN_ID`/`EVAL_RESULT`/`METRIC` records. Query
+runs with `studio.cli list/show/resolve`; use run ids as evidence.
 
-1. **HUMAN: install + pin vLLM** (SPEC §4; requirements.txt placeholder). The runner and
-   RLVR rollout paths are wired but unexercised until then.
-2. **variance_check on the mainline CPT config** — 3 seeds, write the noise band, then
-   re-audit the pre-refactor conclusion (0.1318 vs 0.1148) against it;
-   `crystallize_gate --audit` marks affected local skills `unverified`.
-3. **Card-migration CPT run** — `studio.stages.cpt` (WSD, frozen) replacing the cosine
-   smoke run; re-baseline under the card. One migration run, then the only CPT knob is
-   the data recipe.
-4. **Data recipe: diverse forms** — paraphrase augmentation vs raw repetition on
-   absorption probes (the Allen-Zhu lever; expected main gain).
-5. **calibrate.py first pass** — model ladder over corpus_probes dev; bands feed the
-   RLVR task sampler (20–80% window) when RLVR unlocks.
-6. **Corpus capacity & task-set build-out** — the agent's free energy goes here, not to
-   hyperparameter search (SPEC §5).
+## Current next actions
 
-## Recently retired
+- R0 has not started. First moves: `python tools/doctor.py`, then freeze the pool
+  (`python experiments/coapt/build_data.py init-pool`) and record the S0 baseline
+  (full dev `--record-reference coapt`, then the pool view on that reference run).
+- Round budget: `target_content_tokens: 4M` cap; teacher volume drives the actual total
+  (ratio-locked mix 40/25/15/20). Expect ~1–2k teacher corrections per round; the
+  teacher work in the branch skills is the wall-clock bottleneck, not the GPU.
+- No noise band exists yet for `coapt_pool_absorption_dev` — R0's three seeds create it.
+  Until then every decide is `pending`/`baseline`.
 
-- **STATUS-resident algorithm card** → moved to SPEC.md §1 (constitution layer) with the
-  ban list, null-hypothesis rule, and environment lock (refactor R2, 2026-07-21).
-- **HF `generate()` eval paths** → gym runner (vLLM/OpenAI-compatible); old versions in
-  `attic/` (R4).
-- **packs/ as logic** → thin shims over gym; verifier truth lives in gym/verifiers only
-  (R1).
-- **2B / granite-4.1-3b levers** (1B refocus, 2026-07-21) — parked, not abandoned.
+## Deferred
+
+Chat-format SFT consolidation (`studio/stages/sft.py`), the CoAPT-vs-raw-CPT
+null-hypothesis A/B (mandatory before any effectiveness claim, SPEC.md §3), building-pack
+work (`prepare-trainset`/`judge` remain dormant assets), `nekaise_bench` milestones,
+export, and multi-machine execution.

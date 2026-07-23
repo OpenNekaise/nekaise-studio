@@ -1,0 +1,58 @@
+# CoAPT round config. Trains through the frozen CPT stage (studio/stages/cpt.py) —
+# `frozen:` must match that card row exactly and is asserted in code. The `data:` recipe
+# is FROZEN ACROSS ROUNDS of one campaign: between rounds only `data.round`,
+# `data.round_dir`, `run.init_from`, and `run.seed` may change (the loop's one variable
+# is the data content the closed loop regenerates, never the recipe).
+
+frozen:
+  optimizer: adamw_8bit
+  schedule: wsd
+  warmup_ratio: 0.03
+  decay_ratio: 0.10
+  max_seq_len: 2048
+  learning_rate: 2.0e-5
+  precision: bf16
+  finetuning: full
+
+data:
+  round: 0
+  round_dir: coapt/rounds/r0        # under the workspace scratch dir
+  corpus:
+    path: ../nekaise-corpus
+  pool:                             # frozen candidate pool (init-pool, once per campaign)
+    path: coapt/pool.jsonl
+    size: 150
+    min_probes: 3
+    seed: 3407
+  frontier_docs: 48
+  draft:
+    chunk_chars: 2400
+    chunks_per_doc: 2
+  mix:                              # content-token shares; the ledger enforces them
+    raw: 0.40
+    teacher_cpt: 0.25
+    qa_text: 0.15
+    anchor: 0.20
+  target_content_tokens: 4000000    # hard cap on one round's mixed volume
+  max_content_tokens: 1800
+  raw_doc_tokens: 8192
+  min_source_chars: 1500
+  min_clean_chars: 1500
+  anchor_seed: 3407
+  shuffle_seed: 3407
+  sources:
+    - {dataset: auto, weight: 1}    # datakit LATEST from experiments/coapt/build_data.py
+  epochs: 1
+
+run:
+  experiment: coapt
+  base_model: openbmb/MiniCPM5-1B-Base
+  init_from: null                   # R0: base; R1+: run:<previous round's run_id>
+  stage: cpt
+  kind: coapt_round
+  metric: coapt_pool_absorption_dev
+  seed: 3407
+  max_minutes: 90
+  per_device_batch: 2
+  grad_accum: 8
+  preprocess_workers: 4

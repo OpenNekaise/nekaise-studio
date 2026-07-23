@@ -10,35 +10,53 @@ reverts, and writes down what it learned — then improves its own instructions.
 resulting models run on-prem via [nekaise-edge](https://github.com/OpenNekaise/nekaise-edge),
 no frontier cloud dependency.
 
-## How it works
+## How it works — nekaise-coapt
+
+The training algorithm is **CoAPT** (Co-Adaptive Pretraining and Tuning): the current
+student's measured state selects the data, the agent teaches against real corpus text,
+and the trained student re-selects the next round's data.
 
 ```
-      ┌────────────────────────────────────────────────────────┐
-      │  propose ONE change            (data recipe only)      │
-      │      ↓                                                 │
-      │  train      python -m studio.stages.<stage>            │
-      │      ↓                                                 │
-      │  measure    gym verifiers → METRIC + noise band        │
-      │      ↓                                                 │
-      │  keep ⇔ effect > noise band          (else revert)     │
-      │      ↓                                                 │
-      │  log → replicate ×2 → crystallize into a new skill ────┼──▶ the loop improves
-      └────────────────────────────────────────────────────────┘      itself
+      ┌──────────────────────────────────────────────────────────────┐
+      │  diagnose    student NLL + closed-book probes over the pool  │
+      │      ↓                                                       │
+      │  teach       student drafts / answers → agent corrects,      │
+      │              grounded ONLY in the source document (gated)    │
+      │      ↓                                                       │
+      │  mix         raw + teacher CPT + QA-text + anchor            │
+      │              (token-ledgered shares)                         │
+      │      ↓                                                       │
+      │  train       python -m studio.cli train cpt (frozen stage)   │
+      │      ↓                                                       │
+      │  measure     probe referee → METRIC + noise band             │
+      │      ↓                                                       │
+      │  keep ⇔ effect > band, guardrail intact       (else revert)  │
+      │      ↓                                                       │
+      │  re-diagnose the NEW student → next round ───────────────────┼──▶ the loop
+      └──────────────────────────────────────────────────────────────┘     closes
 ```
 
-The algorithms are deliberately boring and **frozen** — five stages (CPT → SFT → RLVR →
-OPD → agentic) on stock Unsloth/TRL trainers, JustRL-style single recipes, no tricks.
-That's the philosophy: an agent-run loop converges only when the knobs are few, so all
-creativity is spent where complexity compounds — **data recipes, verifiers, and
-measurement** — and none where it doesn't.
+The trainer is deliberately boring and **frozen** — one stock Unsloth full-parameter CPT
+recipe, no tricks. That's the philosophy: an agent-run loop converges only when the knobs
+are few, so all creativity is spent where complexity compounds — **the data the loop
+generates, verifiers, and measurement** — and none where it doesn't.
 
 ## Try it
 
 ```bash
 python tools/doctor.py                                            # preflight
-python -m studio.stages.cpt --config configs/cpt.yaml --dry-run   # validate the card
+python -m studio.cli integrity                                   # query-store preflight
 # then point Claude Code at the repo — it reads AGENTS.md and drives the loop itself
 ```
+
+For a clean open-source installation, keep agent-created work outside the bootloader:
+
+```bash
+python -m studio.cli workspace init ../nekaise-user-workspace
+python -m studio.cli --workspace ../nekaise-user-workspace integrity
+```
+
+See [docs/WORKSPACE.md](docs/WORKSPACE.md) for the overlay, isolation, and promotion model.
 
 ## Map
 
@@ -48,9 +66,12 @@ python -m studio.stages.cpt --config configs/cpt.yaml --dry-run   # validate the
 | [BOUNDARY.md](BOUNDARY.md) | what studio is, what gym is, and which contains which |
 | [STATUS.md](STATUS.md) | current phase + next levers — the only part that changes |
 | [gym/](gym/) | the examination hall: tasks + verifiers + runner ([own README](gym/README.md)) |
-| [studio/stages/](studio/stages/) + [configs/](configs/) | five frozen training entry points |
+| [studio/stages/](studio/stages/) + [configs/](configs/) | frozen training entry points (cpt, sft) + the CoAPT round recipe |
+| [studio/cli.py](studio/cli.py) + [lib/runstore.py](lib/runstore.py) | JSON agent API, SQLite run index, immutable artifacts |
+| [docs/RUNSTORE.md](docs/RUNSTORE.md) | run lifecycle, artifact and retention protocol |
+| [docs/WORKSPACE.md](docs/WORKSPACE.md) | isolated user overlays for configs, recipes, skills, runs, and artifacts |
 | [skills/](skills/) | the agent's operating manual |
-| [docs/RESULTS.md](docs/RESULTS.md) | published, reproducible results (public assets only) |
+| [STATUS.md](STATUS.md) | active bring-up phase and the next executable checks |
 
 Part of [OpenNekaise](https://opennekaise.com/). MIT.
 

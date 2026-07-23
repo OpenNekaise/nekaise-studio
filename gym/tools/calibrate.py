@@ -2,7 +2,7 @@
 """calibrate.py — measure per-task pass rates over a model ladder → difficulty bands (R6).
 
     python gym/tools/calibrate.py --task corpus_probes --split dev \
-        --ladder student=ckpt:experiments/agentic-cpt/outputs/cpt \
+        --ladder student=ckpt:<resolved-checkpoint-path> \
         --ladder mid=server:qwen3.6:8b@http://localhost:11434 \
         --samples 4 --temperature 1.0
 

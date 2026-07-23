@@ -1,12 +1,12 @@
-# Fine-tuning (what the agent's train.py uses).
+# Fine-tuning (what the fixed studio stage implementations use).
 # The trio below is PINNED to the validated combination — TRL/Unsloth kwargs drift between
-# releases and silently break train.py. Bump all three together, then run the gsm8k
-# baseline to revalidate before committing the bump.
+# releases and can silently break training. Bump all three together only with human
+# approval, then re-run the active CPT smoke path before committing the bump.
 unsloth==2026.6.9       # fast LoRA / full fine-tuning for <8B models on a single GPU
 trl==0.24.0             # SFT / DPO / GRPO trainers
 transformers==5.5.0
-# vllm==<PIN ON INSTALL>  # rollout/eval engine (SPEC.md §4): NOT yet installed — installing
-#                         # + pinning it is a HUMAN action; bump the whole quartet together.
+# vLLM has a separate, pinned environment because its torch/transformers requirements
+# differ from this validated training trio. See requirements-eval.txt (SPEC.md §4).
 datasets>=4.3           # task-pack datasets (e.g. openai/gsm8k)
 accelerate>=1.13
 # torch: installed by unsloth for your CUDA; don't pin here.

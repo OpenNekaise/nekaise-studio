@@ -6,8 +6,7 @@
                              Ollama's /v1, or a frontier API — one code path for all.
 
 Both expose complete(prompts) and chat(messages_list) -> list[str].
-transformers `.generate()` is banned on these paths (tests grep for it); the old HF
-implementations are preserved unreferenced in attic/.
+transformers `.generate()` is banned on these paths (tests grep for it).
 """
 from __future__ import annotations
 

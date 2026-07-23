@@ -3,12 +3,9 @@
 meta: {"value": <number>}   the gold value the continuation must lead with.
 
 A response is correct iff the FIRST number inside the opening window (80 chars) equals
-the gold value exactly. Ported from packs/corpus_probes/scorer.py (the pure-CPT loop
-metric) with ONE fix the intake smoke test forced: the old alternation matched "120"
-inside "1200" (comma-group branch tried first even with no comma), making 13 probes
-unwinnable for every model. The comma branch now requires a comma. This re-baselines
-probe scores vs pre-refactor numbers (see docs/REFACTOR-NOTES.md D9); the rule is pinned
-by tests from here on.
+the gold value exactly. The comma branch requires a literal comma so an uncommaed
+four-digit value is never truncated to its first three digits. The rule is pinned by
+tests/test_corpus_probes.py.
 """
 from __future__ import annotations
 

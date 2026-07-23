@@ -4,7 +4,7 @@ You are a **senior building services engineer** (20+ years: HVAC, BMS/controls, 
 semantic models — Brick, ASHRAE 223P, RealEstateCore). Your job here is to read a building's
 real documentation and **write the training material that turns a small model into a capable
 junior building engineer** for that building. You are the teacher; the student is the small
-model fine-tuned in `experiments/<exp>/train.py`.
+model trained by the fixed SFT stage.
 
 This is the **agentic** data recipe: *you* read the whole building folder with your own tools
 (ontology, control cards, manuals, trends, alarms) and ground every example in what you read —
@@ -15,8 +15,8 @@ not a script that sees only the graph.
 The data under `nekaise_data/` is **proprietary partner data**. Treat it like PII.
 
 - **Never** write a real building name, partner/owner name, address, or other identifying
-  string into any *tracked* file: this skill, prompts, `LOG.md`, commit messages, the
-  dashboard, or anything under `packs/`, `skills/`, `experiments/*/{train,build_data}.py`.
+  string into any *tracked* file: this skill, prompts, commit messages, or anything under
+  `packs/`, `skills/`, `experiments/*/{train,build_data}.py`.
 - Refer to buildings generically — `<building>`, "the holdout building", "training building 2".
 - The raw data (`nekaise_data/`), the built datasets (`experiments/**/data/`), and the frozen
   open-ended exam (`packs/**/eval_open.jsonl`) are **git-ignored**. Keep them that way; never
@@ -29,9 +29,9 @@ If you are ever unsure whether something is safe to write to a tracked file, lea
 
 ## What you produce
 
-1. A grounded **SFT dataset** (`data.jsonl`) for an experiment, written through `lib/datakit`
-   so it is content-addressed and provenance-tracked. `train.py` picks it up automatically
-   (`DATASET="auto"` reads `data/LATEST`) — you do **not** edit `train.py`.
+1. A grounded **SFT dataset** (`data.jsonl`) for `experiments/sft`, written through
+   `lib/datakit` so it is content-addressed and provenance-tracked. The fixed SFT stage
+   reads `data/LATEST`; you do not edit its training implementation.
 2. **Once per pack:** the frozen **open-ended exam** `packs/building/eval_open.jsonl` for the
    **holdout** building, which the `judge` skill grades against (see that skill). This is the
    referee for questions the deterministic scorer can't grade — author it once, then freeze it.
@@ -95,18 +95,17 @@ If you are ever unsure whether something is safe to write to a tracked file, lea
    # rows: list of {"messages": [{"role":"system",...},{"role":"user",...},{"role":"assistant",...}]}
    import sys; sys.path.insert(0, "lib")
    import datakit
-   EXP = "experiments/granite-4.1-3b-building"
+   EXP = "experiments/sft"
    SPEC = {"pack": "building", "teacher": "claude-code", "method": "agentic-skill",
            "questions_per_building": 40, "holdout": "<from-env>"}   # no real name in tracked code
    datakit.write(EXP, SPEC, rows,
                  stats={"examples": len(rows), "teacher": "claude-code", "rejected": <n>})
    ```
 
-   `datakit.write` also updates `data/LATEST`, so the next `python train.py` trains on it.
+   `datakit.write` also updates `data/LATEST`, so the next SFT stage run trains on it.
 
-The student's system prompt (what these rows train it to be) must match `train.py`'s
-`SYSTEM_PROMPT`: *a building engineer assistant that grounds answers in the building's
-equipment, sensors, topology, and semantic model, and explains its reasoning.*
+The rows' system prompt must consistently describe a building engineer assistant that
+grounds answers in the building's equipment, sensors, topology, and semantic model.
 
 ## Author the held-out exam (do this once, then freeze)
 
@@ -128,8 +127,8 @@ on these questions.
 - **Never** edit `packs/*/scorer.py` or `packs/*/prepare.py` — those are the fixed referee.
 - **Ground everything.** No invented entities, numbers, or connections.
 - **Privacy:** no real names in tracked files (see top).
-- You edit data + (once) the frozen exam. You do **not** edit `train.py` — that's the loop's job
-  (`skills/run-experiment.md`).
+- You edit data + (once) the frozen exam. You do not edit stage implementations or frozen
+  training settings.
 
 ## Optional fallback
 

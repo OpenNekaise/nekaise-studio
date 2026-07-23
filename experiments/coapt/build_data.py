@@ -464,6 +464,67 @@ def cmd_build(cfg: dict, args) -> None:
     chunk_limit = int(data.get("max_content_tokens", 1800))
     doc_limit = int(data.get("raw_doc_tokens", 8192))
 
+    control = data.get("control")
+    if control:
+        # SPEC §3 null arm: the same frontier documents re-read raw, at the exact token
+        # volume the CoAPT arm spent — no teacher text, no QA, same anchor share.
+        total = int(control["total_content_tokens"])
+        shares = {name: float(data["mix"][name]) for name in STREAMS}
+        raw_target = int(round(total * (shares["raw"] + shares["teacher_cpt"]
+                                        + shares["qa_text"])))
+        anchor_target = total - raw_target
+        frontier_docs = [doc for doc in read_jsonl(rdir / "docs.jsonl")
+                         if doc["id"] in frontier_ids]
+        raw_rows, raw_tokens, raw_passes = raw_stream(
+            frontier_docs, tokenizer, chunk_limit=chunk_limit, doc_limit=doc_limit,
+            target=raw_target, rnd=rnd)
+        anchor_rows, anchor_tokens, anchor_docs = anchor_stream(
+            cfg, tokenizer, pool_ids, holdout_ids, chunk_limit=chunk_limit,
+            doc_limit=doc_limit, target=anchor_target, rnd=rnd)
+        all_rows = raw_rows + anchor_rows
+        for row in all_rows:
+            if row["meta"]["doc_id"] in holdout_ids:
+                raise SystemExit(
+                    f"transfer doc leaked into the mix: {row['meta']['doc_id']}")
+        random.Random(int(data.get("shuffle_seed", 3407))).shuffle(all_rows)
+        got = raw_tokens + anchor_tokens
+        stats = {
+            "purpose": "coapt_control_mix", "round": rnd, "content_tokens": got,
+            "matched_total_content_tokens": total, "chunks": len(all_rows),
+            "streams": {
+                "raw": {"rows": len(raw_rows), "content_tokens": raw_tokens,
+                        "target_content_tokens": raw_target, "passes": raw_passes},
+                "anchor": {"rows": len(anchor_rows), "content_tokens": anchor_tokens,
+                           "target_content_tokens": anchor_target,
+                           "documents": anchor_docs},
+            },
+            "pool_docs": len(pool_ids), "frontier_docs": len(frontier_ids),
+        }
+        spec = {
+            "kind": "coapt_control", "round": rnd, "source": "nekaise-corpus",
+            "mixer": "equal-token-raw-repetition-v1",
+            "tokenizer": TOKENIZER, "tokenizer_revision": tokenizer_revision,
+            "probe_fingerprint": probe_fingerprint,
+            "matched_total_content_tokens": total,
+            "max_content_tokens": chunk_limit, "raw_doc_tokens": doc_limit,
+            "anchor_seed": int(data.get("anchor_seed", 3407)),
+            "shuffle_seed": int(data.get("shuffle_seed", 3407)),
+            "pool_sha256": sha256_file(pool_path),
+            "frontier_sha256": sha256_file(frontier_path),
+            "transfer_documents_excluded": True,
+        }
+        if datakit.exists(EXP_DIR, spec):
+            artifact = datakit.activate(EXP_DIR, spec)
+            print(f"[build] cache hit -> {artifact}")
+            return
+        artifact = datakit.write(EXP_DIR, spec, iter(all_rows), stats=stats,
+                                 recipe_path=__file__)
+        (rdir / "token_ledger_control.json").write_text(
+            json.dumps(stats, ensure_ascii=False, indent=2, sort_keys=True))
+        print(f"[build] control round {rnd}: {len(all_rows):,} rows, {got:,} content "
+              f"tokens (matched to {total:,}) -> {artifact}")
+        return
+
     teacher_path = rdir / "cpt_teacher.jsonl"
     sft_path = rdir / "sft_final.jsonl"
     teacher_rows, teacher_failed = gated_rows(teacher_path, ("teacher_text", "doc_id"))

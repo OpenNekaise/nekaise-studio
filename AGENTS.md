@@ -136,7 +136,11 @@ directories in this checkout remain active:
   `datakit.py` (dataset CAS), `runlog.py` (trainer adapter), `corpusprep.py` (shared
   corpus cleaning), `pack.py`, and `llm.py` (scripted-teacher fallback).
 - `tools/` — `doctor.py` (preflight), `student.py` (batch student inference: score /
-  draft / answer, eval env), `eval_probes.py` (the referee + `--doc-ids` pool view),
+  draft / answer, plus a persistent-server workflow — `serve` / `serve-stop` /
+  `serve-status` and `--target server:...` — that pays the engine load once per
+  checkpoint; eval env), `eval_probes.py` (the referee + `--doc-ids` pool view; accepts
+  `--run-id` together with `--target` to evaluate through the server while recording on
+  the run),
   `privacy_check.py` (leak guard; pre-commit hook via `git config core.hooksPath
   tools/hooks`), `eval_bench.py` (independent milestone metric, advisory),
   `build_probes.py` (maintainer-only referee minting).

@@ -32,13 +32,16 @@ student checkpoint, and noise band. `<round_dir>` below is `workspace/coapt/roun
    `$NEKAISE_EVAL_PYTHON tools/eval_probes.py --checkpoint <base_model> --split dev
    --record-reference coapt`, then re-run with
    `--run-id <reference_run> --doc-ids workspace/coapt/pool.jsonl`.
-3. **Diagnose** the current student S (base at R0, else the previous round's run):
+3. **Diagnose** the current student S (base at R0, else the previous round's run).
+   Start a persistent server ONCE per checkpoint so every call skips the engine load:
+   `$NEKAISE_EVAL_PYTHON tools/student.py serve --run-id <S>` (prints the
+   `server:student@...` target; `serve-stop` when done with this checkpoint). Then
    `python experiments/coapt/build_data.py emit-docs`, then
-   `$NEKAISE_EVAL_PYTHON tools/student.py score --run-id <S> --in <round_dir>/docs.jsonl
-   --out <round_dir>/nll.jsonl`, and the pool closed-book state:
-   `$NEKAISE_EVAL_PYTHON tools/eval_probes.py --run-id <S> --doc-ids
-   workspace/coapt/pool.jsonl --split dev` (records land in
-   `workspace/probe_eval/*.dev.pool.jsonl`).
+   `$NEKAISE_EVAL_PYTHON tools/student.py score --target <server target>
+   --in <round_dir>/docs.jsonl --out <round_dir>/nll.jsonl`, and the pool closed-book
+   state: `$NEKAISE_EVAL_PYTHON tools/eval_probes.py --run-id <S> --target
+   <server target> --doc-ids workspace/coapt/pool.jsonl --split dev` (the `EVAL_RESULT`
+   line carries `records_file` — that path feeds `select-frontier`).
 4. **R1+ only — loop-closure checks** (see below). If the loop is not closing, STOP and
    report; do not generate new data on a dead signal.
 5. **Frontier:**
@@ -48,10 +51,13 @@ student checkpoint, and noise band. `<round_dir>` below is `workspace/coapt/roun
    `python experiments/coapt/build_data.py make-drafts`.
 6. **Branches:** execute `skills/coapt-cpt.md`, then `skills/coapt-sft.md`. They leave
    gated `cpt_teacher.jsonl` and `sft_final.jsonl` in `<round_dir>`.
-7. **Build:** `python -m studio.cli build coapt --config configs/coapt.yaml`. Read
-   `<round_dir>/token_ledger.json`; achieved shares must sit on `data.mix` (the builder
-   refuses gross drift, you sanity-check the rest).
-8. **Train:** `python -m studio.cli train cpt --config configs/coapt.yaml [--seed N]`.
+7. **Build:** `python -m studio.cli build coapt --config configs/coapt.yaml`. Capture
+   the `DATASET_ID` line from the build output and read
+   `<round_dir>/token_ledger_<dataset_id>.json`; achieved shares must sit on `data.mix`
+   (the builder refuses gross drift, you sanity-check the rest).
+8. **Train:** `python -m studio.cli train cpt --config configs/coapt.yaml
+   --dataset-id <dataset_id> [--seed N]` — always bind the dataset explicitly; the
+   mutable LATEST pointer is a fallback, not the loop's contract.
    R0 runs THREE seeds (3407, 3408, 3409) on the same dataset to establish the pool
    noise band `max(std, half_range)`; the campaign chains from seed 3407's checkpoint —
    fixed in advance, never the best seed. R1+ runs one seed. Preserve every `run_id`.

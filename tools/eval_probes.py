@@ -80,10 +80,13 @@ def run_id_from_target(target: str) -> str | None:
 
 def main() -> None:
     ap = argparse.ArgumentParser()
-    who = ap.add_mutually_exclusive_group(required=True)
+    who = ap.add_mutually_exclusive_group()
     who.add_argument("--target", help="ckpt:<path|hf-id> or server:<model>@<base_url>")
     who.add_argument("--checkpoint", help="shorthand for ckpt:<value>")
-    who.add_argument("--run-id", help="immutable training run to evaluate")
+    ap.add_argument("--run-id",
+                    help="immutable training run to evaluate; combine with --target to "
+                         "run inference through a persistent server while recording "
+                         "metrics on this run")
     ap.add_argument("--split", default="dev", choices=["dev", "frozen", "all"])
     ap.add_argument("--limit", type=int, default=0)
     ap.add_argument("--batch-size", type=int, default=64)
@@ -97,9 +100,11 @@ def main() -> None:
     ap.add_argument("--record-reference", metavar="EXPERIMENT",
                     help="register an untrained target as an R0 reference run")
     args = ap.parse_args()
+    if not (args.run_id or args.target or args.checkpoint):
+        sys.exit("one of --run-id, --target, or --checkpoint is required")
     store = RunStore(REPO)
     run_id = args.run_id
-    if run_id:
+    if run_id and not (args.target or args.checkpoint):
         run = store.get_run(run_id)
         if not run.get("checkpoint_path") and run.get("kind") == "reference" \
                 and (run.get("metadata") or {}).get("reference_target"):
@@ -108,8 +113,11 @@ def main() -> None:
             target = f"ckpt:{store.resolve_checkpoint(run_id)}"
     else:
         target = args.target or f"ckpt:{args.checkpoint}"
-        inferred = run_id_from_target(target)
-        run_id = inferred if inferred and store.exists(inferred) else None
+        if run_id:
+            store.get_run(run_id)          # fail fast on a bad run id
+        else:
+            inferred = run_id_from_target(target)
+            run_id = inferred if inferred and store.exists(inferred) else None
 
     if args.record_reference:
         if run_id:
@@ -172,7 +180,8 @@ def main() -> None:
     OUT_DIR.mkdir(parents=True, exist_ok=True)
     safe = re.sub(r"[^\w.-]+", "_", target)
     suffix = (".pool" if args.doc_ids else "") + (".smoke" if args.smoke else "")
-    (OUT_DIR / f"{safe}.{args.split}{suffix}.jsonl").write_text(
+    records_file = OUT_DIR / f"{safe}.{args.split}{suffix}.jsonl"
+    records_file.write_text(
         "\n".join(json.dumps(r, ensure_ascii=False) for r in report["records"]) + "\n")
 
     if pool_ids is not None:
@@ -206,6 +215,7 @@ def main() -> None:
             "run_id": run_id, "target": target, "split": args.split,
             "n": report["n"], "pool_docs": len(by_doc),
             "coapt_pool_absorption": pool_absorption,
+            "records_file": str(records_file),
             "diagnostic": args.smoke, "split_hash": split_hash,
         }, ensure_ascii=False, sort_keys=True))
         return
@@ -260,9 +270,15 @@ def main() -> None:
         "n": report["n"], "absorption": absorption,
         "transfer_micro": transfer_micro, "transfer_macro": transfer_macro,
         "transfer_by_topic": transfer_by_topic,
+        "records_file": str(records_file),
         "diagnostic": args.smoke, "split_hash": split_hash,
     }, ensure_ascii=False, sort_keys=True))
 
 
 if __name__ == "__main__":
     main()
+    # The vLLM offline engine can SIGABRT during teardown AFTER all metrics are
+    # recorded and records written; exit deterministically for drivers.
+    sys.stdout.flush()
+    sys.stderr.flush()
+    os._exit(0)

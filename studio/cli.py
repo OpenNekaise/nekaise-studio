@@ -101,6 +101,8 @@ def train(args) -> int:
     command = [sys.executable, "-m", stage_module, "--config", str(config_path)]
     if args.seed is not None:
         command += ["--seed", str(args.seed)]
+    if args.dataset_id:
+        command += ["--dataset-id", args.dataset_id]
     store.create_run(
         experiment=experiment, stage=run.get("stage", args.stage),
         kind=run.get("kind", "experiment"),
@@ -288,6 +290,9 @@ def main(argv=None) -> int:
     p.add_argument("stage", choices=("cpt", "sft"))
     p.add_argument("--config", required=True)
     p.add_argument("--seed", type=int)
+    p.add_argument("--dataset-id",
+                   help="train this immutable dataset object instead of the mutable "
+                        "LATEST pointer (the id a build prints as DATASET_ID)")
     p.add_argument("--follow", action="store_true",
                    help="stream raw stage output between the JSON start/result records")
     p.add_argument("--quiet", action="store_true", help=argparse.SUPPRESS)

@@ -51,6 +51,10 @@ QA_TEMPLATE = "Question: {question}\nAnswer: {answer}"
 DRAFT_TEMPLATES_VERSION = "coapt-draft-v1"
 SUMMARY_CUE = "\n\nIn short,"
 STREAMS = ("raw", "teacher_cpt", "qa_text", "anchor")
+# Part of every dataset spec: ANY edit to this recipe invalidates the spec cache, so a
+# changed builder can never silently cache-hit data built by older code. Content
+# addressing still dedupes identical bytes.
+RECIPE_SHA256 = hashlib.sha256(Path(__file__).read_bytes()).hexdigest()
 
 
 # ---------------------------------------------------------------- shared helpers
@@ -503,6 +507,7 @@ def cmd_build(cfg: dict, args) -> None:
         spec = {
             "kind": "coapt_control", "round": rnd, "source": "nekaise-corpus",
             "mixer": "equal-token-raw-repetition-v1",
+            "recipe_sha256": RECIPE_SHA256,
             "tokenizer": TOKENIZER, "tokenizer_revision": tokenizer_revision,
             "probe_fingerprint": probe_fingerprint,
             "matched_total_content_tokens": total,
@@ -516,13 +521,16 @@ def cmd_build(cfg: dict, args) -> None:
         if datakit.exists(EXP_DIR, spec):
             artifact = datakit.activate(EXP_DIR, spec)
             print(f"[build] cache hit -> {artifact}")
+            print(f"DATASET_ID {artifact.name}")
             return
         artifact = datakit.write(EXP_DIR, spec, iter(all_rows), stats=stats,
                                  recipe_path=__file__)
-        (rdir / "token_ledger_control.json").write_text(
-            json.dumps(stats, ensure_ascii=False, indent=2, sort_keys=True))
+        ledger_text = json.dumps(stats, ensure_ascii=False, indent=2, sort_keys=True)
+        (rdir / f"token_ledger_{artifact.name}.json").write_text(ledger_text)
+        (rdir / "token_ledger_control.json").write_text(ledger_text)
         print(f"[build] control round {rnd}: {len(all_rows):,} rows, {got:,} content "
               f"tokens (matched to {total:,}) -> {artifact}")
+        print(f"DATASET_ID {artifact.name}")
         return
 
     teacher_path = rdir / "cpt_teacher.jsonl"
@@ -629,6 +637,7 @@ def cmd_build(cfg: dict, args) -> None:
         "kind": "coapt_share_sweep" if fixed_total else "coapt_round",
         "round": rnd, "source": "nekaise-corpus",
         "mixer": "fixed-total-share-v1" if fixed_total else "ratio-locked-teacher-v1",
+        "recipe_sha256": RECIPE_SHA256,
         **({"fixed_total_content_tokens": int(fixed_total)} if fixed_total else {}),
         "tokenizer": TOKENIZER, "tokenizer_revision": tokenizer_revision,
         "probe_fingerprint": probe_fingerprint,
@@ -647,15 +656,18 @@ def cmd_build(cfg: dict, args) -> None:
     if datakit.exists(EXP_DIR, spec):
         artifact = datakit.activate(EXP_DIR, spec)
         print(f"[build] cache hit -> {artifact}")
+        print(f"DATASET_ID {artifact.name}")
         return
     artifact = datakit.write(EXP_DIR, spec, iter(all_rows), stats=stats,
                              recipe_path=__file__)
+    ledger_text = json.dumps(stats, ensure_ascii=False, indent=2, sort_keys=True)
     (rdir / "token_ledger.json").parent.mkdir(parents=True, exist_ok=True)
-    (rdir / "token_ledger.json").write_text(
-        json.dumps(stats, ensure_ascii=False, indent=2, sort_keys=True))
+    (rdir / f"token_ledger_{artifact.name}.json").write_text(ledger_text)
+    (rdir / "token_ledger.json").write_text(ledger_text)
     shares = {name: ledger[name]["share_achieved"] for name in STREAMS}
     print(f"[build] round {rnd}: {len(all_rows):,} rows, {total:,} content tokens "
           f"(shares {shares}) -> {artifact}")
+    print(f"DATASET_ID {artifact.name}")
 
 
 # ---------------------------------------------------------------- entry

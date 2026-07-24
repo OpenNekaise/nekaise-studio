@@ -535,13 +535,13 @@ def cmd_build(cfg: dict, args) -> None:
             raise SystemExit(f"{label} references docs outside this round's frontier: "
                              f"{sorted(stray)[:5]}")
 
-    teacher_stream = []
+    teacher_items: list[tuple[dict, int]] = []
     for row in teacher_rows:
         n_tokens = count_tokens(tokenizer, row["teacher_text"])
-        teacher_stream.append({"text": row["teacher_text"], "meta": {
+        teacher_items.append(({"text": row["teacher_text"], "meta": {
             "stream": "teacher_cpt", "doc_id": row["doc_id"], "round": rnd,
             "probe_type": row.get("probe_type"), "source_id": row.get("id"),
-            "content_tokens": n_tokens}})
+            "content_tokens": n_tokens}}, n_tokens))
     qa_items: list[tuple[dict, int]] = []
     for row in sft_rows:
         text = QA_TEMPLATE.format(question=row["question"].strip(),
@@ -552,19 +552,42 @@ def cmd_build(cfg: dict, args) -> None:
             "qtype": row.get("qtype"), "source_id": row.get("id"),
             "content_tokens": n_tokens}}, n_tokens))
 
-    teacher_tokens = sum(row["meta"]["content_tokens"] for row in teacher_stream)
+    teacher_unique_tokens = sum(n for _, n in teacher_items)
     qa_unique_tokens = sum(n for _, n in qa_items)
-    plan = plan_mix(teacher_tokens, data["mix"], int(data["target_content_tokens"]))
+    fixed_total = data.get("fixed_total_content_tokens")
+    if fixed_total:
+        # Share-sweep mode: total is pinned; EVERY stream fills its share by cycling.
+        # Higher teacher shares mean repetition of the same gated material, not new
+        # teacher knowledge — the unique volume is recorded in the ledger.
+        shares = {name: float(data["mix"][name]) for name in STREAMS}
+        if abs(sum(shares.values()) - 1.0) > 1e-6:
+            raise SystemExit(f"data.mix shares must sum to 1.0, got {shares}")
+        plan = {"total": int(fixed_total),
+                **{name: int(round(int(fixed_total) * shares[name]))
+                   for name in STREAMS}}
+        teacher_stream, teacher_tokens, teacher_passes = fill_by_cycling(
+            teacher_items, plan["teacher_cpt"])
+    else:
+        plan = plan_mix(teacher_unique_tokens, data["mix"],
+                        int(data["target_content_tokens"]))
+        teacher_stream = [row for row, _ in teacher_items]
+        teacher_tokens, teacher_passes = teacher_unique_tokens, 1
     qa_stream, qa_tokens, qa_passes = fill_by_cycling(qa_items, plan["qa_text"])
 
     frontier_docs = [doc for doc in read_jsonl(rdir / "docs.jsonl")
                      if doc["id"] in frontier_ids]
-    raw_rows, raw_tokens, raw_passes = raw_stream(
-        frontier_docs, tokenizer, chunk_limit=chunk_limit, doc_limit=doc_limit,
-        target=plan["raw"], rnd=rnd)
-    anchor_rows, anchor_tokens, anchor_docs = anchor_stream(
-        cfg, tokenizer, pool_ids, holdout_ids, chunk_limit=chunk_limit,
-        doc_limit=doc_limit, target=plan["anchor"], rnd=rnd)
+    if plan["raw"] > 0:
+        raw_rows, raw_tokens, raw_passes = raw_stream(
+            frontier_docs, tokenizer, chunk_limit=chunk_limit, doc_limit=doc_limit,
+            target=plan["raw"], rnd=rnd)
+    else:
+        raw_rows, raw_tokens, raw_passes = [], 0, 0
+    if plan["anchor"] > 0:
+        anchor_rows, anchor_tokens, anchor_docs = anchor_stream(
+            cfg, tokenizer, pool_ids, holdout_ids, chunk_limit=chunk_limit,
+            doc_limit=doc_limit, target=plan["anchor"], rnd=rnd)
+    else:
+        anchor_rows, anchor_tokens, anchor_docs = [], 0, 0
 
     all_rows = raw_rows + teacher_stream + qa_stream + anchor_rows
     for row in all_rows:
@@ -577,6 +600,10 @@ def cmd_build(cfg: dict, args) -> None:
         "raw": {"rows": len(raw_rows), "content_tokens": raw_tokens,
                 "target_content_tokens": plan["raw"], "passes": raw_passes},
         "teacher_cpt": {"rows": len(teacher_stream), "content_tokens": teacher_tokens,
+                        "target_content_tokens": plan["teacher_cpt"]
+                        if fixed_total else teacher_tokens,
+                        "passes": teacher_passes,
+                        "unique_content_tokens": teacher_unique_tokens,
                         "gate_failed": teacher_failed},
         "qa_text": {"rows": len(qa_stream), "content_tokens": qa_tokens,
                     "target_content_tokens": plan["qa_text"], "passes": qa_passes,
@@ -599,8 +626,10 @@ def cmd_build(cfg: dict, args) -> None:
         "pool_docs": len(pool_ids), "frontier_docs": len(frontier_ids),
     }
     spec = {
-        "kind": "coapt_round", "round": rnd, "source": "nekaise-corpus",
-        "mixer": "ratio-locked-teacher-v1",
+        "kind": "coapt_share_sweep" if fixed_total else "coapt_round",
+        "round": rnd, "source": "nekaise-corpus",
+        "mixer": "fixed-total-share-v1" if fixed_total else "ratio-locked-teacher-v1",
+        **({"fixed_total_content_tokens": int(fixed_total)} if fixed_total else {}),
         "tokenizer": TOKENIZER, "tokenizer_revision": tokenizer_revision,
         "probe_fingerprint": probe_fingerprint,
         "mix": {name: float(data["mix"][name]) for name in STREAMS},

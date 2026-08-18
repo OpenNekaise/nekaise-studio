@@ -36,25 +36,23 @@ The workspace can also be selected with `NEKAISE_WORKSPACE`. See
 
 ## CoAPT
 
-Studio trains through **[Co-Adaptive Pretraining and Tuning](docs/COAPT.md)**. The current student's
-measured state selects what it needs to learn next. The agent teaches only from source documents,
-the student is trained with a frozen recipe, and an independent referee decides whether the result
-is worth keeping.
+Studio trains through **[Co-Adaptive Pretraining and Tuning](docs/COAPT.md)**. A teacher observes the
+current student's attempts, errors, and partial successes, then uses that behavior to create the
+training material this student should see next. Grounded evidence keeps the lessons trustworthy;
+an independent referee decides whether they worked.
 
 ```mermaid
 flowchart LR
-    S[Measure student] --> F[Select frontier]
-    F --> C[Correct drafts]
-    F --> Q[Correct answers]
-    C --> M[Build token-ledgered mix]
-    Q --> M
-    M --> T[Train frozen recipe]
-    T --> E[Evaluate]
-    E --> D{Beyond noise band?}
-    D -->|keep or revert| S
+    S[Observe student] --> B[Collect attempts and failures]
+    B --> T[Teacher creates targeted material]
+    T --> G[Ground and gate]
+    G --> R[Train]
+    R --> E[Evaluate independently]
+    E --> D{Keep or revert}
+    D --> S
 ```
 
-The loop has two teaching branches:
+The active knowledge campaign grounds teaching in corpus documents and uses two branches:
 
 - **Adaptive CPT** — the student drafts over a corpus chunk; the agent rewrites it into textbook
   prose supported only by that chunk.
@@ -65,20 +63,24 @@ Raw corpus text, corrected prose, question-and-answer text, and an anchor stream
 token-ledgered training mix. Checkpoints chain across rounds. The changed student is measured again,
 which changes the next frontier and closes the loop.
 
-The trainer is intentionally fixed: one full-parameter CPT recipe. Complexity belongs in the data,
-gates, verifiers, and measurement—not in an expanding collection of training tricks.
+A future agentic campaign can apply the same idea to plans, tool calls, execution traces, and error
+recovery, grounded in verified tasks and outcomes. That campaign is not active yet and will require
+its own reviewed specification. Within any campaign, the trainer and experimental rules stay fixed;
+the student-conditioned material is what adapts.
 
 ## Experimental contract
 
 Studio separates teaching from judgment. The agent may shape the training data, but it never grades
 the exam that decides whether a model improved.
 
-- The corpus is the only source of truth. Unsupported teacher knowledge never enters training.
+- The grounding source is the only source of truth. In the active campaign, that source is the
+  corpus; unsupported teacher knowledge never enters training.
 - Evaluation tasks, verifiers, pools, and frozen splits do not change within a campaign.
 - The training recipe stays fixed across rounds; only the student and student-conditioned data
   change.
 - Keep/revert decisions must clear a measured noise band without regressing the transfer guardrail.
-- Effectiveness claims must beat equal-compute raw-corpus CPT.
+- Effectiveness claims must beat a matched non-adaptive control; the active campaign uses
+  equal-compute raw-corpus CPT.
 - Runs, datasets, and checkpoints have permanent identities and immutable provenance.
 
 The binding contract lives in [`SPEC.md`](SPEC.md). Changing it—or any frozen configuration—is a

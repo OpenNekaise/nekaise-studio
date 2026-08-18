@@ -18,6 +18,20 @@ The dataset for round `r` depends on the student at round `r`, the evidence avai
 
 CoAPT is defined by this relationship, not by a particular data type, training stage, or optimizer. The sections below show how the same teaching loop applies to both knowledge and agentic behavior.
 
+## Where CoAPT sits in the training stack
+
+Expert performance usually combines several layers: understanding the input, retrieving relevant knowledge, choosing a plan, and executing it reliably. A useful [training-stack view](https://thinkingmachines.ai/blog/on-policy-distillation/) develops those layers across three broad stages:
+
+| Stage | Purpose | Relationship to CoAPT |
+|---|---|---|
+| **Pre-training** | General language, reasoning, and world knowledge | Usually provides the starting student. |
+| **Mid-training** | Specialized knowledge from code, documents, databases, or another domain source | CoAPT selects knowledge at the student's frontier and turns its mistakes into grounded teaching text. |
+| **Post-training** | Targeted behavior such as instruction following, reasoning, tool use, and workflow execution | CoAPT elicits the student's behavior and teaches directly against the failures it observes. |
+
+CoAPT focuses on the latter two stages and connects them. Mid-training gives the model something worth knowing; post-training makes that knowledge usable in the behavior we want. Both can draw their material from the same student-conditioned loop.
+
+The distinction is about purpose, not necessarily separate training jobs. A CoAPT implementation can place corrected prose and question-and-answer text in one causal-language-model stream while the two forms still serve mid-training and post-training functions.
+
 ## Why make training co-adaptive?
 
 Most training pipelines prepare data independently of the model that will consume it. Every student receives essentially the same curriculum, even when their capabilities and failures are different. More data or more repetitions can strengthen that curriculum, but they do not make it responsive.
@@ -41,6 +55,33 @@ CoAPT therefore combines five properties:
 - **Policy-relative experience.** Training material comes from behavior the current student actually produces, whether refreshed between rounds or sampled on-policy during training.
 - **Independent evaluation.** The teacher that writes lessons does not write or grade the exam.
 - **Measured recursion.** A new student is retained only when the effect clears evaluation thresholds and guardrails defined in advance.
+
+## On-policy in what sense?
+
+CoAPT begins data creation from the current student's own behavior:
+
+```text
+student attempt x ~ πₛ
+teaching material m = Gate(T(evidence, x))
+new student S′ = Train(S, m)
+```
+
+The attempt may be a continuation, an answer, a plan, a tool call, or a complete trajectory. Because `x` comes from the current student policy, the teacher sees the states and mistakes this student actually produces. Because `m` is created by the teacher and must be grounded in evidence, the learning signal can be much denser than a final success/failure reward. The raw mistake remains diagnostic context; only gated teaching material enters training.
+
+The concise description is:
+
+> CoAPT uses on-policy contexts with teacher-corrected targets.
+
+This places CoAPT between familiar approaches:
+
+| Approach | Experience comes from | Teaching signal |
+|---|---|---|
+| **Off-policy SFT or distillation** | Teacher demonstrations prepared independently of the student | Dense target output |
+| **Reinforcement learning** | Student rollouts | Usually a sparse outcome reward |
+| **Strict on-policy distillation** | Student rollouts | Dense teacher scores on the student's own tokens or actions |
+| **CoAPT** | Student attempts or trajectories | Grounded teacher revisions, dense scores, or both |
+
+The current student is therefore part of data generation, not merely the recipient of a teacher dataset. But CoAPT does not require every implementation to perform online reward optimization. Text-oriented CoAPT can freeze a student checkpoint, generate its drafts and answers, have a teacher revise them, build an immutable dataset, and then train offline. Agentic CoAPT can use a tighter on-policy loop with dense teacher scoring. What remains constant is that the student's behavior changes the teaching material.
 
 ## Five roles, kept separate
 
@@ -146,13 +187,7 @@ Long workflows make student-conditioned teaching especially important. A dataset
 
 ### Learning where the student actually goes
 
-[On-policy distillation](https://thinkingmachines.ai/blog/on-policy-distillation/) offers a useful mechanism for this part of CoAPT. It combines two properties that are usually separated:
-
-| Method | Whose trajectory? | Feedback | Limitation |
-|---|---|---|---|
-| **Supervised fine-tuning** | Teacher | Dense target tokens | The student may visit different states at deployment. |
-| **Reinforcement learning** | Student | Usually a sparse outcome reward | It says little about where or why a trajectory failed. |
-| **On-policy distillation** | Student | Dense teacher feedback along the trajectory | It inherits the teacher's preferences and requires a carefully defined teacher signal. |
+[On-policy distillation](https://thinkingmachines.ai/blog/on-policy-distillation/) offers a useful mechanism for this part of CoAPT. It combines the student-visited states of reinforcement learning with the dense supervision of distillation.
 
 The article's specific implementation samples trajectories from the student, asks the teacher for token probabilities on those same trajectories, and trains with a per-token reverse-KL signal. The teacher therefore responds to the context the student actually created—even after an imperfect step—instead of supplying only a separate ideal solution. This reduces exposure mismatch and gives much denser credit than a single success or failure at the end.
 

@@ -52,12 +52,20 @@ flowchart LR
     D --> S
 ```
 
-The active knowledge campaign grounds teaching in corpus documents and uses two branches:
+CoAPT connects **mid-training** and **post-training**. Mid-training gives the student specialized
+domain knowledge; post-training teaches it to retrieve, reason with, and act on that knowledge. The
+active text loop develops both through two branches:
 
 - **Adaptive CPT** — the student drafts over a corpus chunk; the agent rewrites it into textbook
   prose supported only by that chunk.
 - **Personalized SFT** — the agent asks questions from a document, the student answers closed-book,
   and the agent corrects the answer using only that document.
+
+In concise terms, CoAPT uses **on-policy contexts with teacher-corrected targets**. The current
+student generates each draft or answer, so the teacher works on states and mistakes that student
+actually produces. The teacher then supplies grounded, dense supervision. Training happens later on
+the gated dataset, so this is policy-relative data generation—not strict reward-based on-policy
+optimization.
 
 Raw corpus text, corrected prose, question-and-answer text, and an anchor stream become one
 token-ledgered training mix. Checkpoints chain across rounds. The changed student is measured again,

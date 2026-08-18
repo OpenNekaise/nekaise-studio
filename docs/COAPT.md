@@ -1,6 +1,6 @@
-# Co-Adaptive Pretraining and Tuning
+# CoAPT
 
-**Co-Adaptive Pretraining and Tuning**, or **CoAPT**, is a student-conditioned teaching framework. A teacher observes what a particular student can currently do, then uses the student's attempts, errors, partial successes, and blind spots to create the training material that student should see next.
+**CoAPT** is a co-adaptive training framework spanning mid-training and post-training. A teacher observes what a particular student can currently do, then uses the student's attempts, errors, partial successes, and blind spots to create the training material that student should see next.
 
 That is the central idea. The material is not prepared for an abstract model. It is prepared in response to this model, at this point in its development.
 
@@ -31,6 +31,8 @@ Expert performance usually combines several layers: understanding the input, ret
 CoAPT focuses on the latter two stages and connects them. Mid-training gives the model something worth knowing; post-training makes that knowledge usable in the behavior we want. Both can draw their material from the same student-conditioned loop.
 
 The distinction is about purpose, not necessarily separate training jobs. A CoAPT implementation can place corrected prose and question-and-answer text in one causal-language-model stream while the two forms still serve mid-training and post-training functions.
+
+The name expands to **Co-Adaptive Pretraining and Tuning**. Here, “pretraining” means continued pretraining, often called mid-training, of an existing student. It does not mean training a foundation model from scratch. “Tuning” names the post-training side: shaping how the student retrieves, reasons, responds, and acts.
 
 ## Why make training co-adaptive?
 

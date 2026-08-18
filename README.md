@@ -36,10 +36,10 @@ The workspace can also be selected with `NEKAISE_WORKSPACE`. See
 
 ## CoAPT
 
-Studio trains through **[Co-Adaptive Pretraining and Tuning](docs/COAPT.md)**. A teacher observes the
-current student's attempts, errors, and partial successes, then uses that behavior to create the
-training material this student should see next. Grounded evidence keeps the lessons trustworthy;
-an independent referee decides whether they worked.
+Studio trains through **[CoAPT](docs/COAPT.md)**, a co-adaptive framework spanning mid-training and
+post-training. A teacher observes the current student's attempts, errors, and partial successes,
+then uses that behavior to create the training material this student should see next. Grounded
+evidence keeps the lessons trustworthy; an independent referee decides whether they worked.
 
 ```mermaid
 flowchart LR
@@ -60,6 +60,9 @@ active text loop develops both through two branches:
   prose supported only by that chunk.
 - **Personalized SFT** — the agent asks questions from a document, the student answers closed-book,
   and the agent corrects the answer using only that document.
+
+The name expands to **Co-Adaptive Pretraining and Tuning**. Here, “pretraining” means continued
+pretraining of an existing student—not foundation-model pretraining from scratch.
 
 In concise terms, CoAPT uses **on-policy contexts with teacher-corrected targets**. The current
 student generates each draft or answer, so the teacher works on states and mistakes that student

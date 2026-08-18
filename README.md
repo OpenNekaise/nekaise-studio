@@ -36,10 +36,10 @@ The workspace can also be selected with `NEKAISE_WORKSPACE`. See
 
 ## CoAPT
 
-Studio trains through **Co-Adaptive Pretraining and Tuning**. The current student's measured state
-selects what it needs to learn next. The agent teaches only from source documents, the student is
-trained with a frozen recipe, and an independent referee decides whether the result is worth
-keeping.
+Studio trains through **[Co-Adaptive Pretraining and Tuning](docs/COAPT.md)**. The current student's
+measured state selects what it needs to learn next. The agent teaches only from source documents,
+the student is trained with a frozen recipe, and an independent referee decides whether the result
+is worth keeping.
 
 ```mermaid
 flowchart LR
@@ -107,6 +107,7 @@ skill enters the shared bootloader only after surviving evaluation and human rev
 |---|---|
 | [`AGENTS.md`](AGENTS.md) | Complete operating instructions for coding agents. |
 | [`STATUS.md`](STATUS.md) | Current campaign, measured state, and next action. |
+| [`docs/COAPT.md`](docs/COAPT.md) | CoAPT, why Studio uses it, and what counts as evidence. |
 | [`SPEC.md`](SPEC.md) | CoAPT constitution, ban list, null hypothesis, and environment lock. |
 | [`BOUNDARY.md`](BOUNDARY.md) | Bidirectional Studio/gym containment contract. |
 | `skills/` | CoAPT conductor, teaching branches, and self-improvement procedures. |

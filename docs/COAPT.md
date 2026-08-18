@@ -38,7 +38,7 @@ CoAPT therefore combines five properties:
 
 - **Student-conditioned teaching.** Attempts and failures help determine both what is taught and how it is expressed.
 - **Grounded generation.** Teacher material must be supported by a document, verifier, tool result, or other campaign-approved evidence.
-- **Between-round adaptation.** The curriculum changes after measurement, while each individual training run remains reproducible.
+- **Policy-relative experience.** Training material comes from behavior the current student actually produces. The active text campaign refreshes it between rounds; a future campaign may define a reproducible on-policy inner loop.
 - **Independent evaluation.** The teacher that writes lessons does not write or grade the exam.
 - **Measured recursion.** A new student is retained only when the effect clears the campaign's noise threshold and guardrails.
 
@@ -142,15 +142,50 @@ CoAPT is not a pure synthetic-data diet. Teacher material is corrective; raw and
 
 The same teaching pattern can extend to agentic capabilities. Instead of asking only whether the student knows a fact, a campaign can observe whether it can plan, call tools, inspect results, recover from errors, and complete a longer workflow.
 
+Long workflows make student-conditioned teaching especially important. A dataset of flawless teacher trajectories shows states the teacher tends to visit. But a smaller student will make different early decisions and arrive in states the teacher demonstrations never covered. Errors then compound: the student most needs help precisely where an off-policy dataset has the least to say.
+
+### Learning where the student actually goes
+
+[On-policy distillation](https://thinkingmachines.ai/blog/on-policy-distillation/) offers a useful mechanism for this part of CoAPT. It combines two properties that are usually separated:
+
+| Method | Whose trajectory? | Feedback | Limitation |
+|---|---|---|---|
+| **Supervised fine-tuning** | Teacher | Dense target tokens | The student may visit different states at deployment. |
+| **Reinforcement learning** | Student | Usually a sparse outcome reward | It says little about where or why a trajectory failed. |
+| **On-policy distillation** | Student | Dense teacher feedback along the trajectory | It inherits the teacher's preferences and requires a carefully defined teacher signal. |
+
+The article's specific implementation samples trajectories from the student, asks the teacher for token probabilities on those same trajectories, and trains with a per-token reverse-KL signal. The teacher therefore responds to the context the student actually created—even after an imperfect step—instead of supplying only a separate ideal solution. This reduces exposure mismatch and gives much denser credit than a single success or failure at the end.
+
+That relationship is close to CoAPT's central idea: the student's present behavior changes the teaching it receives.
+
 ```text
-verified task → student trajectory → teacher diagnosis → grounded correction or demonstration
+verified task → student trajectory τₛ
+              → teacher feedback on student-visited states
+              + environment verdict
+              → targeted update → new student
 ```
 
-The student's trajectory becomes teaching context. The teacher can see where the plan diverged, which tool was misused, which observation was ignored, or where recovery stopped. It then creates training material aimed at that specific failure: a corrected trajectory, a contrastive example, a recovery demonstration, or a task at the next appropriate level.
+For an agentic CoAPT campaign, the teacher signal could take more than one form:
 
-Grounding remains essential. A future agentic teacher cannot simply claim that a workflow succeeded. Tool outputs, environment state, deterministic checks, and task verifiers must establish what actually happened. The referee remains separate from the teacher, and the task set, gates, recipe, and decision rule remain frozen within the campaign.
+- **Corrected trajectories.** Continue from the student's state, repair the plan or tool use, and create a grounded demonstration of recovery.
+- **Contrastive material.** Preserve a useful student step while showing why a nearby action fails and which observation should change the decision.
+- **Dense distillation.** Score the student's own tokens or actions under a stronger teacher and train toward the teacher on those visited states.
+- **Next-frontier tasks.** Use the observed trajectory to create a task that isolates the missing capability without jumping far beyond the student's reach.
 
-Agentic CoAPT is not active in the current Studio campaign. Introducing it requires a new algorithm card that defines its evidence boundary, trajectory format, gates, trainer, referee, and matched control. The general framework anticipates that direction; the current specification does not silently authorize it.
+### Teacher guidance is not ground truth
+
+On-policy distillation supplies a dense behavioral target, but teacher probability does not prove that an action is correct or that a workflow succeeded. A confident teacher can still be wrong, misuse a tool, or prefer a style that does not satisfy the task.
+
+Agentic CoAPT therefore needs two distinct signals:
+
+1. **Teacher guidance** explains what to do differently at the states the student visited.
+2. **Verified outcomes** establish what actually happened through tool results, environment state, deterministic checks, and task verifiers.
+
+The first makes supervision dense. The second keeps it grounded. A sequence-level environment verdict can also catch failures that token-level imitation cannot. The independent referee remains outside both the lesson-generation process and the training objective used for keep/revert decisions.
+
+On-policy distillation is consequently a promising inner training mechanism for agentic CoAPT, not the definition of CoAPT itself. CoAPT is the wider controlled loop: observe the student, create policy-relative teaching, ground it, train, judge independently, and repeat.
+
+Agentic CoAPT is not active in the current Studio campaign. Introducing it requires a new algorithm card that defines whether training uses corrected trajectories, reverse-KL distillation, environment rewards, or a combination; it must also freeze the evidence boundary, trajectory format, gates, trainer, referee, and matched control. The current CPT specification does not silently authorize within-run on-policy sampling.
 
 ## Co-adaptation is not scaling
 

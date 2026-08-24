@@ -96,6 +96,33 @@ def corpus_root(cfg: dict) -> Path:
     return WORKSPACE.resolve_input(cfg["data"]["corpus"]["path"])
 
 
+def corpus_text_path(root: Path, row: dict) -> Path:
+    """Resolve the cleaned corpus text, with a legacy-only raw-text fallback.
+
+    A manifest that declares ``corpus_path`` has completed the cleaning stage.  Falling
+    back to ``text_path`` when that declared artifact is missing would silently train on
+    a different representation, so that case is a hard error.  Older manifests without
+    ``corpus_path`` remain readable through their extracted-text path.
+    """
+    doc_id = str(row.get("id") or "")
+    cleaned = row.get("corpus_path")
+    if cleaned:
+        path = root / str(cleaned)
+        if not path.is_file():
+            raise SystemExit(f"cleaned corpus text missing for {doc_id}: {path}")
+        expected = row.get("corpus_sha256")
+        if expected and sha256_file(path) != expected:
+            raise SystemExit(f"cleaned corpus hash mismatch for {doc_id}: {path}")
+        return path
+    path = root / str(row.get("text_path") or f"text/{doc_id}.md")
+    if not path.is_file():
+        raise SystemExit(f"corpus text missing for {doc_id}: {path}")
+    expected = row.get("text_sha256")
+    if expected and sha256_file(path) != expected:
+        raise SystemExit(f"corpus text hash mismatch for {doc_id}: {path}")
+    return path
+
+
 def probe_holdout() -> tuple[set[str], str]:
     """Transfer documents (dev ∪ frozen) — never visible to any training stream."""
     provenance = json.loads(PROBE_PROVENANCE.read_text())
@@ -176,9 +203,7 @@ def cmd_init_pool(cfg: dict, args) -> None:
         row = manifest.get(doc_id)
         if not row or row.get("status") != "ok":
             continue
-        text_path = corpus_root(cfg) / (row.get("text_path") or f"text/{doc_id}.md")
-        if not text_path.is_file():
-            continue
+        corpus_text_path(corpus_root(cfg), row)
         by_topic[info["topic"]].append(
             {"doc_id": doc_id, "topic": info["topic"], "dev_probes": info["dev_probes"]})
 
@@ -214,13 +239,17 @@ def cmd_emit_docs(cfg: dict, args) -> None:
         row = manifest.get(doc_id)
         if row is None:
             raise SystemExit(f"pool doc {doc_id} vanished from the corpus manifest")
-        text_path = corpus_root(cfg) / (row.get("text_path") or f"text/{doc_id}.md")
+        text_path = corpus_text_path(corpus_root(cfg), row)
         text = corpusprep.clean_body(text_path.read_text(errors="replace"))
         if len(text) < min_clean:
             thin.append(doc_id)
             continue
-        rows.append({"id": doc_id, "topic": entry["topic"], "chars": len(text),
-                     "text": text})
+        rows.append({
+            "id": doc_id, "topic": entry["topic"], "chars": len(text), "text": text,
+            "text_source": "corpus_path" if row.get("corpus_path") else "text_path",
+            "source_sha256": row.get("corpus_sha256") or sha256_file(text_path),
+            "cleaner_version": row.get("cleaner_version"),
+        })
     out = round_dir(cfg) / "docs.jsonl"
     write_jsonl(out, rows)
     print(f"[docs] {len(rows)} pool docs -> {out}" +
@@ -302,10 +331,31 @@ def continuation_prefix(chunk: str) -> str:
     return chunk[:mid].rstrip()
 
 
+def stratified_chunks(text: str, limit: int, count: int | None) -> list[tuple[int, str]]:
+    """Choose deterministic positions across a document instead of only its beginning."""
+    chunks = chunk_chars(text, limit)
+    if not chunks:
+        return []
+    if count is None or count >= len(chunks):
+        return list(enumerate(chunks))
+    if count <= 0:
+        return []
+    if count == 1:
+        index = len(chunks) // 2
+        return [(index, chunks[index])]
+    indices = [round(i * (len(chunks) - 1) / (count - 1)) for i in range(count)]
+    return [(index, chunks[index]) for index in indices]
+
+
 def cmd_make_drafts(cfg: dict, args) -> None:
     draft_cfg = cfg["data"].get("draft", {})
     limit = int(draft_cfg.get("chunk_chars", 2400))
-    per_doc = int(draft_cfg.get("chunks_per_doc", 2))
+    configured_per_doc = draft_cfg.get("chunks_per_doc", 2)
+    per_doc = None if configured_per_doc is None else int(configured_per_doc)
+    probe_types = tuple(draft_cfg.get("probe_types", ("continuation", "summary")))
+    invalid = set(probe_types) - {"continuation", "summary"}
+    if invalid or not probe_types:
+        raise SystemExit(f"invalid data.draft.probe_types: {probe_types}")
     frontier = read_jsonl(round_dir(cfg) / "frontier.jsonl")
     docs = {row["id"]: row for row in read_jsonl(round_dir(cfg) / "docs.jsonl")}
     rows = []
@@ -313,14 +363,18 @@ def cmd_make_drafts(cfg: dict, args) -> None:
         doc = docs.get(entry["doc_id"])
         if doc is None:
             raise SystemExit(f"frontier doc {entry['doc_id']} missing from docs.jsonl")
-        for ci, chunk in enumerate(chunk_chars(doc["text"], limit)[:per_doc]):
+        for ci, chunk in stratified_chunks(doc["text"], limit, per_doc):
             base = {"doc_id": doc["id"], "topic": doc["topic"], "chunk_index": ci,
-                    "source_chunk": chunk, "templates": DRAFT_TEMPLATES_VERSION}
-            rows.append({**base, "id": f"{doc['id']}::c{ci}::continuation",
-                         "probe_type": "continuation",
-                         "prompt": continuation_prefix(chunk)})
-            rows.append({**base, "id": f"{doc['id']}::c{ci}::summary",
-                         "probe_type": "summary", "prompt": chunk + SUMMARY_CUE})
+                    "source_chunk": chunk, "templates": DRAFT_TEMPLATES_VERSION,
+                    "source_sha256": doc.get("source_sha256"),
+                    "cleaner_version": doc.get("cleaner_version")}
+            if "continuation" in probe_types:
+                rows.append({**base, "id": f"{doc['id']}::c{ci}::continuation",
+                             "probe_type": "continuation",
+                             "prompt": continuation_prefix(chunk)})
+            if "summary" in probe_types:
+                rows.append({**base, "id": f"{doc['id']}::c{ci}::summary",
+                             "probe_type": "summary", "prompt": chunk + SUMMARY_CUE})
     out = round_dir(cfg) / "cpt_draft_prompts.jsonl"
     write_jsonl(out, rows)
     print(f"[drafts] {len(rows)} prompts from {len(frontier)} frontier docs -> {out}")
@@ -370,35 +424,82 @@ def plan_mix(teacher_tokens: int, mix: dict, cap: int) -> dict:
             "teacher_cpt": teacher_tokens}
 
 
-def fill_by_cycling(items: list[tuple[dict, int]], target: int) -> tuple[list[dict], int, int]:
+def fill_by_cycling(items: list[tuple[dict, int]], target: int,
+                    max_passes: int | None = None) -> tuple[list[dict], int, int]:
     """Repeat (row, n_tokens) items in order until the strict token target is reached."""
-    rows, total, passes = [], 0, 0
-    while total < target:
-        passes += 1
+    rows, total, passes, attempts = [], 0, 0, 0
+    while total < target and (max_passes is None or attempts < max_passes):
+        attempts += 1
         progressed = False
         for row, n_tokens in items:
             if total + n_tokens > target:
-                return rows, total, passes
-            rows.append({**row, "meta": {**row["meta"], "pass": passes}})
+                continue
+            rows.append({**row, "meta": {**row["meta"], "pass": attempts}})
             total += n_tokens
             progressed = True
         if not progressed:
             break
+        passes += 1
     return rows, total, passes
 
 
+def require_near_target(actual: int, target: int, label: str,
+                        tolerance: float = 0.005) -> None:
+    """Refuse a ledger whose strict row boundary undershoots a stream materially."""
+    if target <= 0:
+        return
+    shortfall = target - actual
+    if shortfall < 0 or shortfall / target > tolerance:
+        raise SystemExit(
+            f"{label} stream reached {actual:,}/{target:,} tokens; allowed shortfall is "
+            f"{tolerance:.1%}")
+
+
 def raw_stream(frontier_docs: list[dict], tokenizer, *, chunk_limit: int,
-               doc_limit: int, target: int, rnd: int) -> tuple[list[dict], int, int]:
+               doc_limit: int, target: int, rnd: int,
+               max_passes: int | None = None) -> tuple[list[dict], int, int]:
     items: list[tuple[dict, int]] = []
     for doc in frontier_docs:
         for piece, n_tokens in chunk_doc_tokens(
                 tokenizer, doc["text"], chunk_limit=chunk_limit, doc_limit=doc_limit):
             items.append(({"text": piece, "meta": {
                 "stream": "raw", "doc_id": doc["id"], "round": rnd,
-                "content_tokens": n_tokens}}, n_tokens))
+                "content_tokens": n_tokens,
+                "source_sha256": doc.get("source_sha256")}}, n_tokens))
     if not items:
         raise SystemExit("frontier documents produced no raw chunks")
-    return fill_by_cycling(items, target)
+    if max_passes is not None and sum(n for _, n in items) * max_passes < target:
+        raise SystemExit(
+            f"raw stream has capacity for only "
+            f"{sum(n for _, n in items) * max_passes:,}/{target:,} tokens with "
+            f"max_stream_passes={max_passes}; enlarge the frozen frontier")
+    return fill_by_cycling(items, target, max_passes=max_passes)
+
+
+def source_chunk_raw_stream(prompt_rows: list[dict], tokenizer, *, target: int,
+                            rnd: int, max_passes: int | None = None
+                            ) -> tuple[list[dict], int, int]:
+    """Raw control from the exact unique source spans used to author teacher text."""
+    items: list[tuple[dict, int]] = []
+    seen: set[tuple[str, object]] = set()
+    for prompt in prompt_rows:
+        chunk_index = prompt.get("chunk_index")
+        key = (prompt["doc_id"], chunk_index if chunk_index is not None else prompt["id"])
+        if key in seen:
+            continue
+        seen.add(key)
+        text = prompt["source_chunk"]
+        n_tokens = count_tokens(tokenizer, text)
+        items.append(({"text": text, "meta": {
+            "stream": "raw", "doc_id": prompt["doc_id"], "round": rnd,
+            "chunk_index": chunk_index, "content_tokens": n_tokens,
+            "source_sha256": prompt.get("source_sha256")}}, n_tokens))
+    capacity = sum(n for _, n in items) * (max_passes or 1)
+    if not items or (max_passes is not None and capacity < target):
+        raise SystemExit(
+            f"same-source raw stream has capacity for only {capacity:,}/{target:,} tokens; "
+            "increase the frozen source-span coverage")
+    return fill_by_cycling(items, target, max_passes=max_passes)
 
 
 def anchor_stream(cfg: dict, tokenizer, pool_ids: set[str], holdout_ids: set[str],
@@ -430,9 +531,7 @@ def anchor_stream(cfg: dict, tokenizer, pool_ids: set[str], holdout_ids: set[str
     for row in eligible:
         if total >= target:
             break
-        text_path = root / (row.get("text_path") or f"text/{row['id']}.md")
-        if not text_path.is_file():
-            continue
+        text_path = corpus_text_path(root, row)
         text = corpusprep.clean_body(text_path.read_text(errors="replace"))
         if len(text) < min_clean:
             continue
@@ -444,7 +543,8 @@ def anchor_stream(cfg: dict, tokenizer, pool_ids: set[str], holdout_ids: set[str
             rows.append({"text": piece, "meta": {
                 "stream": "anchor", "doc_id": row["id"],
                 "topic": row.get("topic") or "unknown", "round": rnd,
-                "content_tokens": n_tokens}})
+                "content_tokens": n_tokens,
+                "source_sha256": row.get("corpus_sha256") or sha256_file(text_path)}})
             total += n_tokens
     if total < target:
         raise SystemExit(
@@ -472,19 +572,31 @@ def cmd_build(cfg: dict, args) -> None:
     if control:
         # SPEC §3 null arm: the same frontier documents re-read raw, at the exact token
         # volume the CoAPT arm spent — no teacher text, no QA, same anchor share.
-        total = int(control["total_content_tokens"])
+        matched_ledger_path = None
+        if control.get("match_ledger"):
+            matched_ledger_path = scratch_path(control["match_ledger"])
+            matched_ledger = json.loads(matched_ledger_path.read_text())
+            total = int(matched_ledger["content_tokens"])
+        else:
+            total = int(control["total_content_tokens"])
+        max_passes = data.get("max_stream_passes")
+        max_passes = None if max_passes is None else int(max_passes)
         shares = {name: float(data["mix"][name]) for name in STREAMS}
         raw_target = int(round(total * (shares["raw"] + shares["teacher_cpt"]
                                         + shares["qa_text"])))
         anchor_target = total - raw_target
-        frontier_docs = [doc for doc in read_jsonl(rdir / "docs.jsonl")
-                         if doc["id"] in frontier_ids]
-        raw_rows, raw_tokens, raw_passes = raw_stream(
-            frontier_docs, tokenizer, chunk_limit=chunk_limit, doc_limit=doc_limit,
-            target=raw_target, rnd=rnd)
+        prompt_path = rdir / "cpt_draft_prompts.jsonl"
+        teacher_control_path = rdir / "cpt_teacher.jsonl"
+        control_source_rows, _ = gated_rows(
+            teacher_control_path, ("source_chunk", "doc_id"))
+        raw_rows, raw_tokens, raw_passes = source_chunk_raw_stream(
+            control_source_rows, tokenizer, target=raw_target, rnd=rnd,
+            max_passes=max_passes)
+        require_near_target(raw_tokens, raw_target, "raw control")
         anchor_rows, anchor_tokens, anchor_docs = anchor_stream(
             cfg, tokenizer, pool_ids, holdout_ids, chunk_limit=chunk_limit,
             doc_limit=doc_limit, target=anchor_target, rnd=rnd)
+        require_near_target(anchor_tokens, anchor_target, "control anchor")
         all_rows = raw_rows + anchor_rows
         for row in all_rows:
             if row["meta"]["doc_id"] in holdout_ids:
@@ -516,6 +628,11 @@ def cmd_build(cfg: dict, args) -> None:
             "shuffle_seed": int(data.get("shuffle_seed", 3407)),
             "pool_sha256": sha256_file(pool_path),
             "frontier_sha256": sha256_file(frontier_path),
+            "docs_sha256": sha256_file(rdir / "docs.jsonl"),
+            "draft_prompts_sha256": sha256_file(prompt_path),
+            "cpt_teacher_sha256": sha256_file(teacher_control_path),
+            **({"matched_ledger_sha256": sha256_file(matched_ledger_path)}
+               if matched_ledger_path else {}),
             "transfer_documents_excluded": True,
         }
         if datakit.exists(EXP_DIR, spec):
@@ -536,7 +653,11 @@ def cmd_build(cfg: dict, args) -> None:
     teacher_path = rdir / "cpt_teacher.jsonl"
     sft_path = rdir / "sft_final.jsonl"
     teacher_rows, teacher_failed = gated_rows(teacher_path, ("teacher_text", "doc_id"))
-    sft_rows, sft_failed = gated_rows(sft_path, ("question", "answer", "doc_id"))
+    qa_share = float(data["mix"]["qa_text"])
+    if qa_share > 0:
+        sft_rows, sft_failed = gated_rows(sft_path, ("question", "answer", "doc_id"))
+    else:
+        sft_rows, sft_failed = [], 0
     for label, rows in (("cpt_teacher", teacher_rows), ("sft_final", sft_rows)):
         stray = {row["doc_id"] for row in rows} - frontier_ids
         if stray:
@@ -549,7 +670,8 @@ def cmd_build(cfg: dict, args) -> None:
         teacher_items.append(({"text": row["teacher_text"], "meta": {
             "stream": "teacher_cpt", "doc_id": row["doc_id"], "round": rnd,
             "probe_type": row.get("probe_type"), "source_id": row.get("id"),
-            "content_tokens": n_tokens}}, n_tokens))
+            "content_tokens": n_tokens,
+            "source_sha256": row.get("source_sha256")}}, n_tokens))
     qa_items: list[tuple[dict, int]] = []
     for row in sft_rows:
         text = QA_TEMPLATE.format(question=row["question"].strip(),
@@ -563,6 +685,8 @@ def cmd_build(cfg: dict, args) -> None:
     teacher_unique_tokens = sum(n for _, n in teacher_items)
     qa_unique_tokens = sum(n for _, n in qa_items)
     fixed_total = data.get("fixed_total_content_tokens")
+    max_passes = data.get("max_stream_passes")
+    max_passes = None if max_passes is None else int(max_passes)
     if fixed_total:
         # Share-sweep mode: total is pinned; EVERY stream fills its share by cycling.
         # Higher teacher shares mean repetition of the same gated material, not new
@@ -573,27 +697,37 @@ def cmd_build(cfg: dict, args) -> None:
         plan = {"total": int(fixed_total),
                 **{name: int(round(int(fixed_total) * shares[name]))
                    for name in STREAMS}}
+        if (max_passes is not None
+                and teacher_unique_tokens * max_passes < plan["teacher_cpt"]):
+            raise SystemExit(
+                f"teacher stream has capacity for only "
+                f"{teacher_unique_tokens * max_passes:,}/{plan['teacher_cpt']:,} "
+                f"tokens with max_stream_passes={max_passes}; generate more unique "
+                "gate-passed teacher rows")
         teacher_stream, teacher_tokens, teacher_passes = fill_by_cycling(
-            teacher_items, plan["teacher_cpt"])
+            teacher_items, plan["teacher_cpt"], max_passes=max_passes)
+        require_near_target(teacher_tokens, plan["teacher_cpt"], "teacher")
     else:
         plan = plan_mix(teacher_unique_tokens, data["mix"],
                         int(data["target_content_tokens"]))
         teacher_stream = [row for row, _ in teacher_items]
         teacher_tokens, teacher_passes = teacher_unique_tokens, 1
     qa_stream, qa_tokens, qa_passes = fill_by_cycling(qa_items, plan["qa_text"])
+    require_near_target(qa_tokens, plan["qa_text"], "QA")
 
     frontier_docs = [doc for doc in read_jsonl(rdir / "docs.jsonl")
                      if doc["id"] in frontier_ids]
     if plan["raw"] > 0:
         raw_rows, raw_tokens, raw_passes = raw_stream(
             frontier_docs, tokenizer, chunk_limit=chunk_limit, doc_limit=doc_limit,
-            target=plan["raw"], rnd=rnd)
+            target=plan["raw"], rnd=rnd, max_passes=max_passes)
     else:
         raw_rows, raw_tokens, raw_passes = [], 0, 0
     if plan["anchor"] > 0:
         anchor_rows, anchor_tokens, anchor_docs = anchor_stream(
             cfg, tokenizer, pool_ids, holdout_ids, chunk_limit=chunk_limit,
             doc_limit=doc_limit, target=plan["anchor"], rnd=rnd)
+        require_near_target(anchor_tokens, plan["anchor"], "anchor")
     else:
         anchor_rows, anchor_tokens, anchor_docs = [], 0, 0
 
@@ -649,8 +783,10 @@ def cmd_build(cfg: dict, args) -> None:
         "qa_template": QA_TEMPLATE, "draft_templates": DRAFT_TEMPLATES_VERSION,
         "pool_sha256": sha256_file(pool_path),
         "frontier_sha256": sha256_file(frontier_path),
+        "docs_sha256": sha256_file(rdir / "docs.jsonl"),
+        "draft_prompts_sha256": sha256_file(rdir / "cpt_draft_prompts.jsonl"),
         "cpt_teacher_sha256": sha256_file(teacher_path),
-        "sft_final_sha256": sha256_file(sft_path),
+        **({"sft_final_sha256": sha256_file(sft_path)} if qa_share > 0 else {}),
         "transfer_documents_excluded": True,
     }
     if datakit.exists(EXP_DIR, spec):

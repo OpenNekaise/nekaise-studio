@@ -1,68 +1,88 @@
 # STATUS — current phase and targets
 
 > Durable procedure lives in `SPEC.md`, `BOUNDARY.md`, `skills/`, and `AGENTS.md`.
-> This file contains only the active state. Last update: 2026-07-23.
+> This file contains only the active state. Last update: 2026-08-24.
 
-## Phase: NEKAISE-COAPT MVP (two rounds)
+## Phase: LINKEDIN EQUAL-SOURCE CoAPT-CPT A/B — COMPLETE
 
-Active model: **`openbmb/MiniCPM5-1B-Base`**. The campaign is the first full
-**nekaise-coapt** loop (SPEC.md §1): two chained rounds, R0 and R1, driven by the
-`coapt-round` skill. The goal is NOT a score target — it is to demonstrate that the
-closed loop is real: training changes the student, the changed student changes the
-diagnosis, and the changed diagnosis changes the data.
+Human directive 2026-08-21 supersedes the unstarted two-round MVP recipe. The active
+campaign is a compact public showcase comparing raw CPT with Codex-authored CoAPT-CPT on
+**`openbmb/MiniCPM5-1B-Base`**. It is one R0 dataset pair and three paired training seeds,
+not a scaling study and not a claim about larger models.
 
-The CPT data-scaling ladder (R0/4M/40M/400M/1B/2B, stream plan `nekaise-1b-cpt-v1`) is
-**closed by human directive 2026-07-23**, superseding the 2026-07-22 finish-the-ladder
-directive. Its runs, datasets, and the 40M noise band (0.003143 on
-`corpus_transfer_macro_dev`, seeds 0.1221/0.1181/0.1159) remain in the RunStore as
-evidence; nothing from it chains into this campaign.
+## Frozen design
 
-## Success criteria (fixed before R0)
+Both arms start from the same base model, use the same frozen student-selected frontier
+source-span pool, the same 20% anchor stream, the same trainer, and a **1.4M**
+content-token cap:
 
-1. **Pipeline** — both rounds run end to end through the skills; every round artifact
-   (pool, frontier, drafts, teacher rows, gate verdicts, token ledger, run ids, evals)
-   exists with provenance.
-2. **Loop closure** (the MVP's core evidence, checked at R1 entry):
-   R0 teacher-text NLL falls under S1; R0 questions answer better under S1 (vs the
-   recorded `student_verdict` rate); the frontier turns over. The first two are hard
-   requirements — if either fails, stop and report.
-3. **Learning** — `coapt_pool_absorption_dev`: S1 > S0 and S2 > S1 beyond the R0
-   three-seed noise band, with `corpus_transfer_macro_dev` never falling more than the
-   band below the previous student (guardrail; a breach reverts the round).
+- **Raw CPT control:** source chunks 80% + anchor 20%.
+- **CoAPT-CPT:** source-grounded Codex teacher text 80% + anchor 20%; no QA text.
+  The validated v4 teacher stream prepends the exact source sentence containing the
+  first source numeric token only when the authored teacher's first numeric token
+  differs.
 
-## Agent control path
+Each unique source span is used at most once. The campaign uses 650 pool documents, a
+500-document frontier, and up to 12 position-stratified source chunks per document. Only
+the continuation draft type is authored, so the same source span is not counted twice as
+continuation plus summary. The raw control reads the exact `source_chunk` records used by
+the teacher arm. The successful campaign recipe files are frozen at:
 
-1. `python tools/doctor.py`
-2. Follow `skills/coapt-round.md`. R0 sequence in brief:
-   `build_data.py init-pool` → baseline reference (full dev + pool view) →
-   `emit-docs` → `student.py score` → `select-frontier` → `make-drafts` →
-   branch skills (`coapt-cpt`, `coapt-sft`) →
-   `python -m studio.cli build coapt --config configs/coapt.yaml` →
-   `python -m studio.cli train cpt --config configs/coapt.yaml --seed {3407,3408,3409}` →
-   pool + transfer eval per seed → noise band `max(std, half_range)` →
-   `python -m studio.cli decide <run_id> --metric coapt_pool_absorption_dev ...` →
-   round report.
-3. R1 chains from **seed 3407's** R0 checkpoint (fixed in advance): set
-   `run.init_from: run:<r0 seed-3407 run_id>`, `data.round: 1`,
-   `data.round_dir: coapt/rounds/r1`; run the loop-closure checks before generating.
+- `workspace/configs/linkedin-ab-v4-coapt.yaml`
+- `workspace/configs/linkedin-ab-v4-raw-control.yaml`
 
-All commands emit bounded JSON or stable `RUN_ID`/`EVAL_RESULT`/`METRIC` records. Query
-runs with `studio.cli list/show/resolve`; use run ids as evidence.
+The corpus manifest snapshot is `workspace/corpus-snapshots/linkedin-ab-v1/`; every
+selected cleaned file is verified against its manifest `corpus_sha256` before use.
 
-## Current next actions
+## Measurement and decision
 
-- R0 has not started. First moves: `python tools/doctor.py`, then freeze the pool
-  (`python experiments/coapt/build_data.py init-pool`) and record the S0 baseline
-  (full dev `--record-reference coapt`, then the pool view on that reference run).
-- Round budget: `target_content_tokens: 4M` cap; teacher volume drives the actual total
-  (ratio-locked mix 40/25/15/20). Expect ~1–2k teacher corrections per round; the
-  teacher work in the branch skills is the wall-clock bottleneck, not the GPU.
-- No noise band exists yet for `coapt_pool_absorption_dev` — R0's three seeds create it.
-  Until then every decide is `pending`/`baseline`.
+- Primary: `coapt_pool_absorption_dev`.
+- No-regression guardrail: `corpus_transfer_macro_dev`.
+- Paired seeds: **3407, 3408, 3409** on one immutable dataset per arm.
+- The three-seed raw control establishes this campaign's noise band
+  `max(std, half_range)`. Historical CPT noise bands are not reused.
+- NLL, teacher gate yield, and training loss are diagnostics only; perplexity is never a
+  success metric.
 
-## Deferred
+The public claim is limited to the measured 1B, equal-source, equal-token pilot. CoAPT is
+called better only if its absorption gain exceeds the new noise band and transfer does
+not breach the guardrail.
 
-Chat-format SFT consolidation (`studio/stages/sft.py`), the CoAPT-vs-raw-CPT
-null-hypothesis A/B (mandatory before any effectiveness claim, SPEC.md §3), building-pack
-work (`prepare-trainset`/`judge` remain dormant assets), `nekaise_bench` milestones,
-export, and multi-machine execution.
+## Current state
+
+- Training/eval doctor passes in the pinned Conda environments; RTX 6000 Ada is visible.
+- Codex CLI 0.149.0 is installed and authenticated through ChatGPT, without an API key.
+- `gpt-5.6-luna`, `gpt-5.6-terra`, and `gpt-5.6-sol` all passed real availability calls.
+- The Codex author → separate Codex source-grounding gate completed an end-to-end smoke.
+- The v1 4M recipe stopped at preflight: 5,385 unique source spans contain 2,935,792
+  tokens, below its 3.2M domain-token requirement. No teacher corpus or training run was
+  produced. The v2 1.4M cap was frozen from the bake-off's passed-token projection with
+  margin; it requires 1.12M unique gate-passed teacher tokens.
+- The 50-span bake-off selected **`gpt-5.6-terra` low** as author: 43/50 passed the common
+  Sol-low gate versus Luna 29/50 and Sol 31/50. Terra was also fastest. Full authorship
+  uses the measured batch size 8; larger batches compressed the output materially.
+- Full CPU guardrail suite passes.
+- S0 reference is recorded (`coapt_pool_absorption_dev=0.1278`,
+  `corpus_transfer_macro_dev=0.1189`). The Sol-low gate passed 4,369/5,385 authored rows.
+- The v2 full-teacher campaign improved pool absorption (0.14323 vs raw 0.13537) but
+  failed transfer (0.11670 vs raw 0.12033). The v3 full-source fallback repaired
+  transfer on its first seed but erased the pool gain, so the remaining v3 arms were
+  stopped as a failed ablation.
+- The single v4 change preserves the teacher text and prepends only the exact source
+  sentence containing the first numeric token when teacher/source first-number order
+  differs. Its immutable datasets are `7932c970db30b577` (CoAPT, 1,399,965 tokens) and
+  `180dbe13e572c884` (matched raw control, 1,399,936 tokens).
+- All three paired seeds completed. Mean `coapt_pool_absorption_dev` is **0.13990** for
+  CoAPT versus **0.13443** for raw CPT: **+0.00547**, or 5.11x the newly measured raw
+  noise band of 0.001069. Every paired pool delta is positive and above the band.
+- Mean `corpus_transfer_macro_dev` is **0.11990** for CoAPT versus **0.11940** for raw
+  CPT, so the no-regression guardrail passes. The public claim remains limited to this
+  1B, equal-source, equal-token pilot.
+- The full report, run IDs, checkpoint digests, and validation evidence are in
+  `workspace/coapt/linkedin-ab-v4/r0/round_report.md`.
+
+## Next actions
+
+1. Treat v4 as the retained 1B pilot result; do not tune further against this dev split.
+2. Before a broader effectiveness claim, repeat the frozen rule on a new corpus or model
+   as a fresh campaign and consult milestone referees only at the prescribed phase gate.

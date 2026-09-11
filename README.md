@@ -2,24 +2,25 @@
 
 _An [OpenNekaise](https://github.com/OpenNekaise) project._
 
-A model's mistakes can tell us what to teach it next.
+nekaise-studio is an agent-operated studio for fine-tuning small language models. A larger
+language model reads what the small model gets wrong, writes the next round of training
+data from the corpus, trains it, and hands the result to a referee it cannot touch. The
+active work is building-energy knowledge from
+[nekaise-corpus](https://github.com/OpenNekaise/nekaise-corpus).
 
-nekaise-studio is an agent-operated studio for fine-tuning language models under 8B
-parameters. A coding agent observes the student, writes its next lessons from the corpus,
-trains it, and hands the result to a referee it cannot touch. The active work is
-building-energy knowledge from [nekaise-corpus](https://github.com/OpenNekaise/nekaise-corpus).
+## CoAPT
 
-## For this student
+[CoAPT](docs/COAPT.md), Co-Adaptive Pretraining and Tuning, is the training loop. It spans
+mid-training and post-training: continued pretraining on domain text, SFT on
+question-and-answer pairs, and, in a future campaign, agentic RL, under one rule. The
+training data is on-policy, generated from the current student's own outputs, with targets
+corrected by a larger model that may use only the source passage. The teacher's own
+knowledge cannot fill a gap in the evidence.
 
-[CoAPT](docs/COAPT.md), Co-Adaptive Pretraining and Tuning, makes the curriculum answer to
-one particular student. Its current attempts and mistakes decide which passages need
-attention and how the teacher presents them. After training, the changed student selects
-the next round's material.
-
-The teacher is the coding agent, or a Codex model it calls. It corrects the student's drafts
-into grounded prose and turns failed closed-book answers into question-and-answer lessons.
-Every sentence must be supported by the source passage; the teacher's own knowledge cannot
-fill a gap in the evidence.
+Each round, the student drafts over corpus passages and answers closed-book questions.
+The teacher turns those drafts and answers into grounded text and Q&A pairs, the gated mix
+is trained through a fixed recipe, and the changed student selects the next round's data.
+The recipe never moves between rounds; only the data does.
 
 ## Judged from outside
 

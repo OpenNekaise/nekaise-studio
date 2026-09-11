@@ -20,15 +20,6 @@ corrected prose; the SFT branch produces question-and-answer pairs serialized as
 the same causal language-model stream. Current campaigns focus on CPT. Agentic RL remains
 future work.
 
-The gated data is assembled before training and used with a frozen recipe. After
-evaluation, a retained checkpoint supplies the next round's measurements and attempts.
-Data content changes; templates, gates, and training settings stay fixed within a campaign.
-
-Evaluation uses a separate referee with frozen tasks and deterministic verifiers.
-Effectiveness is judged against raw-corpus CPT at a matched token budget, with transfer
-checked for regressions. Immutable provenance connects source passages, training data,
-runs, and checkpoints.
-
 Read [SPEC.md](SPEC.md) for training and decision rules, [BOUNDARY.md](BOUNDARY.md) for the
 studio/gym boundary, and [STATUS.md](STATUS.md) for current work and evidence.
 

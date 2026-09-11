@@ -1,10 +1,10 @@
 # CoAPT
 
-**CoAPT** is a co-adaptive training framework spanning mid-training and post-training. A teacher observes what a particular student can currently do, then uses the student's attempts, errors, partial successes, and blind spots to create the training material that student should see next.
+**CoAPT**, Co-Adaptive Pretraining and Tuning, adapts training data to the current student. A teacher observes what a particular model can do, then uses its attempts, errors, and omissions to create source-grounded material for that student.
 
-That is the central idea. The material is not prepared for an abstract model. It is prepared in response to this model, at this point in its development.
+The method spans continued pretraining, or mid-training, and SFT. **The implemented workflow is text-only:** Adaptive CPT produces corrected prose; Personalized SFT produces question-and-answer pairs serialized into the same CPT stream. Both branches, the token ledger, frozen training recipe, independent referee, and equal-token raw-corpus control are implemented. Current campaigns focus on CPT.
 
-Grounding keeps the loop honest. For knowledge learning, lessons can be grounded in corpus documents. For agentic work, they can be grounded in verified tasks, tool results, execution traces, and environment state. The grounding source may change; the rule does not: the teacher cannot turn unsupported intuition into training truth.
+Agentic CoAPT, trajectory correction, dense teacher scoring, and on-policy distillation as an inner training mechanism are proposals. They are outside the current [algorithm card](../SPEC.md). An agent operating the training system does not mean the student is being trained to operate tools.
 
 In compact form:
 
@@ -12,263 +12,170 @@ In compact form:
 Dᵣ = f(Sᵣ, evidence, teacher)
 ```
 
-The dataset for round `r` depends on the student at round `r`, the evidence available to teach from, and the teacher that converts observed behavior into useful examples.
+The dataset for round `r` depends on the student at that round, the available evidence, and the teacher. In the current implementation, that evidence is real corpus text.
 
 > The student supplies the signal. The teacher turns that signal into curriculum. Grounding supplies the truth.
 
-CoAPT is defined by this relationship, not by a particular data type, training stage, or optimizer. The sections below show how the same teaching loop applies to both knowledge and agentic behavior.
-
 ## Where CoAPT sits in the training stack
 
-Expert performance usually combines several layers: understanding the input, retrieving relevant knowledge, choosing a plan, and executing it reliably. A useful [training-stack view](https://thinkingmachines.ai/blog/on-policy-distillation/) develops those layers across three broad stages:
+“Pretraining” in the name means continued pretraining of an existing student. “Tuning” refers to the question-and-answer branch, which practices using knowledge when prompted.
 
-| Stage | Purpose | Relationship to CoAPT |
-|---|---|---|
-| **Pre-training** | General language, reasoning, and world knowledge | Usually provides the starting student. |
-| **Mid-training** | Specialized knowledge from code, documents, databases, or another domain source | CoAPT selects knowledge at the student's frontier and turns its mistakes into grounded teaching text. |
-| **Post-training** | Targeted behavior such as instruction following, reasoning, tool use, and workflow execution | CoAPT elicits the student's behavior and teaches directly against the failures it observes. |
+| Stage | Relationship to the implemented workflow |
+|---|---|
+| **Pre-training** | Provides the starting student. |
+| **Mid-training** | Adaptive CPT turns source passages and student continuations into grounded teaching prose. |
+| **SFT** | Personalized SFT creates corrected question-and-answer examples, trained as plain text alongside the prose. |
 
-CoAPT focuses on the latter two stages and connects them. Mid-training gives the model something worth knowing; post-training makes that knowledge usable in the behavior we want. Both can draw their material from the same student-conditioned loop.
+These are purposes and data forms within one causal language-model training stream. The branch named Personalized SFT does not invoke a separate chat-format trainer. Chat-format SFT consolidation is deferred, and agentic RL remains future work.
 
-The distinction is about purpose, not necessarily separate training jobs. A CoAPT implementation can place corrected prose and question-and-answer text in one causal-language-model stream while the two forms still serve mid-training and post-training functions.
-
-The name expands to **Co-Adaptive Pretraining and Tuning**. Here, “pretraining” means continued pretraining, often called mid-training, of an existing student. It does not mean training a foundation model from scratch. “Tuning” names the post-training side: shaping how the student retrieves, reasons, responds, and acts.
+The intended combination is knowledge acquisition and utilization. Whether either branch improves those capabilities is an evaluation question, not a consequence of its name.
 
 ## Why make training co-adaptive?
 
-Most training pipelines prepare data independently of the model that will consume it. Every student receives essentially the same curriculum, even when their capabilities and failures are different. More data or more repetitions can strengthen that curriculum, but they do not make it responsive.
+A fixed curriculum cannot respond to differences between students or to changes in the same student. CoAPT asks whether observations of the current model can make the next training material more useful.
 
-CoAPT closes the feedback loop:
+The teacher does more than supply an ideal answer. A confused continuation may need an explanation of a relationship; a nearly correct answer may need one missing qualification. The source determines what can be said, while the student's response helps determine what needs emphasis.
 
-1. Observe the current student doing real work.
-2. Identify what it understands, where it fails, and how it fails.
-3. Have a teacher create targeted material from those observations.
-4. Ground and gate every lesson against trusted evidence.
-5. Train, evaluate independently, and observe the changed student again.
-
-The teacher does more than supply an ideal answer. It uses the student's behavior as an input to teaching. A confused continuation calls for a different lesson than a nearly correct one. A wrong tool choice calls for a different example than a correct plan with a failed recovery. As the student changes, the useful lesson changes too.
-
-Without the student's response, this would be ordinary teacher-generated data. CoAPT begins when the student's present ability changes the lesson the teacher creates.
-
-CoAPT therefore combines five properties:
-
-- **Student-conditioned teaching.** Attempts and failures help determine both what is taught and how it is expressed.
-- **Grounded generation.** Teacher material must be supported by a document, verifier, tool result, or other accepted evidence.
-- **Policy-relative experience.** Training material comes from behavior the current student actually produces, whether refreshed between rounds or sampled on-policy during training.
-- **Independent evaluation.** The teacher that writes lessons does not write or grade the exam.
-- **Measured recursion.** A new student is retained only when the effect clears evaluation thresholds and guardrails defined in advance.
+The intended feedback loop is straightforward: measure the student, teach against its observed gaps, train, and measure again. The round workflow is implemented, but repeated adaptation must still be demonstrated in a completed campaign. Generating useful material from one student checkpoint establishes only part of that claim.
 
 ## On-policy in what sense?
 
-CoAPT begins data creation from the current student's own behavior:
-
-```text
-student attempt x ~ πₛ
-teaching material m = Gate(T(evidence, x))
-new student S′ = Train(S, m)
-```
-
-The attempt may be a continuation, an answer, a plan, a tool call, or a complete trajectory. Because `x` comes from the current student policy, the teacher sees the states and mistakes this student actually produces. Because `m` is created by the teacher and must be grounded in evidence, the learning signal can be much denser than a final success/failure reward. The raw mistake remains diagnostic context; only gated teaching material enters training.
-
-The concise description is:
-
 > CoAPT uses on-policy contexts with teacher-corrected targets.
 
-This places CoAPT between familiar approaches:
+Here, “on-policy contexts” describes **data creation from a snapshot of the current student**. The student generates drafts and closed-book answers. Those attempts become context for the teacher's corrections.
 
-| Approach | Experience comes from | Teaching signal |
-|---|---|---|
-| **Off-policy SFT or distillation** | Teacher demonstrations prepared independently of the student | Dense target output |
-| **Reinforcement learning** | Student rollouts | Usually a sparse outcome reward |
-| **Strict on-policy distillation** | Student rollouts | Dense teacher scores on the student's own tokens or actions |
-| **CoAPT** | Student attempts or trajectories | Grounded teacher revisions, dense scores, or both |
+The teacher can rewrite an attempt substantially, so the final training sequence need not preserve the student's token history. The attempt is diagnostic input; only accepted teaching material enters training.
 
-The current student is therefore part of data generation, not merely the recipient of a teacher dataset. But CoAPT does not require every implementation to perform online reward optimization. Text-oriented CoAPT can freeze a student checkpoint, generate its drafts and answers, have a teacher revise them, build an immutable dataset, and then train offline. Agentic CoAPT can use a tighter on-policy loop with dense teacher scoring. What remains constant is that the student's behavior changes the teaching material.
+Training then runs offline on the completed, immutable dataset. Student outputs are not resampled after every update, and the trainer does not optimize teacher probabilities on student-generated tokens. The phrase therefore describes student-conditioned supervision, not a claim that the implemented loss is strict on-policy distillation.
 
 ## Five roles, kept separate
 
-| Role | Responsibility |
+| Role | Responsibility today |
 |---|---|
-| **Grounding source** | Defines what may be taught: corpus text for knowledge; verified tasks and outcomes for agentic behavior. |
-| **Student** | Produces the attempts, failures, and partial successes that reveal its present frontier. |
-| **Teacher** | Converts those observations into targeted, grounded training material. |
-| **Trainer** | Applies a declared optimization recipe to the completed material. |
-| **Referee** | Measures the result on frozen tasks the teacher cannot alter or inspect while teaching. |
+| **Grounding source** | Corpus text defines which claims may enter training. |
+| **Student** | Produces attempts and measurements that expose its present gaps. |
+| **Teacher** | Creates and gates source-grounded corrections and questions. |
+| **Trainer** | Applies the frozen CPT recipe to the completed mix. |
+| **Referee** | Measures the result with fixed probes and deterministic verifiers. |
 
-These boundaries are part of the method. The student does not decide what is true. The teacher does not decide whether its teaching worked. The trainer does not search for a more favorable recipe between rounds.
+The student does not decide what is true. The teacher's judgment can gate a lesson or supply an advisory diagnosis, but it cannot supply the keep/revert score. The trainer cannot search for more favorable settings between rounds.
 
 ## The loop
 
 ```mermaid
 flowchart LR
-    S[Observe current student] --> B[Collect attempts and failures]
-    B --> T[Teacher creates targeted material]
-    T --> G[Ground and gate]
-    G --> M[Build the training mix]
-    M --> R[Train with a frozen recipe]
-    R --> E[Evaluate independently]
+    S[Diagnose current student] --> F[Select corpus frontier]
+    F --> B[Collect drafts and closed-book answers]
+    B --> T[Teacher creates source-grounded corrections]
+    T --> G[Gate claims and examples]
+    G --> M[Build mix and token ledger]
+    M --> R[Train with frozen CPT recipe]
+    R --> E[Evaluate pool absorption and transfer]
     E --> D{Keep or revert}
     D --> S
 ```
 
-One round follows the same general sequence:
+This diagram describes the implemented round protocol and its intended repetition. It is not evidence that the multi-round loop has already closed.
 
-1. **Observe.** Ask the current student to continue text, answer questions, solve tasks, or perform workflows appropriate to the capability being taught.
-2. **Diagnose.** Turn its outputs and measurements into a picture of its present capabilities.
-3. **Select.** Choose the knowledge, behavior, or task frontier worth teaching next.
-4. **Teach.** Create examples that directly address the observed mistakes and omissions.
-5. **Ground and gate.** Reject unsupported claims, invalid trajectories, leakage, and malformed examples.
-6. **Train.** Apply a declared training recipe to immutable, recorded material.
-7. **Judge.** Measure the result with an independent, frozen referee.
-8. **Repeat.** If retained, the new checkpoint becomes the next student and produces a new set of observations.
+Diagnosis combines per-document negative log-likelihood, or NLL, with closed-book pool probe measurements. The frozen selection rule chooses a frontier from the campaign's fixed pool. Both teaching branches work from that frontier, and accepted rows become an immutable dataset.
 
-The adaptation boundary is deliberately narrow:
+A retained checkpoint supplies the next round's student. Before creating more data, the protocol checks whether the student assigns lower NLL to prior teacher text, answers prior questions better, and changes which documents occupy the frontier. The first two are required closure checks; frontier turnover is reported. These signals test the mechanism, while the independent capability metrics govern keep/revert.
 
-| Changes each round | Stays fixed for a controlled comparison |
-|---|---|
-| Student checkpoint and measured behavior | Grounding and evaluation boundaries |
-| Selected knowledge or task frontier | Selection policy |
-| Student attempts and trajectories | Teacher instructions, formats, and gates |
-| Teacher-created training examples | Data recipe and training recipe |
-| Next checkpoint | Referee and decision rules |
-
-This is how CoAPT can be recursive without becoming uncontrolled. The content responds to the student; the rules of the experiment do not.
+The operational sequence lives in [the round skill](../skills/coapt-round.md). [STATUS.md](../STATUS.md) identifies the active campaign and any owner-approved departure from the original rollout plan.
 
 ## CoAPT for learning from text
 
-When CoAPT is used for knowledge acquisition, the corpus is the grounding source and the source of truth. The student's state can be measured with signals such as per-document language-model loss and closed-book probes. A selection policy identifies the least-absorbed documents and forms the next knowledge frontier.
-
-The teacher then uses the student's behavior to create material through two complementary branches.
+The corpus is the only source of truth. Every training row must trace to a source document. A fact absent from that source cannot enter a teacher correction, even if the teacher knows it is true.
 
 ### Adaptive CPT
-
-```text
-source passage → student continuation → source-grounded correction
-```
-
-The student drafts a continuation from a selected passage. Its draft exposes confused terms, invented facts, wrong values, and missing relationships. The teacher preserves what is useful and repairs what is wrong, using only the passage.
 
 ```text
 d → rₛ → T(d, rₛ) → d̃
 ```
 
-Here `d` is the source passage, `rₛ` is the student's response, and `d̃` is the grounded teaching text. The source decides what is true; the student's draft decides what needs emphasis.
+The student drafts over a selected source passage `d`. Its response `rₛ` exposes confused terms, invented facts, wrong values, or missing relationships. The teacher uses only that passage to produce corrected textbook prose `d̃`.
+
+The source decides what is supported; the draft helps decide what to explain. Corrections are gated claim by claim before admission. The procedure is implemented in [the Adaptive CPT skill](../skills/coapt-cpt.md).
 
 ### Personalized SFT
-
-```text
-source passage → teacher question → closed-book student answer → source-grounded correction
-```
-
-The teacher writes a question answerable from the passage. The student answers without seeing it. The answer reveals what the student can retrieve and use, not merely what text it can continue. The teacher then corrects the answer against the source.
 
 ```text
 d → qₜ → aₛ → T(d, qₜ, aₛ) → a*
 ```
 
-Here `qₜ` is the grounded question, `aₛ` is the student's closed-book answer, and `a*` is the correction. The verified pair is serialized as ordinary `Question:` / `Answer:` text into the same continued-pretraining stream.
+The teacher writes a question `qₜ` answerable from the source. The student answers closed-book, producing `aₛ`, and the teacher corrects that answer against the source to obtain `a*`. This probes retrieval under a question rather than continuation from a visible passage.
 
-The two branches address different aspects of learning: Adaptive CPT improves acquisition of domain language and relationships; Personalized SFT practices using that knowledge when prompted.
+The verified pair is serialized as plain `Question:/Answer:` text into the same CPT stream. **Training uses full-token loss, with no loss masking:** the question and answer both contribute to the language-model objective.
+
+This branch is implemented in [the Personalized SFT skill](../skills/coapt-sft.md). The reported CPT pilot did not include QA text, so its result does not validate the combined branches or establish a separate SFT gain.
 
 ### One training mix
 
+The general text recipe combines four streams:
+
 | Stream | Purpose |
 |---|---|
-| **Raw corpus** | Preserves direct exposure to selected documents and their natural technical distribution. |
-| **Teacher CPT** | Concentrates on mistakes and omissions revealed by student continuations. |
-| **QA as text** | Rehearses closed-book use of knowledge the student could not retrieve reliably. |
-| **Anchor** | Maintains broader corpus coverage and reduces over-specialization on the current frontier. |
+| **Raw corpus** | Direct exposure to selected source documents. |
+| **Teacher CPT** | Grounded prose responding to student mistakes and omissions. |
+| **QA as text** | Practice answering source-backed questions. |
+| **Anchor** | Broader corpus exposure beyond the selected frontier. |
 
-CoAPT is not a pure synthetic-data diet. Teacher material is corrective; raw and anchor text keep it connected to the underlying domain. A token ledger records realized content tokens rather than rows, because examples of different lengths can make row-level ratios misleading.
+A token ledger records realized content tokens by stream. Row counts would conceal differences in example length and could make nominal mix shares misleading. Round artifacts preserve source references, student attempts, teacher rows, gate verdicts, and the ledger so the dataset's construction can be audited.
 
-## Beyond text: agentic work
-
-The same teaching pattern extends to agentic capabilities. Instead of asking only whether the student knows a fact, CoAPT can observe whether it can plan, call tools, inspect results, recover from errors, and complete a longer workflow.
-
-Long workflows make student-conditioned teaching especially important. A dataset of flawless teacher trajectories shows states the teacher tends to visit. But a smaller student will make different early decisions and arrive in states the teacher demonstrations never covered. Errors then compound: the student most needs help precisely where an off-policy dataset has the least to say.
-
-### Learning where the student actually goes
-
-[On-policy distillation](https://thinkingmachines.ai/blog/on-policy-distillation/) offers a useful mechanism for this part of CoAPT. It combines the student-visited states of reinforcement learning with the dense supervision of distillation.
-
-The article's specific implementation samples trajectories from the student, asks the teacher for token probabilities on those same trajectories, and trains with a per-token reverse-KL signal. The teacher therefore responds to the context the student actually created—even after an imperfect step—instead of supplying only a separate ideal solution. This reduces exposure mismatch and gives much denser credit than a single success or failure at the end.
-
-That relationship is close to CoAPT's central idea: the student's present behavior changes the teaching it receives.
-
-```text
-verified task → student trajectory τₛ
-              → teacher feedback on student-visited states
-              + environment verdict
-              → targeted update → new student
-```
-
-For agentic CoAPT, the teacher signal can take more than one form:
-
-- **Corrected trajectories.** Continue from the student's state, repair the plan or tool use, and create a grounded demonstration of recovery.
-- **Contrastive material.** Preserve a useful student step while showing why a nearby action fails and which observation should change the decision.
-- **Dense distillation.** Score the student's own tokens or actions under a stronger teacher and train toward the teacher on those visited states.
-- **Next-frontier tasks.** Use the observed trajectory to create a task that isolates the missing capability without jumping far beyond the student's reach.
-
-### Teacher guidance is not ground truth
-
-On-policy distillation supplies a dense behavioral target, but teacher probability does not prove that an action is correct or that a workflow succeeded. A confident teacher can still be wrong, misuse a tool, or prefer a style that does not satisfy the task.
-
-Agentic CoAPT therefore needs two distinct signals:
-
-1. **Teacher guidance** explains what to do differently at the states the student visited.
-2. **Verified outcomes** establish what actually happened through tool results, environment state, deterministic checks, and task verifiers.
-
-The first makes supervision dense. The second keeps it grounded. A sequence-level environment verdict can also catch failures that token-level imitation cannot. The independent referee remains outside both the lesson-generation process and the training objective used for keep/revert decisions.
-
-On-policy distillation is consequently a promising inner training mechanism for agentic CoAPT, not the definition of CoAPT itself. CoAPT is the wider controlled loop: observe the student, create policy-relative teaching, ground it, train, judge independently, and repeat.
-
-## Co-adaptation is not scaling
-
-Scaling asks what happens when a model receives more tokens, more repetitions, or more training time. Co-adaptation asks what the next training experiences should contain after observing the current student. A larger static run can strengthen any curriculum, but it does not create feedback.
-
-This distinction defines the fair comparison. An effectiveness claim must beat a matched non-adaptive baseline with the same trainer and compute or token budget. For text learning, that baseline can reread the selected documents as raw text. For agentic work, it can use a fixed set of teacher demonstrations. The comparison changes whether teaching responds to the student, not the amount of training.
+Campaigns declare their mix before training. The retained CPT comparison uses teacher composition and anchor text, without the general recipe's QA stream. Anchor material is intended to limit over-specialization; its presence does not guarantee preservation of other capabilities.
 
 ## Why the trainer stays frozen
 
-CoAPT adapts the training **material**, not the optimization recipe. Learning rate, schedule, batch construction, token budget, and other settings remain fixed during a controlled comparison.
+CoAPT adapts data content between rounds. Within a campaign, mix shares, prompts, templates, gates, the pool, frontier selection rules, token budget, and training settings remain fixed. There is no dynamic difficulty filtering or example reweighting inside a training run.
 
-If the trainer changes alongside the curriculum, an improvement cannot be attributed to co-adaptation. A frozen recipe prevents the loop from becoming automated hyperparameter search and keeps comparisons meaningful. The intelligence belongs in observation, diagnosis, grounded teaching, and gating. The trainer should be intentionally boring.
+In `configs/coapt.yaml`, only `data.round`, `data.round_dir`, `run.init_from`, and `run.seed` change between rounds. Checkpoints chain, so later rounds continue from the preceding student.
+
+Changing a recipe starts a new campaign under the repository's change discipline. Changing [SPEC.md](../SPEC.md) or a frozen training configuration requires human review. A disappointing result does not authorize the loop to loosen a gate or alter the optimizer.
+
+These constraints make the experiment interpretable: the material responds to the student while the rules used to produce and train it remain stable.
 
 ## Teaching and judging are separate
 
-The teacher is allowed to shape training material, so it cannot be the final authority on whether that material worked. CoAPT uses a separate, deterministic referee with frozen evaluation tasks.
+Training-data gates answer whether a lesson is supported and admissible. The referee answers whether the trained student improved. Those are different decisions.
 
-This prevents a subtle form of self-confirmation: a teacher can create examples that resemble its preferred answers and then appear successful when asked to judge them. CoAPT keeps the exam fixed and outside the teaching process, then records enough provenance to reproduce every decision.
+The loop metric is `coapt_pool_absorption_dev`, measured on a pool frozen at campaign start. It measures absorption of corpus material eligible for training. It is not an unseen-document generalization score.
 
-The grounding source defines what can be taught. The referee defines whether the new student should be retained.
+The no-regression guardrail is `corpus_transfer_macro_dev`. Transfer and frozen milestone documents are excluded from every training stream. Probe questions and reference answers are not teaching material; the agent reaches the referee through `tools/eval_probes.py`, without opening the probe bank.
+
+Milestone referees are reserved for phase gates under the protocol. They are not targets for repeated curriculum tuning. Evaluation artifacts are never regenerated within a campaign.
+
+Independent scoring and fixed artifacts constrain self-confirmation, but do not make repeated development-set use immune to overfitting. Claims must stay within the evaluation actually performed.
+
+## Co-adaptation is not scaling
+
+More tokens or repetitions can improve a model without any feedback-driven curriculum. A gain over the untrained student therefore cannot establish CoAPT's effectiveness.
+
+The required control is **equal-token raw-corpus CPT**, using the same trainer and total content-token budget. The retained pilot also matches source spans and anchor material across arms. This tests whether teacher composition adds value beyond reading the corresponding raw text.
+
+Equal training tokens do not mean equal total cost: student diagnosis, teacher generation, and gating also consume resources. A quality gain under this control is not automatically an efficiency gain.
+
+The CPT scale ladder asks how the comparison changes after more raw-corpus training. Reusing a fixed teacher dataset at later checkpoints does not demonstrate that a changed student selected and received a new curriculum.
 
 ## What counts as success
 
-CoAPT separates three claims that are easy to blur together.
+**Loop closure** means training changes the student, those changes appear in fresh measurements, and the measurements change the next round's data. Lower loss alone cannot establish the full chain.
 
-**Loop closure** means training changes the student, the changed student produces different measurements or behavior, and those observations change the next training material. Text learning can measure teacher-text NLL, old-question accuracy, and frontier turnover; agentic learning can measure recovery, tool use, and task completion.
+**Learning** means the loop capability metric improves beyond the measured noise band while the transfer guardrail passes. NLL, draft quality, prior-question accuracy, and training loss remain diagnostic signals. Perplexity is never a success metric.
 
-**Learning** means the primary capability metric improves beyond the baseline noise band while independent guardrails remain intact.
+**Effectiveness** requires outperforming equal-token raw-corpus CPT. A functioning loop and an advantage over that control are separate claims; neither proves the other.
 
-**Effectiveness** is the stronger claim: CoAPT must outperform the matched non-adaptive baseline. A functioning two-round loop can establish loop closure; it cannot by itself prove that CoAPT is better than ordinary continued pretraining or static task training.
+The retained pilot on a **1B student** found a **small gain over equal-token raw CPT on a corpus-derived pool, with the transfer guardrail passing**. This supports a bounded claim about the tested CPT recipe. It does not establish broad superiority across topics, larger models, or agentic capabilities.
 
-Loss and perplexity are useful diagnostic signals, not final success metrics. The method must show usable capability under independent evaluation.
+The campaign record also includes the CPT scale ladder, where the outcome depends on the checkpoint and guardrail. The planned two-round MVP never ran, and **multi-round loop closure is not yet demonstrated**. See [STATUS.md](../STATUS.md) for the current evidence, limitations, and next actions.
 
-## Why use CoAPT
+## Beyond text: proposed agentic work
 
-CoAPT is especially useful for smaller or specialized models that need both focused knowledge and dependable behavior:
+**This section describes future work, outside the implemented text loop.** Reinforcement learning with verifiable rewards (RLVR), on-policy distillation (OPD), and the agentic stage were retired from the algorithm card. Restoring any of them requires a human-reviewed spec change.
 
-- It spends teacher and training compute on observed gaps rather than replaying a fixed curriculum indefinitely.
-- It makes the student's actual behavior part of data creation instead of treating the student as a passive consumer.
-- It supports different grounding sources while keeping truth and evaluation boundaries explicit.
-- It preserves broader capability with anchor material and evaluation guardrails.
-- It makes recursive improvement auditable through immutable data, checkpoints, gates, ledgers, trajectories, and evaluation reports.
-- It allows each iteration to stop, keep, or revert based on evidence rather than momentum.
+An agentic extension could observe plans, tool calls, execution results, and recovery from errors. Its grounding would require verified task and environment evidence, rather than corpus text alone. That broader evidence contract would need to be specified before training.
 
-The aim is broader than corpus absorption and more disciplined than imitation. It is a student that receives increasingly relevant teaching as its capabilities evolve, while every lesson and every claim of progress remains grounded and testable.
+Thinking Machines Lab's [on-policy distillation post](https://thinkingmachines.ai/blog/on-policy-distillation/) describes sampling student trajectories, obtaining teacher log probabilities for those sampled tokens, and training with a per-token reverse-KL signal. This is a possible inner mechanism for a future CoAPT design, not a mechanism currently available in this repository's training loop.
 
-## What CoAPT is not
+Other proposed mechanisms include correcting trajectories from states the student actually visited and using dense teacher scoring to guide updates. Their data formats, gates, training objectives, and controls remain to be defined for CoAPT.
 
-CoAPT is not a teacher dumping everything it knows into a smaller model. It is not a fixed synthetic dataset, self-grading distillation, live hyperparameter search, or an excuse to change the experiment whenever a score is disappointing.
-
-CoAPT is also not defined by CPT, SFT, reinforcement learning, or distillation. Those are possible inner training mechanisms. The defining feature is the outer relationship: the student's behavior shapes the teacher's material, the material is grounded, and an independent referee measures what changed.
+Teacher preference would still not prove task success. Tool results, environment state, and independent verifiers would need to establish what happened. These proposals retain the motivating question: can teaching that responds to the current student's behavior improve learning? The implemented text workflow is where that question is being tested today.

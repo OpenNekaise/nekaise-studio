@@ -2,35 +2,35 @@
 
 _An [OpenNekaise](https://github.com/OpenNekaise) project._
 
-nekaise-studio is an agent-operated studio for fine-tuning small language models. A larger
-language model reads what the small model gets wrong, writes the next round of training
-data from the corpus, trains it, and hands the result to a referee it cannot touch. The
-active work is building-energy knowledge from
-[nekaise-corpus](https://github.com/OpenNekaise/nekaise-corpus).
+nekaise-studio is an agent-operated training system for small language models. A larger
+language model follows repository skills to diagnose the student, generate training data
+from [nekaise-corpus](https://github.com/OpenNekaise/nekaise-corpus), run training, and
+evaluate checkpoints.
 
 ## CoAPT
 
-[CoAPT](docs/COAPT.md), Co-Adaptive Pretraining and Tuning, is the training loop. It spans
-mid-training and post-training: continued pretraining on domain text, SFT on
-question-and-answer pairs, and, in a future campaign, agentic RL, under one rule. The
-training data is on-policy, generated from the current student's own outputs, with targets
-corrected by a larger model that may use only the source passage. The teacher's own
-knowledge cannot fill a gap in the evidence.
+[CoAPT](docs/COAPT.md), Co-Adaptive Pretraining and Tuning, adapts training data to the
+current student. Measurements select corpus passages; the student drafts continuations and
+answers questions closed-book. The teacher corrects those outputs using only the source
+passage. Student attempts supply on-policy contexts for teacher-corrected targets;
+claim-level gates decide what enters training.
 
-Each round, the student drafts over corpus passages and answers closed-book questions.
-The teacher turns those drafts and answers into grounded text and Q&A pairs, the gated mix
-is trained through a fixed recipe, and the changed student selects the next round's data.
-The recipe never moves between rounds; only the data does.
+The method spans continued pretraining, or mid-training, and SFT. The CPT branch produces
+corrected prose; the SFT branch produces question-and-answer pairs serialized as text into
+the same causal language-model stream. Current campaigns focus on CPT. Agentic RL remains
+future work.
 
-## Judged from outside
+The gated data is assembled before training and used with a frozen recipe. After
+evaluation, a retained checkpoint supplies the next round's measurements and attempts.
+Data content changes; templates, gates, and training settings stay fixed within a campaign.
 
-The teacher never grades the exam. Frozen tasks and deterministic verifiers decide keep or
-revert, and CoAPT only counts as working when it beats plain continued pretraining on the
-same tokens. Every run, dataset, and checkpoint keeps an immutable identity, so a result can
-be rebuilt and a decision traced back to its evidence.
+Evaluation uses a separate referee with frozen tasks and deterministic verifiers.
+Effectiveness is judged against raw-corpus CPT at a matched token budget, with transfer
+checked for regressions. Immutable provenance connects source passages, training data,
+runs, and checkpoints.
 
-The contract is [SPEC.md](SPEC.md). The Studio and gym boundary is [BOUNDARY.md](BOUNDARY.md).
-The live state, evidence, and next step are in [STATUS.md](STATUS.md).
+Read [SPEC.md](SPEC.md) for training and decision rules, [BOUNDARY.md](BOUNDARY.md) for the
+studio/gym boundary, and [STATUS.md](STATUS.md) for current work and evidence.
 
 ## Start
 

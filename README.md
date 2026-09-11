@@ -2,18 +2,41 @@
 
 _An [OpenNekaise](https://github.com/OpenNekaise) project._
 
-An agent-operated fine-tuning platform for language models under 8B parameters. Current campaigns
-focus on building-energy knowledge, grounded in real corpus text and designed to produce models
-that can run on-premises through
-[nekaise-edge](https://github.com/OpenNekaise/nekaise-edge).
+A model's mistakes can tell us what to teach it next.
 
-The coding agent builds the data, trains the student, measures the result, and keeps or reverts the
-change. Humans define the experimental contract and review what the evidence supports.
+Most training data is written for no one in particular. This studio writes it for one student, at one moment in its development, and then checks whether the lesson took.
+
+Nekaise Studio is an agent-operated platform for fine-tuning language models under 8B parameters. A coding agent observes the student, builds its next lessons, runs training, and submits the result to an independent referee.
+
+The active work is building-energy knowledge from [nekaise-corpus](https://github.com/OpenNekaise/nekaise-corpus). The aim is specialized models that run on-premises through [nekaise-edge](https://github.com/OpenNekaise/nekaise-edge), with a record of what they were taught and whether it helped.
+
+## For this student
+
+[CoAPT](docs/COAPT.md), Co-Adaptive Pretraining and Tuning, makes the curriculum answer to one particular student. Its current attempts and mistakes determine which source passages need attention and how the teacher presents them. After training, the changed student selects and shapes the next round's material.
+
+The teacher is the coding agent, or a Codex model it calls. It corrects student drafts into grounded prose and can turn failed closed-book answers into question-and-answer lessons. Every claim must be supported by the source passage. The teacher's own knowledge cannot fill a gap in the evidence.
+
+Material passes a grounding gate before entering training. The recipe stays fixed across rounds; nothing is tuned between them. The lessons change because the student changes.
+
+## An exam outside the lesson
+
+The teacher never grades the exam. An independent referee, with frozen tasks and deterministic verifiers the teacher cannot alter, supplies the measurements for keep or revert.
+
+A gain must clear a measured noise band without breaching the transfer guardrail. Claims that CoAPT works must also beat an equal-compute raw-corpus control. More training alone is not evidence for better teaching. [SPEC.md](SPEC.md) binds these decisions; changing the contract requires human review.
+
+A 1B-student pilot found a small gain over equal-token raw continued pretraining on a corpus-derived pool, while passing the transfer guardrail. [STATUS.md](STATUS.md) records the live evidence, its limits, and the next work.
+
+Studio contains the gym; the gym never contains Studio. The gym holds tasks, verifiers, and the runner. It contains no training code. [BOUNDARY.md](BOUNDARY.md) keeps that separation explicit.
+
+## A record that lasts
+
+Runs, datasets, and checkpoints have permanent identities and immutable provenance. Source passages, student attempts, teacher revisions, gate verdicts, and token counts remain linked. A dataset can be rebuilt byte for byte. A decision can be traced back to its evidence.
+
+The repository is a maintained bootloader. Its [skills](skills/) are the agent's operating procedures; mutable work lives in a user workspace. Validated findings can become local skills. Stale or contradicted advice is pruned. Promotion into the shared bootloader requires evaluation and human review.
 
 ## Start
 
-Clone the repository, open it in Claude Code or Codex, and let the agent read
-[`AGENTS.md`](AGENTS.md) and [`STATUS.md`](STATUS.md).
+Clone the repository, open it in Claude Code or Codex, and let the agent read [AGENTS.md](AGENTS.md) and [STATUS.md](STATUS.md).
 
 ```bash
 git clone --depth 1 https://github.com/OpenNekaise/nekaise-studio.git
@@ -21,119 +44,16 @@ cd nekaise-studio
 python tools/doctor.py
 ```
 
-The doctor checks the GPU, pinned environments, local configuration, corpus, and evaluation
-holdout. Fix every reported problem before training begins.
+The doctor checks the GPU, pinned environments, configuration, corpus, and holdout. Fix reported problems before training.
 
-Keep generated work outside the maintained repository:
+Keep generated work in an external workspace:
 
 ```bash
 python -m studio.cli workspace init ../nekaise-user-workspace
 python -m studio.cli --workspace ../nekaise-user-workspace integrity
 ```
 
-The workspace can also be selected with `NEKAISE_WORKSPACE`. See
-[`docs/WORKSPACE.md`](docs/WORKSPACE.md) for the isolation and promotion model.
-
-## CoAPT
-
-Studio trains through **[CoAPT](docs/COAPT.md)**, a co-adaptive framework spanning mid-training and
-post-training. A teacher observes the current student's attempts, errors, and partial successes,
-then uses that behavior to create the training material this student should see next. Grounded
-evidence keeps the lessons trustworthy; an independent referee decides whether they worked.
-
-```mermaid
-flowchart LR
-    S[Observe student] --> B[Collect attempts and failures]
-    B --> T[Teacher creates targeted material]
-    T --> G[Ground and gate]
-    G --> R[Train]
-    R --> E[Evaluate independently]
-    E --> D{Keep or revert}
-    D --> S
-```
-
-CoAPT connects **mid-training** and **post-training**. Mid-training gives the student specialized
-domain knowledge; post-training teaches it to retrieve, reason with, and act on that knowledge. The
-active text loop develops both through two branches:
-
-- **Adaptive CPT** — the student drafts over a corpus chunk; the agent rewrites it into textbook
-  prose supported only by that chunk.
-- **Personalized SFT** — the agent asks questions from a document, the student answers closed-book,
-  and the agent corrects the answer using only that document.
-
-The name expands to **Co-Adaptive Pretraining and Tuning**. Here, “pretraining” means continued
-pretraining of an existing student—not foundation-model pretraining from scratch.
-
-In concise terms, CoAPT uses **on-policy contexts with teacher-corrected targets**. The current
-student generates each draft or answer, so the teacher works on states and mistakes that student
-actually produces. The teacher then supplies grounded, dense supervision. Training happens later on
-the gated dataset, so this is policy-relative data generation—not strict reward-based on-policy
-optimization.
-
-Raw corpus text, corrected prose, question-and-answer text, and an anchor stream become one
-token-ledgered training mix. Checkpoints chain across rounds. The changed student is measured again,
-which changes the next frontier and closes the loop.
-
-A future agentic campaign can apply the same idea to plans, tool calls, execution traces, and error
-recovery, grounded in verified tasks and outcomes. That campaign is not active yet and will require
-its own reviewed specification. Within any campaign, the trainer and experimental rules stay fixed;
-the student-conditioned material is what adapts.
-
-## Experimental contract
-
-Studio separates teaching from judgment. The agent may shape the training data, but it never grades
-the exam that decides whether a model improved.
-
-- The grounding source is the only source of truth. In the active campaign, that source is the
-  corpus; unsupported teacher knowledge never enters training.
-- Evaluation tasks, verifiers, pools, and frozen splits do not change within a campaign.
-- The training recipe stays fixed across rounds; only the student and student-conditioned data
-  change.
-- Keep/revert decisions must clear a measured noise band without regressing the transfer guardrail.
-- Effectiveness claims must beat a matched non-adaptive control; the active campaign uses
-  equal-compute raw-corpus CPT.
-- Runs, datasets, and checkpoints have permanent identities and immutable provenance.
-
-The binding contract lives in [`SPEC.md`](SPEC.md). Changing it—or any frozen configuration—is a
-human-reviewed decision, never an automatic loop move.
-
-## Studio, gym, and workspace
-
-**Studio contains the gym; the gym never contains Studio.** The gym is the examination hall: tasks,
-deterministic verifiers, and the model runner. It contains no training code, hyperparameters,
-experiment logs, or weights. Studio is the workshop that trains a model against that independent
-referee. [`BOUNDARY.md`](BOUNDARY.md) defines the complete contract.
-
-The repository itself is a maintained bootloader. Mutable state belongs in a user workspace.
-
-| Layer | Contains |
-|---|---|
-| **Bootloader** | Core skills, frozen configs, referee, stages, guardrails, and CLI. |
-| **Workspace** | Round data, runs, checkpoints, private data, overrides, scratch files, and local skills. |
-
-Validated findings can become local skills; stale or contradictory findings are pruned. A local
-skill enters the shared bootloader only after surviving evaluation and human review.
-
-## Repository map
-
-| Path | Role |
-|---|---|
-| [`AGENTS.md`](AGENTS.md) | Complete operating instructions for coding agents. |
-| [`STATUS.md`](STATUS.md) | Current campaign, measured state, and next action. |
-| [`docs/COAPT.md`](docs/COAPT.md) | CoAPT, why Studio uses it, and what counts as evidence. |
-| [`SPEC.md`](SPEC.md) | CoAPT constitution, ban list, null hypothesis, and environment lock. |
-| [`BOUNDARY.md`](BOUNDARY.md) | Bidirectional Studio/gym containment contract. |
-| `skills/` | CoAPT conductor, teaching branches, and self-improvement procedures. |
-| `studio/` | JSON CLI, training stages, decisions, and workspace machinery. |
-| `gym/` | Tasks, deterministic verifiers, and model runner. |
-| `configs/` | Frozen stage configurations and CoAPT round recipe. |
-| `experiments/` | Data builders and campaign-specific recipes. |
-| `lib/` | Run, artifact, dataset, logging, and model plumbing. |
-| `tools/` | Preflight, student inference, evaluation, and privacy tools. |
-| `tests/` | CPU-only guardrails for fixed contracts. |
-
-The live campaign is always described in [`STATUS.md`](STATUS.md). Durable behavior belongs in the
-specification, boundary, skills, and code—not in this README.
+Select it with `--workspace` or `NEKAISE_WORKSPACE`. See [docs/WORKSPACE.md](docs/WORKSPACE.md) for workspace isolation and promotion.
 
 ## License
 

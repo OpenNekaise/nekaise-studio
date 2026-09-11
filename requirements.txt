@@ -8,7 +8,7 @@ transformers==5.5.0
 # vLLM has a separate, pinned environment because its torch/transformers requirements
 # differ from this validated training trio. See requirements-eval.txt (SPEC.md §4).
 datasets>=4.3           # task-pack datasets (e.g. openai/gsm8k)
-accelerate>=1.13
+accelerate==1.13.0          # pinned 2026-09-11: the scale ladder L0-L4 trained on 1.13.0
 # torch: installed by unsloth for your CUDA; don't pin here.
 
 # Data prep (building pack)

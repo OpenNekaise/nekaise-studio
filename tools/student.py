@@ -121,10 +121,13 @@ def answer_prompt(question: str) -> str:
 class Student:
     """Offline-vLLM engine: deterministic, logprob-capable, completion-only."""
 
-    def __init__(self, checkpoint: str, *, max_model_len: int = 4096, seed: int = 3407):
+    def __init__(self, checkpoint: str, *, max_model_len: int = 4096, seed: int = 3407,
+                 gpu_memory_utilization: float | None = None):
         from vllm import LLM
+        extra = ({"gpu_memory_utilization": gpu_memory_utilization}
+                 if gpu_memory_utilization is not None else {})
         self.llm = LLM(model=checkpoint, max_model_len=max_model_len, seed=seed,
-                       dtype="bfloat16")
+                       dtype="bfloat16", **extra)
         self.tokenizer = self.llm.get_tokenizer()
         self.max_model_len = max_model_len
 
@@ -147,6 +150,32 @@ class Student:
             outs = self.llm.generate(prompts, params)
             for slot, out in zip(index, outs):
                 results[slot] = mean_nll(token_lists[slot], out.prompt_logprobs)
+        return results
+
+    def score_token_ids(self, token_lists: list[list[int]]) -> list[tuple[float, int]]:
+        """Strict, unrounded scoring of pre-tokenized windows for frozen NLL views:
+        returns (sum of -logprob, scored tokens) per window, excluding position 0 (no
+        context). A missing or non-finite logprob is an error, never skipped."""
+        from vllm import SamplingParams
+        params = SamplingParams(max_tokens=1, temperature=0.0, prompt_logprobs=0)
+        outs = self.llm.generate([{"prompt_token_ids": ids} for ids in token_lists], params)
+        results = []
+        for ids, out in zip(token_lists, outs):
+            lps = out.prompt_logprobs
+            if lps is None or len(lps) != len(ids):
+                raise RuntimeError("prompt_logprobs length mismatch")
+            total, count = 0.0, 0
+            for position in range(1, len(ids)):
+                entry = lps[position]
+                lp = entry.get(ids[position]) if entry else None
+                if lp is None:
+                    raise RuntimeError(f"missing logprob at position {position}")
+                value = float(lp.logprob if hasattr(lp, "logprob") else lp)
+                if not math.isfinite(value):
+                    raise RuntimeError(f"non-finite logprob at position {position}")
+                total += -value
+                count += 1
+            results.append((total, count))
         return results
 
     def complete(self, prompts: list[str], *, max_tokens: int, temperature: float,

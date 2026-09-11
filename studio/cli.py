@@ -103,6 +103,8 @@ def train(args) -> int:
         command += ["--seed", str(args.seed)]
     if args.dataset_id:
         command += ["--dataset-id", args.dataset_id]
+    if getattr(args, "resume_from", None):
+        command += ["--resume-from", args.resume_from]
     store.create_run(
         experiment=experiment, stage=run.get("stage", args.stage),
         kind=run.get("kind", "experiment"),
@@ -293,6 +295,9 @@ def main(argv=None) -> int:
     p.add_argument("--dataset-id",
                    help="train this immutable dataset object instead of the mutable "
                         "LATEST pointer (the id a build prints as DATASET_ID)")
+    p.add_argument("--resume-from", metavar="RUN_ID",
+                   help="continue an interrupted run from its last Trainer checkpoint "
+                        "(cpt only; same dataset/config/seed are asserted)")
     p.add_argument("--follow", action="store_true",
                    help="stream raw stage output between the JSON start/result records")
     p.add_argument("--quiet", action="store_true", help=argparse.SUPPRESS)

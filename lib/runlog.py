@@ -61,12 +61,23 @@ class RunLogger:
             self.store.update_run(self.run_id, **direct)
 
     def trained(self, *, checkpoint: dict, minutes: float, timeboxed: bool) -> None:
-        self.update(checkpoint_digest=checkpoint["digest"], checkpoint_path=checkpoint["path"],
-                    minutes=minutes, timeboxed=timeboxed)
+        # Human-delegated change 2026-09-11 (campaign log): a timeboxed run keeps its
+        # Trainer recovery state so it can be resumed with --resume-from, and the status
+        # is persisted BEFORE cleanup so a cleanup failure cannot invalidate a completed
+        # run.
         scratch = self.dir / "scratch"
-        if scratch.is_dir() and scratch.parent == self.dir:
-            shutil.rmtree(scratch)
+        fields = dict(checkpoint_digest=checkpoint["digest"], checkpoint_path=checkpoint["path"],
+                      minutes=minutes, timeboxed=timeboxed)
+        if timeboxed:
+            trainer_dir = scratch / "_trainer"
+            fields["recovery_dir"] = str(trainer_dir) if trainer_dir.is_dir() else None
+        self.update(**fields)
         self.store.transition(self.run_id, "aborted" if timeboxed else "trained")
+        if not timeboxed and scratch.is_dir() and scratch.parent == self.dir:
+            try:
+                shutil.rmtree(scratch)
+            except OSError as exc:      # a completed run stays completed
+                self.update(cleanup_error=f"{type(exc).__name__}: {exc}")
 
     def evaluating(self) -> None:
         self.store.transition(self.run_id, "evaluating")

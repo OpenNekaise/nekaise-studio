@@ -91,23 +91,50 @@ def make_reward(rows):
 
 # ------------------------------- budget (R9) -----------------------------------
 class Budget:
-    """Wall-clock hard cap: cooperative stop for the trainer + abort verdict for the log."""
+    """Wall-clock hard cap: cooperative stop for the trainer + abort verdict for the log.
+
+    One monotonic clock, started when the stage starts (model load and dataset
+    preprocessing count). The trainer callback and the recorded verdict share it: the
+    run is ``timeboxed`` exactly when the callback stopped training, never because the
+    final artifact save happened to cross the deadline. When the box fires, a full
+    Trainer save is requested so the aborted run can be resumed with --resume-from."""
 
     def __init__(self, max_minutes: float):
         self.max_minutes = float(max_minutes)
         self.t0 = time.time()
+        self._m0 = time.monotonic()
+        self.fired = False
+        self._callback = None
 
     def callback(self):
         import trainkit
-        return trainkit.time_budget_callback(self.max_minutes)
+        remaining = max(0.0, self.max_minutes - (time.monotonic() - self._m0) / 60)
+        # trainkit's factory supplies a TrainerCallback instance; its wall-clock check is
+        # REPLACED (not chained), so a clock adjustment can never stop training without
+        # this budget recording that it fired. The deadline is monotonic.
+        callback = trainkit.time_budget_callback(remaining)
+        budget = self
+
+        def on_step_end(args, state, control, **kwargs):
+            if time.monotonic() > budget._m0 + budget.max_minutes * 60:
+                budget.fired = True
+                control.should_training_stop = True
+                control.should_save = True
+            return control
+
+        callback.on_step_end = on_step_end
+        self._callback = callback
+        return callback
 
     @property
     def exceeded(self) -> bool:
-        return (time.time() - self.t0) / 60 > self.max_minutes
+        if self._callback is not None:
+            return self.fired
+        return (time.monotonic() - self._m0) / 60 > self.max_minutes
 
     @property
     def minutes(self) -> float:
-        return round((time.time() - self.t0) / 60, 1)
+        return round((time.monotonic() - self._m0) / 60, 1)
 
 
 # ------------------------------- finish ---------------------------------------
@@ -128,7 +155,10 @@ def finish_stage(*, exp_dir: Path, stage: str, metric: str, value: float | None,
                         "value": value, "minutes": budget.minutes,
                         "timeboxed": budget.exceeded, **(log_fields or {})},
         )
-        run_logger.store.set_pointer(exp_dir.name, "latest", run_logger.run_id,
-                                     artifact["digest"])
+        if not budget.exceeded:
+            # A timeboxed run commits its partial weights as evidence but never becomes
+            # the mutable ``latest`` input of anything.
+            run_logger.store.set_pointer(exp_dir.name, "latest", run_logger.run_id,
+                                         artifact["digest"])
         return artifact
     return None

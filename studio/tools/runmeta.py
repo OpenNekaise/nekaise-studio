@@ -34,7 +34,8 @@ def git_state(repo: Path) -> dict:
 
 
 def environment() -> dict[str, str]:
-    packages = ("unsloth", "trl", "transformers", "torch", "datasets", "accelerate")
+    packages = ("unsloth", "unsloth_zoo", "trl", "transformers", "torch", "datasets",
+                "accelerate", "bitsandbytes")
     out = {}
     for package in packages:
         try:

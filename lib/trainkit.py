@@ -73,12 +73,15 @@ def run_sft(model, tok, rows: list[dict], *, max_seq_len: int, train_args: dict,
 
 def run_cpt(model, tok, data_paths: list[Path], *, max_seq_len: int, train_args: dict,
             out_dir: Path, cache_dir: Path | None = None,
-            callbacks: list | None = None) -> None:
+            callbacks: list | None = None,
+            resume_from_checkpoint: str | None = None) -> None:
     """Continued pretraining from memory-mapped JSONL (EOS-joined, packed).
 
     The source corpus is never materialized as a Python list. Hugging Face datasets
     converts each immutable JSONL artifact to an Arrow cache once, then maps it from
-    disk across runs and seeds.
+    disk across runs and seeds. ``resume_from_checkpoint`` (a Trainer checkpoint
+    directory) restores model, optimizer, scheduler and step state; the caller is
+    responsible for proving the dataset/config/seed match the interrupted run.
     """
     from datasets import load_dataset
     from trl import SFTConfig, SFTTrainer
@@ -101,7 +104,7 @@ def run_cpt(model, tok, data_paths: list[Path], *, max_seq_len: int, train_args:
                        dataset_num_proc=workers,
                        output_dir=str(Path(out_dir) / "_trainer"), report_to="none",
                        **train_args),
-    ).train()
+    ).train(resume_from_checkpoint=resume_from_checkpoint)
 
 
 def _git_sha() -> str:

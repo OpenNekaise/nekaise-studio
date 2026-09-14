@@ -1,9 +1,14 @@
 # nekaise-studio
 
-An [OpenNekaise](https://github.com/OpenNekaise) training system for small language models.
-A larger model teaches a smaller one: it observes what the student gets wrong, writes
-training material, and uses the student's next answers to decide what to teach next.
-The current focus is building-energy knowledge from
+**AI training AI, in a continuous research loop.**
+
+Nekaise Studio is an [OpenNekaise](https://github.com/OpenNekaise) project for autonomous
+model development. AI agents design curricula, create training data, train a student model,
+and evaluate its behavior to decide what to try next. Each iteration carries forward the
+student's checkpoint and the accumulated teaching history: the results of one experiment
+shape the next.
+
+The first application is building-energy intelligence, grounded in
 [nekaise-corpus](https://github.com/OpenNekaise/nekaise-corpus).
 
 ## CoAPT

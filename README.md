@@ -8,9 +8,6 @@ and evaluate its behavior to decide what to try next. Each iteration carries for
 student's checkpoint and the accumulated teaching history: the results of one experiment
 shape the next.
 
-The first application is building-energy intelligence, grounded in
-[nekaise-corpus](https://github.com/OpenNekaise/nekaise-corpus).
-
 ## CoAPT
 
 [CoAPT](docs/COAPT.md), Co-Adaptive Pretraining and Tuning, adapts training data to the

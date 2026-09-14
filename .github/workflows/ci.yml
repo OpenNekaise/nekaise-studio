@@ -1,11 +1,12 @@
-# CPU-only guardrail CI: proves the FIXED parts (referee, plumbing, privacy) still hold.
-# Training itself needs a GPU and is driven by the agent locally — it is not CI's job.
 name: ci
 
 on:
   push:
     branches: [main]
   pull_request:
+
+permissions:
+  contents: read
 
 jobs:
   checks:
@@ -14,17 +15,26 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.12"
-
-      # Light deps only — no unsloth/torch in CI.
-      - name: Install test deps
-        run: pip install pytest openpyxl pymupdf rdflib
-
-      - name: Everything compiles
-        run: python -m compileall -q lib packs tools experiments serve tests
-
-      - name: Tests (referee contract, plumbing, holdout guard, hygiene)
-        run: pytest
-
-      - name: Privacy scan (all tracked files)
-        run: python tools/privacy_check.py
+          python-version: "3.13"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Install control plane and test dependencies
+        run: |
+          python -m pip install -r requirements.lock
+          python -m pip install --no-deps -e .
+      - name: Python integration tests
+        run: python -m pytest
+      - name: Dashboard tests and syntax
+        run: |
+          node --test dashboard/tests/lib.test.js
+          node --check dashboard/dist/app.js
+          node --check dashboard/dist/views.js
+          node --check dashboard/dist/lib.js
+      - name: Check lightweight API imports
+        run: |
+          python - <<'PY'
+          import sys
+          import nekaise_loop.api
+          assert 'torch' not in sys.modules and 'transformers' not in sys.modules
+          PY

@@ -1,56 +1,8 @@
-# Python
-__pycache__/
-*.py[cod]
 .venv/
-venv/
-env/
-.ipynb_checkpoints/
-
-# Training artifacts — never commit weights or checkpoints
-outputs/
-experiments/**/outputs/
-experiments/.studio/
-experiments/**/artifacts/
-# Per-run records are local scientific state and the SQLite index is rebuilt from them.
-experiments/**/runs/
-checkpoints/
-unsloth_compiled_cache/
-*.gguf
-*.safetensors
-*.bin
-*.pt
-wandb/
-
-# Dataset / HF cache
-.cache/
-packs/**/data/
-# Built dataset artifacts (teacher CoT / rejection-sampled / preference pairs) — rebuilt from SPEC
-experiments/**/data/
-# Legacy experiment journals/ledgers are ignored during migration to the RunStore.
-experiments/**/LOG.md
-experiments/**/results.jsonl
-
-# Real building data — NEVER commit (proprietary PDFs, control cards, BIM, PII)
-nekaise_data
-nekaise_data/
-# Frozen open-ended exam — derived from the (proprietary) holdout building; grade-against-only
-packs/**/eval_open.jsonl
-
-# Workspace — the agent's local scratch (throwaway code, experiments, notes). Never pushed.
 workspace/
-# Optional first-class overlay created by `studio.cli workspace init`.
-user-workspace/
-# Emergent skills — written by the agent (crystallize-skill), per-user, different for everyone.
-# A local skill enters the shared kernel (skills/) only by eval-gated, human-reviewed PR.
-skills/local/
-
-# Secrets
+__pycache__/
+*.egg-info/
+.pytest_cache/
 .env
-*.key
-# Local privacy denylist (real partner/building terms the privacy check screens for)
-.privacy-denylist
-
-# OS / editor
-.DS_Store
-.idea/
-.vscode/
+.env.*
+!.env.example

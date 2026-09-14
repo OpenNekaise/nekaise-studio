@@ -1,0 +1,17 @@
+[Unit]
+Description=Nekaise Studio supervisor
+After=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=%h/Code/nekaise-studio
+Environment=PATH=%h/.local/bin:/usr/local/bin:/usr/bin:/bin
+EnvironmentFile=-%h/Code/nekaise-studio/workspace/dashboard.env
+ExecStart=%h/Code/nekaise-studio/.venv/bin/nekaise-loop supervisor
+Restart=always
+RestartSec=5
+KillMode=process
+TimeoutStopSec=20
+
+[Install]
+WantedBy=default.target

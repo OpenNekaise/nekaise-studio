@@ -1,129 +1,49 @@
 <!doctype html>
 <html lang="en">
   <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <meta name="theme-color" content="#203e39" />
-    <meta
-      name="description"
-      content="Observe and guide your Nekaise training loop: lessons, revisions, loss and online evaluation."
-    />
-    <title>Nekaise — Learning studio</title>
-    <link
-      rel="icon"
-      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%23203e39'/%3E%3Cpath d='M8 24V8l16 16V8' fill='none' stroke='%23f0eee7' stroke-width='3'/%3E%3C/svg%3E"
-    />
-    <link rel="stylesheet" href="/styles.css" />
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="theme-color" content="#203e39">
+    <meta name="description" content="Nekaise Studio — training loss, teaching iterations and run history.">
+    <title>Nekaise Studio</title>
+    <link rel="icon" type="image/png" href="/assets/nekaise-mountain.png">
+    <link rel="stylesheet" href="/styles.css">
     <script type="module" src="/app.js"></script>
   </head>
   <body>
-    <a class="skip-link" href="#main">Skip to workspace</a>
-    <div class="app-shell">
-      <aside class="rail">
-        <a class="brand" href="/" aria-label="Nekaise home"
-          ><span class="brand-mark">N</span
-          ><span>nekaise<span class="brand-sub">LEARNING STUDIO</span></span></a
-        >
-        <div class="rail-label">WORKSPACE</div>
-        <nav aria-label="Workspace">
-          <button class="nav-item active" data-view="overview">
-            <span aria-hidden="true">◫</span> Overview
-          </button>
-          <button class="nav-item" data-view="lessons">
-            <span aria-hidden="true">≋</span> Teaching room
-          </button>
-          <button class="nav-item" data-view="evaluation">
-            <span aria-hidden="true">◎</span> Online evaluation
-          </button>
-          <button class="nav-item" data-view="activity">
-            <span aria-hidden="true">↳</span> Activity & runs
-          </button>
-        </nav>
-        <div class="rail-divider"></div>
-        <div class="rail-label">
-          CAMPAIGNS
-          <button
-            id="new-campaign-small"
-            class="icon-button"
-            aria-label="New campaign"
-          >
-            +
-          </button>
-        </div>
-        <div id="campaign-list" class="campaign-list">
-          <p class="rail-muted">No campaigns yet</p>
-        </div>
-        <div class="rail-footer">
-          <span class="connection-dot" id="connection-dot"></span
-          ><span id="connection-label">Connecting to studio</span
-          ><span class="version">v0.1</span>
-        </div>
-      </aside>
-      <div class="workspace-shell">
-        <header class="topbar">
-          <div>
-            <span class="breadcrumb">Studio</span><span class="slash">/</span
-            ><span id="campaign-breadcrumb">Your workspace</span>
-          </div>
-          <div class="topbar-right">
-            <span class="local-label">LOCAL WORKSPACE</span
-            ><button
-              class="avatar"
-              id="system-button"
-              title="System readiness"
-              aria-label="System readiness"
-            >
-              N
-            </button>
-          </div>
-        </header>
-        <main id="main" tabindex="-1">
-          <div class="page-heading">
-            <div>
-              <div class="eyebrow" id="page-eyebrow">THE LEARNING LOOP</div>
-              <h1 id="page-title">A little better, every round.</h1>
-              <p id="page-description">
-                Follow the lessons, the revisions, and what your student learns
-                next.
-              </p>
-            </div>
-            <div class="heading-actions" id="campaign-actions">
-              <button class="button primary" id="new-campaign">
-                ＋ New campaign
-              </button>
-            </div>
-          </div>
-          <div id="error-banner" class="error-banner" role="alert" hidden></div>
-          <div id="content">
-            <div class="empty-workspace">
-              <div class="empty-symbol" aria-hidden="true">↻</div>
-              <h2>Your next learning loop starts here.</h2>
-              <p>
-                Create a campaign to connect a student, a teacher, and your
-                corpus. Every step will appear here as it happens.
-              </p>
-              <button class="button primary" id="empty-create">
-                Create a campaign
-              </button>
-              <p class="quiet">
-                Student attempts · Teacher revisions · Live training loss ·
-                Online evaluation
-              </p>
-            </div>
-          </div>
-        </main>
-        <footer class="workspace-footer">
-          <span>Knowledge takes practice.</span
-          ><span id="updated-label">Nekaise Studio</span>
-        </footer>
+    <a class="skip-link" href="#main">Skip to studio</a>
+    <header class="studio-header">
+      <a class="brand" href="/" aria-label="Nekaise Studio home">
+        <img src="/assets/nekaise-mountain.png" alt="" width="42" height="42">
+        <span>Nekaise Studio</span>
+      </a>
+      <nav class="studio-nav" aria-label="Studio navigation">
+        <button class="nav-item active" data-view="overview" aria-current="page">Studio</button>
+        <button class="nav-item" data-view="history">Previous runs</button>
+      </nav>
+      <div class="header-tools">
+        <button class="connection" id="system-button" aria-label="System readiness" title="System readiness">
+          <span class="connection-dot" id="connection-dot"></span>
+          <span id="connection-label">Connecting</span>
+        </button>
+        <button class="button secondary" id="new-campaign">＋ New run</button>
       </div>
-    </div>
+    </header>
+    <main id="main" tabindex="-1">
+      <div class="run-toolbar" id="run-toolbar">
+        <div class="run-selection" id="run-selection"></div>
+        <div class="heading-actions" id="campaign-actions"></div>
+      </div>
+      <div id="error-banner" class="error-banner" role="alert" hidden></div>
+      <div id="content"><div class="empty-inline" role="status">Loading studio…</div></div>
+    </main>
+    <footer class="workspace-footer"><span id="updated-label"></span></footer>
     <dialog id="campaign-dialog" class="modal">
       <form id="campaign-form">
         <div class="modal-heading">
           <div>
-            <div class="eyebrow">A NEW LEARNING LOOP</div>
-            <h2>Create a campaign</h2>
+            <div class="eyebrow">NEW RUN</div>
+            <h2>Create a run</h2>
           </div>
           <button
             type="button"
@@ -133,12 +53,8 @@
             ×
           </button>
         </div>
-        <p class="muted">
-          Start small. Inspect what the student learns before increasing the
-          budget.
-        </p>
         <label
-          >Campaign name<input
+          >Run name<input
             name="name"
             value="Building energy · Continuous learning"
             required
@@ -252,7 +168,7 @@
         <div class="modal-footer">
           <button class="button secondary close-modal" type="button">
             Cancel</button
-          ><button class="button primary" type="submit">Create campaign</button>
+          ><button class="button primary" type="submit">Create run</button>
         </div>
       </form>
     </dialog>

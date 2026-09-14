@@ -3,6 +3,27 @@
 Validated locally on 2026-09-14. This is an execution and observability check, not a claim
 that the resulting student is useful or that its general capabilities improved.
 
+## Iteration-focused dashboard
+
+The dashboard now has Studio and Previous runs views. Studio contains loss across the
+selected run's iterations, recent activity, and one teaching-room entry per iteration.
+Opening an iteration shows student attempts, teacher revisions and assessment answers,
+references and feedback together. Teacher notes, token exposure and checkpoint details
+remain available within that iteration. Previous runs shows saved dates, completed
+iterations, the latest iteration's loss and assessed-question count, and lesson topics.
+
+The logo is the [OpenNekaise GitHub organization avatar](https://github.com/OpenNekaise),
+downloaded from `https://avatars.githubusercontent.com/u/263703190?v=4` and stored locally
+as `dashboard/dist/assets/nekaise-mountain.png`. The sidebar, page slogans, stage progress
+strip and separate evaluation/journal pages have been removed.
+
+14 Node tests pass, including a controller test with read-only API fixtures that exercises
+iteration selection, previous-run navigation and a late response from a previously selected
+run. Renderer checks passed with all seven real run summaries and eleven real iterations,
+including incomplete and historical records. HTML IDs/local assets and JavaScript syntax
+checks passed. These checks do not launch a browser, teacher or GPU training.
+Python, prompts, the training source fingerprint and existing campaign states are unchanged.
+
 ## Repository promotion and directory rename
 
 The active checkout is now `~/Code/nekaise-studio`, continuing the existing

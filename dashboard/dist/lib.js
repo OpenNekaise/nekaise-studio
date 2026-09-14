@@ -89,11 +89,11 @@ export function lossChart(metrics) {
   if (!points.length)
     return '<div class="chart-empty"><div>Loss will appear when training starts.<span>One point for every completed optimizer step.</span></div></div>';
   const w = 640,
-    h = 230,
+    h = 250,
     left = 48,
     right = 18,
     top = 24,
-    bottom = 36;
+    bottom = 52;
   const values = points.map((m) => m.loss),
     min = Math.min(...values),
     max = Math.max(...values),
@@ -122,14 +122,38 @@ export function lossChart(metrics) {
     ...new Set([first, Math.round(first + (last - first) / 2), last]),
   ]
     .map(
-      (s) => `<text x="${x(s)}" y="${h - 13}" text-anchor="middle">${s}</text>`,
+      (s) => `<text x="${x(s)}" y="${h - 27}" text-anchor="middle">${s}</text>`,
     )
     .join("");
   const dots = points
     .map(
       (m) =>
-        `<circle class="chart-point" cx="${x(m.step)}" cy="${y(m.loss)}" r="${points.length < 15 ? 3 : 1.5}"><title>Step ${m.step}: loss ${number(m.loss, 4)}</title></circle>`,
+        `<circle class="chart-point" cx="${x(m.step)}" cy="${y(m.loss)}" r="${points.length < 15 ? 3 : 1.5}"><title>${m.round_number ? `Iteration ${m.round_number}, step ${m.round_step}` : `Step ${m.step}`}: loss ${number(m.loss, 4)}</title></circle>`,
     )
     .join("");
-  return `<svg viewBox="0 0 ${w} ${h}" role="img" aria-label="Training loss, ${points.length} recorded steps. Latest loss ${number(points.at(-1).loss, 4)}"><defs><linearGradient id="loss-fill" x1="0" y1="0" x2="0" y2="1"><stop stop-color="#8eabb7" stop-opacity=".17"/><stop offset="1" stop-color="#8eabb7" stop-opacity="0"/></linearGradient></defs>${grid}<path d="${path} L${x(last)},${h - bottom} L${x(first)},${h - bottom} Z" fill="url(#loss-fill)"/><path class="chart-line" d="${path}"/>${dots}${labels}<text x="${w - right}" y="${h - 13}" text-anchor="end">step</text></svg>`;
+  return `<svg viewBox="0 0 ${w} ${h}" role="img" aria-label="Training loss, ${points.length} recorded steps. Latest loss ${number(points.at(-1).loss, 4)}"><defs><linearGradient id="loss-fill" x1="0" y1="0" x2="0" y2="1"><stop stop-color="#8eabb7" stop-opacity=".17"/><stop offset="1" stop-color="#8eabb7" stop-opacity="0"/></linearGradient></defs>${grid}<path d="${path} L${x(last)},${h - bottom} L${x(first)},${h - bottom} Z" fill="url(#loss-fill)"/><path class="chart-line" d="${path}"/>${dots}${labels}<text x="${w / 2}" y="${h - 6}" text-anchor="middle">Recorded optimizer updates</text></svg>`;
+}
+
+
+export function iterationMetrics(rounds) {
+  const points = [];
+  for (const round of [...rounds].sort((a, b) => a.number - b.number)) {
+    for (const metric of [...(round.metrics || [])].sort((a, b) => a.step - b.step)) {
+      if (!Number.isFinite(metric.loss) || !Number.isFinite(metric.step)) continue;
+      points.push({ ...metric, round_number: round.number, round_step: metric.step, step: points.length + 1 });
+    }
+  }
+  return points;
+}
+
+export function dateLabel(value) {
+  if (!value) return "—";
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? "—" : date.toLocaleString("en-GB", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" });
+}
+
+export function modelLabel(value = "") {
+  if (value.endsWith("/checkpoint")) return "Saved checkpoint";
+  if (value.includes("/snapshots/")) return "Cached base model";
+  return value.split("/").filter(Boolean).at(-1) || "Student";
 }

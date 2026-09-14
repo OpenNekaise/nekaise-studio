@@ -1,69 +1,30 @@
-import { escapeHTML as e, number, time } from "./lib.js";
-import {
-  overview,
-  lessonsView,
-  evaluationView,
-  activityView,
-  badge,
-  recoveryNotice,
-} from "./views.js";
+import { escapeHTML as e, time, modelLabel } from "./lib.js";
+import { overview, iterationView, historyView, emptyStudio, badge, recoveryNotice } from "./views.js";
 
-const $ = (id) => document.getElementById(id);
+const $ = id => document.getElementById(id);
 const state = {
   campaignId: localStorage.getItem("nekaise.campaign") || "",
-  selectedRound: "",
-  view: "overview",
-  lessonId: "",
-  diff: false,
-  data: null,
-  campaigns: [],
-  signature: "",
-  busy: false,
-};
-const headings = {
-  overview: [
-    "THE LEARNING LOOP",
-    "A little better, every round.",
-    "Follow the lessons, the revisions, and what your student learns next.",
-  ],
-  lessons: [
-    "INSIDE THE TEACHING ROOM",
-    "From attempt to understanding.",
-    "Read what the student wrote, what the teacher changed, and the evidence behind it.",
-  ],
-  evaluation: [
-    "ONLINE EVALUATION",
-    "Find the next thing to learn.",
-    "Fresh questions reveal gaps and shape the next round’s curriculum.",
-  ],
-  activity: [
-    "THE ROUND JOURNAL",
-    "A clear record of the work.",
-    "Every stage, every checkpoint, and the decisions that connect them.",
-  ],
+  selectedRound: "", view: "overview", lessonId: "", diff: false,
+  data: null, campaigns: [], iterations: {}, snapshots: {},
+  signature: "", headerSignature: "", contentScope: "", busy: false, refreshing: false,
+  expandedActivity: false, selectionVersion: 0,
 };
 let timer, toastTimer;
 
 async function api(path, options = {}) {
   const response = await fetch(`/api${path}`, {
-    ...options,
-    headers: { "Content-Type": "application/json", ...options.headers },
+    ...options, headers: { "Content-Type": "application/json", ...options.headers },
     signal: AbortSignal.timeout(15000),
   });
   const data = await response.json();
-  if (!response.ok)
-    throw new Error(
-      typeof data.detail === "string"
-        ? data.detail
-        : JSON.stringify(data.detail || data),
-    );
+  if (!response.ok) throw new Error(typeof data.detail === "string" ? data.detail : JSON.stringify(data.detail || data));
   return data;
 }
 function toast(message) {
   $("toast").textContent = message;
   $("toast").hidden = false;
   clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => ($("toast").hidden = true), 5000);
+  toastTimer = setTimeout(() => { $("toast").hidden = true; }, 5000);
 }
 function showError(message) {
   $("error-banner").textContent = message;
@@ -71,158 +32,141 @@ function showError(message) {
 }
 function connected(ok) {
   $("connection-dot").classList.toggle("offline", !ok);
-  $("connection-label").textContent = ok
-    ? "Connected to studio"
-    : "Connection interrupted";
+  $("connection-label").textContent = ok ? "Connected" : "Offline";
 }
-
-function renderSidebar() {
-  $("campaign-list").innerHTML = state.campaigns.length
-    ? state.campaigns
-        .map(
-          (c) =>
-            `<button class="campaign-link ${c.id === state.campaignId ? "selected" : ""}" data-campaign="${e(c.id)}"><span class="dot ${c.status === "running" ? "running-pulse" : ""}"></span>${e(c.name)}</button>`,
-        )
-        .join("")
-    : '<p class="rail-muted">No campaigns yet</p>';
+function renderHeader() {
   const c = state.data?.campaign;
-  $("campaign-breadcrumb").innerHTML = state.campaigns.length
-    ? `<select id="campaign-picker" class="topbar-campaign" aria-label="Select campaign">${state.campaigns.map((row) => `<option value="${e(row.id)}" ${row.id === state.campaignId ? "selected" : ""}>${e(row.name)}</option>`).join("")}</select>`
-    : "Your workspace";
-  const [eyebrow, title, description] = headings[state.view];
-  $("page-eyebrow").textContent = eyebrow;
-  $("page-title").textContent = title;
-  $("page-description").textContent = description;
-  document.querySelectorAll(".nav-item").forEach((b) => {
-    b.classList.toggle("active", b.dataset.view === state.view);
-    b.setAttribute(
-      "aria-current",
-      b.dataset.view === state.view ? "page" : "false",
-    );
+  const signature = JSON.stringify([state.campaigns.map(c => [c.id, c.name]), c?.id, c?.status, state.busy, state.view]);
+  if (signature === state.headerSignature) return;
+  state.headerSignature = signature;
+  document.querySelectorAll(".nav-item").forEach(button => {
+    const active = button.dataset.view === "history" ? state.view === "history" : state.view !== "history";
+    button.classList.toggle("active", active);
+    if (active) button.setAttribute("aria-current", "page"); else button.removeAttribute("aria-current");
   });
-  let actions = "";
-  if (c) {
-    actions += badge(c.status);
-    if (c.status === "ready")
-      actions +=
-        '<button class="button primary" data-action="start">▷ Start loop</button>';
-    else if (["running", "queued"].includes(c.status))
-      actions +=
-        '<button class="button secondary" data-action="pause" title="Finish the current stage, then pause">Ⅱ Pause</button><button class="button secondary" data-action="stop" title="Stop the current stage; resume will retry it">■ Stop</button>';
-    else if (c.status === "waiting")
-      actions += '<button class="button primary" data-action="resume">▷ Resume now</button><button class="button secondary" data-action="pause">Ⅱ Pause recovery</button><button class="button secondary" data-action="stop">■ Stop</button>';
-    else if (c.status === "recovering")
-      actions += '<button class="button secondary" data-action="stop">■ Stop recovery</button>';
-    else if (c.status === "complete")
-      actions += '<button class="button primary" data-action="resume">▷ Continue learning</button>';
-    else if (["paused", "failed", "interrupted", "stopped"].includes(c.status))
-      actions +=
-        '<button class="button primary" data-action="resume">▷ Resume loop</button>';
-    else if (c.status === "pausing")
-      actions +=
-        '<button class="button secondary" data-action="stop">■ Stop now</button>';
-  }
-  actions +=
-    '<button class="button secondary" id="new-campaign" aria-label="New campaign">＋ New</button>';
+  $("run-toolbar").hidden = state.view === "history" || !state.campaigns.length;
+  $("run-selection").innerHTML = state.campaigns.length ? `<label for="campaign-picker">Run</label><select id="campaign-picker" aria-label="Select run">${state.campaigns.map(row => `<option value="${e(row.id)}" ${row.id === state.campaignId ? "selected" : ""}>${e(row.name)}</option>`).join("")}</select>` : "";
+  let actions = c ? badge(c.status) : "";
+  if (c?.status === "ready") actions += '<button class="button primary" data-action="start">Start run</button>';
+  else if (["running", "queued"].includes(c?.status)) actions += '<button class="button secondary" data-action="pause">Pause</button><button class="button secondary" data-action="stop">Stop</button>';
+  else if (c?.status === "waiting") actions += '<button class="button primary" data-action="resume">Resume now</button><button class="button secondary" data-action="pause">Pause recovery</button><button class="button secondary" data-action="stop">Stop</button>';
+  else if (c?.status === "recovering") actions += '<button class="button secondary" data-action="stop">Stop recovery</button>';
+  else if (c?.status === "complete") actions += '<button class="button primary" data-action="resume">Continue run</button>';
+  else if (["paused", "failed", "interrupted", "stopped"].includes(c?.status)) actions += '<button class="button primary" data-action="resume">Resume run</button>';
+  else if (c?.status === "pausing") actions += '<button class="button secondary" data-action="stop">Stop now</button>';
   $("campaign-actions").innerHTML = actions;
-  if (state.busy)
-    document
-      .querySelectorAll("[data-action]")
-      .forEach((b) => (b.disabled = true));
+  document.querySelectorAll("[data-action]").forEach(button => { button.disabled = state.busy; });
 }
-
 function render(force = false) {
-  renderSidebar();
+  renderHeader();
   const s = state.data;
-  if (!s) return;
-  const signature = JSON.stringify([
-    s.campaign.status,
-    s.round,
-    s.events,
-    s.teacher_usage,
-    s.recovery,
-    state.view,
-    state.lessonId,
-    state.diff,
-    state.selectedRound,
-  ]);
-  if (!force && signature === state.signature) return;
-  // Do not destroy a user's text selection while they inspect a generation.
-  if (!force && window.getSelection()?.toString()) return;
+  const signature = JSON.stringify([s, state.iterations, state.snapshots, state.campaigns, state.view, state.selectedRound, state.lessonId, state.diff, state.expandedActivity]);
+  if (!force && (signature === state.signature || window.getSelection()?.toString())) return;
   state.signature = signature;
-  s.selectedRound = state.selectedRound;
-  const content = $("content");
-  const openDetails = new Set(
-    [...content.querySelectorAll("details[open][data-detail]")].map(
-      (x) => x.dataset.detail,
-    ),
-  );
-  const closedDetails = new Set(
-    [...content.querySelectorAll("details:not([open])[data-detail]")].map(
-      (x) => x.dataset.detail,
-    ),
-  );
-  const active = document.activeElement?.id;
-  const scrolls = [...content.querySelectorAll(".prose")].map(
-    (x) => x.scrollTop,
-  );
-  content.innerHTML = recoveryNotice(s) + (
-    state.view === "overview"
-      ? overview(s)
-      : state.view === "lessons"
-        ? lessonsView(s, state)
-        : state.view === "evaluation"
-          ? evaluationView(s)
-          : activityView(s));
-  for (const d of content.querySelectorAll("details[data-detail]")) {
-    if (openDetails.has(d.dataset.detail)) d.open = true;
-    if (closedDetails.has(d.dataset.detail)) d.open = false;
-  }
-  [...content.querySelectorAll(".prose")].forEach((el, i) => {
-    if (scrolls[i]) el.scrollTop = scrolls[i];
-  });
-  if (active === "round-picker") $(active)?.focus({ preventScroll: true });
-  showError(["waiting", "recovering"].includes(s.campaign.status) ? "" : s.campaign.error || s.round?.error || "");
-  $("updated-label").textContent =
-    `Updated ${time(s.timestamp)} · ${s.campaign.config.student_model}`;
+  const content = $("content"), detailState = new Map();
+  const scope = `${state.campaignId}:${state.view}:${state.selectedRound}`;
+  const sameScope = scope === state.contentScope;
+  state.contentScope = scope;
+  if (sameScope) for (const detail of content.querySelectorAll("details[data-detail]")) detailState.set(detail.dataset.detail, detail.open);
+  const scrolls = new Map(sameScope ? [...content.querySelectorAll("details[data-detail] .prose")].map((el, index) => [index, el.scrollTop]) : []);
+  const focused = document.activeElement;
+  const focusKey = focused?.dataset?.round || focused?.dataset?.campaign || focused?.id;
+  const data = s ? { ...s, iterations: state.iterations, expandedActivity: state.expandedActivity } : null;
+  if (state.view === "history") content.innerHTML = historyView(state.campaigns, state.snapshots);
+  else if (!s) content.innerHTML = state.campaigns.length ? '<div class="empty-inline" role="status">Loading run…</div>' : emptyStudio();
+  else content.innerHTML = recoveryNotice(s) + (state.view === "iteration" ? iterationView(data, state) : overview(data));
+  for (const detail of content.querySelectorAll("details[data-detail]")) if (detailState.has(detail.dataset.detail)) detail.open = detailState.get(detail.dataset.detail);
+  [...content.querySelectorAll("details[data-detail] .prose")].forEach((el, index) => { if (scrolls.has(index)) el.scrollTop = scrolls.get(index); });
+  if (focusKey) [...content.querySelectorAll("button,select")].find(el => (el.dataset.round || el.dataset.campaign || el.id) === focusKey)?.focus({ preventScroll: true });
+  $("updated-label").textContent = s ? `Updated ${time(s.timestamp)} · ${modelLabel(s.campaign.config.student_model)}` : "";
 }
-
+function remember(snapshot) {
+  state.snapshots[snapshot.campaign.id] = snapshot;
+  if (snapshot.round) state.iterations[snapshot.round.id] = { ...state.iterations[snapshot.round.id], ...snapshot.round };
+}
+async function fillIterations(snapshot, version) {
+  const missing = snapshot.rounds.filter(round => !state.iterations[round.id] || state.iterations[round.id].updated_at !== round.updated_at);
+  for (let start = 0; start < missing.length; start += 4) {
+    const results = await Promise.allSettled(missing.slice(start, start + 4).map(round => api(`/rounds/${encodeURIComponent(round.id)}`)));
+    if (version !== state.selectionVersion) return;
+    for (const result of results) if (result.status === "fulfilled") state.iterations[result.value.id] = { ...state.iterations[result.value.id], ...result.value };
+    render();
+  }
+}
+async function fillHistory(version) {
+  const missing = state.campaigns.filter(c => !state.snapshots[c.id] || state.snapshots[c.id].campaign.updated_at !== c.updated_at || ["running", "queued", "pausing", "stopping"].includes(c.status));
+  for (let start = 0; start < missing.length; start += 4) {
+    const results = await Promise.allSettled(missing.slice(start, start + 4).map(c => api(`/campaigns/${encodeURIComponent(c.id)}`)));
+    if (version !== state.selectionVersion || state.view !== "history") return;
+    for (const result of results) if (result.status === "fulfilled") remember(result.value);
+    render();
+  }
+}
 async function refresh(force = false) {
+  if (state.refreshing && !force) return;
+  const version = state.selectionVersion;
+  state.refreshing = true;
   try {
     const campaigns = await api("/campaigns");
+    if (version !== state.selectionVersion) return;
     state.campaigns = campaigns;
-    if (!campaigns.some((c) => c.id === state.campaignId))
-      state.campaignId = campaigns[0]?.id || "";
+    if (!campaigns.some(c => c.id === state.campaignId)) state.campaignId = campaigns[0]?.id || "";
     if (state.campaignId) {
-      const id = state.campaignId,
-        round = state.selectedRound;
-      const snapshot = await api(
-        `/campaigns/${encodeURIComponent(id)}${round ? `?round_id=${encodeURIComponent(round)}` : ""}`,
-      );
-      if (id !== state.campaignId || round !== state.selectedRound) return;
+      const id = state.campaignId;
+      const snapshot = await api(`/campaigns/${encodeURIComponent(id)}`);
+      if (version !== state.selectionVersion || id !== state.campaignId) return;
       state.data = snapshot;
+      remember(snapshot);
       localStorage.setItem("nekaise.campaign", id);
+      if (state.view === "iteration" && !state.selectedRound) state.selectedRound = snapshot.round?.id || "";
       render(force);
-    } else renderSidebar();
+      await fillIterations(snapshot, version);
+      if (state.view === "history") await fillHistory(version);
+      if (version !== state.selectionVersion) return;
+      showError(state.view === "history" || ["waiting", "recovering"].includes(snapshot.campaign.status) ? "" : snapshot.campaign.error || "");
+    } else { state.data = null; render(force); }
     connected(true);
   } catch (error) {
-    connected(false);
-    showError(`Unable to refresh the studio: ${error.message}`);
-  }
+    if (version === state.selectionVersion) { connected(false); showError(`Unable to refresh: ${error.message}`); }
+  } finally { if (version === state.selectionVersion) state.refreshing = false; }
 }
-
 async function changeCampaign(id) {
+  if (!state.campaigns.some(c => c.id === id)) return;
+  state.selectionVersion += 1;
+  state.refreshing = false;
   state.campaignId = id;
   state.selectedRound = "";
   state.lessonId = "";
+  state.view = "overview";
+  state.data = state.snapshots[id] || null;
+  state.expandedActivity = false;
   state.signature = "";
+  showError(""); render(true);
   await refresh(true);
 }
-function navigate(view) {
-  if (!headings[view]) return;
+async function navigate(view) {
+  if (!["overview", "history"].includes(view)) return;
   state.view = view;
+  state.selectedRound = "";
+  state.lessonId = "";
   state.signature = "";
+  showError(""); render(true);
+  if (view === "history") await fillHistory(state.selectionVersion);
+}
+async function openIteration(id, lessonId = "") {
+  if (!state.data) return;
+  const version = state.selectionVersion, campaignId = state.campaignId;
+  state.selectedRound = id;
+  state.lessonId = lessonId;
+  state.view = "iteration";
   render(true);
+  try {
+    const snapshot = await api(`/campaigns/${encodeURIComponent(campaignId)}?round_id=${encodeURIComponent(id)}`);
+    if (version !== state.selectionVersion || state.selectedRound !== id || state.view !== "iteration") return;
+    state.iterations[id] = snapshot.round;
+    if (!state.data.rounds.some(round => round.id === id)) state.data.rounds.push(snapshot.round);
+    render(true);
+  } catch (error) { if (version === state.selectionVersion && state.selectedRound === id) showError(`Unable to open iteration: ${error.message}`); }
 }
 function openCreate() {
   $("form-error").hidden = true;
@@ -233,199 +177,95 @@ function openCreate() {
   }
   $("campaign-dialog").showModal();
 }
-
 async function action(verb) {
   if (state.busy || !state.campaignId) return;
   state.busy = true;
-  renderSidebar();
+  renderHeader();
   try {
-    const result = await api(`/campaigns/${state.campaignId}/actions`, {
-      method: "POST",
-      body: JSON.stringify({ action: verb }),
-    });
-    if (result.campaign_id && result.campaign_id !== state.campaignId)
+    const result = await api(`/campaigns/${encodeURIComponent(state.campaignId)}/actions`, { method: "POST", body: JSON.stringify({ action: verb }) });
+    if (result.campaign_id && result.campaign_id !== state.campaignId) {
+      state.campaigns = await api("/campaigns");
       await changeCampaign(result.campaign_id);
-    toast(
-      verb === "pause"
-        ? "Pause requested. The current stage will finish first."
-        : verb === "stop"
-          ? "Stop requested. Completed stages remain saved."
-          : `${verb === "resume" ? "Resume" : "Start"} requested.`,
-    );
+    }
+    toast(verb === "pause" ? "Pause requested. The current stage will finish first." : verb === "stop" ? "Stop requested. Completed work is saved." : `${verb === "resume" ? "Resume" : "Start"} requested.`);
     await refresh(true);
-  } catch (error) {
-    showError(error.message);
-  } finally {
-    state.busy = false;
-    renderSidebar();
-  }
+  } catch (error) { showError(error.message); }
+  finally { state.busy = false; renderHeader(); }
+}
+async function showSystem() {
+  $("system-dialog").showModal();
+  $("system-content").textContent = "Checking…";
+  try {
+    const data = await api("/system");
+    const labels = { model_python: "Training environment", claude: "Claude Code", codex: "Codex CLI", student_cache: "Student model cache", corpus: "Corpus", worker: "Loop worker", storage: "Storage" };
+    $("system-content").innerHTML = Object.entries(labels).map(([key, label]) => `<div class="system-row"><div>${label}${data[key].path ? `<small>${e(data[key].path)}</small>` : ""}</div>${badge(data[key].available ? "ready" : key === "worker" ? "idle" : "missing", true)}</div>`).join("");
+  } catch (error) { $("system-content").textContent = error.message; }
 }
 
-document.addEventListener("click", async (event) => {
-  const target = event.target.closest("button,[data-lesson],[data-round]");
+document.addEventListener("click", async event => {
+  const target = event.target.closest("button");
   if (!target) return;
-  if (
-    target.id === "new-campaign" ||
-    target.id === "new-campaign-small" ||
-    target.id === "empty-create"
-  )
-    return openCreate();
-  if (target.classList.contains("close-modal"))
-    return target.closest("dialog").close();
+  if (["new-campaign", "empty-create"].includes(target.id)) return openCreate();
+  if (target.classList.contains("close-modal")) return target.closest("dialog").close();
   if (target.dataset.view) return navigate(target.dataset.view);
   if (target.dataset.campaign) return changeCampaign(target.dataset.campaign);
+  if (target.dataset.round) return openIteration(target.dataset.round);
   if (target.dataset.action) return action(target.dataset.action);
-  if (target.dataset.lesson) {
-    state.lessonId = target.dataset.lesson;
-    return navigate("lessons");
-  }
-  if (target.dataset.selectLesson) {
-    state.lessonId = target.dataset.selectLesson;
-    return render(true);
-  }
-  if (target.dataset.diff) {
-    state.diff = target.dataset.diff === "true";
-    return render(true);
-  }
-  if (target.dataset.round) {
-    state.selectedRound = target.dataset.round;
-    state.view = "lessons";
-    state.lessonId = "";
-    return refresh(true);
-  }
-  if (target.id === "system-button") {
-    $("system-dialog").showModal();
-    $("system-content").textContent = "Checking local capabilities…";
-    try {
-      const data = await api("/system");
-      const labels = {
-        model_python: "Model execution environment",
-        claude: "Claude Code",
-        codex: "Codex CLI",
-        student_cache: "MiniCPM5 1B model cache",
-        corpus: "Nekaise corpus",
-        worker: "Loop worker",
-        storage: "Round storage",
-      };
-      $("system-content").innerHTML =
-        Object.entries(labels)
-          .map(
-            ([key, label]) =>
-              `<div class="system-row"><div>${label}${data[key].path ? `<small>${e(data[key].path)}</small>` : ""}</div>${badge(data[key].available ? "ready" : key === "worker" ? "idle" : "missing", true)}</div>`,
-          )
-          .join("") +
-        `<p class="quiet" style="margin-top:20px">${e(data.training)}. Agentic SFT and OPD are planned extensions.</p>`;
-    } catch (error) {
-      $("system-content").textContent = error.message;
-    }
-  }
+  if (target.dataset.diff) { state.diff = target.dataset.diff === "true"; return render(true); }
+  if (target.hasAttribute("data-expand-activity")) { state.expandedActivity = !state.expandedActivity; return render(true); }
+  if (target.id === "system-button") return showSystem();
 });
-
-document.addEventListener("change", (event) => {
-  if (event.target.id === "campaign-picker")
-    return changeCampaign(event.target.value);
-  if (event.target.id === "round-picker") {
-    state.selectedRound = event.target.value;
-    state.lessonId = "";
-    refresh(true);
-  }
-  if (event.target.name === "teacher_provider")
-    $("campaign-form").elements.teacher_model.value =
-      event.target.value === "claude" ? "claude-fable-5-1" : "gpt-5.6-terra";
-  if (event.target.name === "orchestrator_provider")
-    $("campaign-form").elements.orchestrator_model.value =
-      event.target.value === "claude" ? "claude-fable-5-1" : "gpt-6-astra";
+document.addEventListener("change", event => {
+  if (event.target.id === "campaign-picker") return changeCampaign(event.target.value);
+  if (event.target.id === "round-picker") return openIteration(event.target.value);
+  if (event.target.name === "teacher_provider") $("campaign-form").elements.teacher_model.value = event.target.value === "claude" ? "claude-fable-5-1" : "gpt-5.6-terra";
+  if (event.target.name === "orchestrator_provider") $("campaign-form").elements.orchestrator_model.value = event.target.value === "claude" ? "claude-fable-5-1" : "gpt-6-astra";
 });
-
-$("campaign-form").addEventListener("submit", async (event) => {
+$("campaign-form").addEventListener("submit", async event => {
   event.preventDefault();
-  const form = event.currentTarget;
-  const button = form.querySelector("[type=submit]");
-  button.disabled = true;
-  $("form-error").hidden = true;
+  const form = event.currentTarget, button = form.querySelector("[type=submit]");
+  button.disabled = true; $("form-error").hidden = true;
   try {
-    const values = Object.fromEntries(new FormData(form)),
-      name = values.name;
+    const values = Object.fromEntries(new FormData(form)), name = values.name;
     delete values.name;
-    for (const key of [
-      "rounds",
-      "lessons_per_round",
-      "train_steps",
-      "learning_rate",
-      "max_seq_len",
-      "train_epochs",
-      "tokens_per_update",
-    ])
-      values[key] = Number(values[key]);
-    values.token_mix = Object.fromEntries(["teacher", "corpus", "replay"].map((key) => [key, Number(values[`mix_${key}`])]));
+    for (const key of ["rounds", "lessons_per_round", "train_steps", "learning_rate", "max_seq_len", "train_epochs", "tokens_per_update"]) values[key] = Number(values[key]);
+    values.token_mix = Object.fromEntries(["teacher", "corpus", "replay"].map(key => [key, Number(values[`mix_${key}`])]));
     for (const key of ["teacher", "corpus", "replay"]) delete values[`mix_${key}`];
-    const campaign = await api("/campaigns", {
-      method: "POST",
-      body: JSON.stringify({ name, config: values }),
-    });
+    const campaign = await api("/campaigns", { method: "POST", body: JSON.stringify({ name, config: values }) });
     $("campaign-dialog").close();
-    state.view = "overview";
+    state.campaigns = await api("/campaigns");
     await changeCampaign(campaign.id);
-    toast("Campaign created. Start the loop when you’re ready.");
-  } catch (error) {
-    $("form-error").textContent = error.message;
-    $("form-error").hidden = false;
-  } finally {
-    button.disabled = false;
-  }
+    toast("Run created.");
+  } catch (error) { $("form-error").textContent = error.message; $("form-error").hidden = false; }
+  finally { button.disabled = false; }
 });
-
-document.addEventListener("visibilitychange", () => {
-  if (!document.hidden) refresh();
-});
+document.addEventListener("visibilitychange", () => { if (!document.hidden) refresh(); });
 await refresh();
-timer = setInterval(() => {
-  if (!document.hidden) refresh();
-}, 2000);
+timer = setInterval(() => { if (!document.hidden) refresh(); }, 2000);
 window.addEventListener("pagehide", () => clearInterval(timer));
 
-// Optional browser-agent interface, using exactly the same state as the UI.
 if (document.modelContext?.registerTool) {
   const lifecycle = new AbortController();
-  const register = (tool) =>
-    Promise.resolve(
-      document.modelContext.registerTool(tool, { signal: lifecycle.signal }),
-    ).catch(() => {});
+  const register = tool => Promise.resolve(document.modelContext.registerTool(tool, { signal: lifecycle.signal })).catch(() => {});
   register({
-    name: "get_loop_status",
-    description: "Read the currently displayed campaign and round status.",
-    inputSchema: {
-      type: "object",
-      properties: {},
-      additionalProperties: false,
-    },
+    name: "get_loop_status", description: "Read the displayed run and iteration.",
+    inputSchema: { type: "object", properties: {}, additionalProperties: false },
     annotations: { readOnlyHint: true, untrustedContentHint: true },
-    execute: () => ({
-      campaign: state.data?.campaign.name,
-      status: state.data?.campaign.status,
-      round: state.data?.round?.number,
-      stage: state.data?.round?.stage,
-    }),
+    execute: () => {
+      const round = state.iterations[state.selectedRound] || state.data?.round;
+      return { campaign: state.data?.campaign.name, status: state.data?.campaign.status, round: round?.number, stage: round?.stage };
+    },
   });
   register({
-    name: "inspect_lesson",
-    description:
-      "Open a lesson in the teaching room and return its evidence gate result.",
-    inputSchema: {
-      type: "object",
-      properties: { lesson_id: { type: "string" } },
-      required: ["lesson_id"],
-      additionalProperties: false,
-    },
+    name: "inspect_lesson", description: "Open a recorded lesson alongside its iteration's assessment.",
+    inputSchema: { type: "object", properties: { lesson_id: { type: "string" } }, required: ["lesson_id"], additionalProperties: false },
     annotations: { readOnlyHint: true, untrustedContentHint: true },
-    execute: (input) => {
-      const row = state.data?.round?.lessons.find(
-        (r) => r.id === input.lesson_id,
-      );
-      if (!row) throw new Error("Lesson not found in the selected round");
-      state.lessonId = row.id;
-      navigate("lessons");
-      return { id: row.id, concept: row.concept, gate: row.gate };
+    execute: async input => {
+      const round = state.iterations[state.selectedRound] || state.data?.round;
+      const lesson = round?.lessons.find(row => row.id === input.lesson_id);
+      if (!lesson) throw new Error("Lesson not found in the selected iteration");
+      await openIteration(round.id, lesson.id);
+      return { id: lesson.id, concept: lesson.concept, gate: lesson.gate };
     },
   });
   window.addEventListener("pagehide", () => lifecycle.abort());

@@ -27,7 +27,7 @@ jobs:
         run: python -m pytest
       - name: Dashboard tests and syntax
         run: |
-          node --test dashboard/tests/lib.test.js
+          node --test dashboard/tests/*.test.js
           node --check dashboard/dist/app.js
           node --check dashboard/dist/views.js
           node --check dashboard/dist/lib.js

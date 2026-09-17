@@ -157,3 +157,19 @@ export function modelLabel(value = "") {
   if (value.includes("/snapshots/")) return "Cached base model";
   return value.split("/").filter(Boolean).at(-1) || "Student";
 }
+
+// HTTP errors may be plain text (server/proxy failures), not JSON API details.
+export async function readAPIResponse(response) {
+  let data;
+  try {
+    data = await response.json();
+  } catch {
+    if (!response.ok) throw new Error(`Server request failed (HTTP ${response.status}). Please try again shortly.`);
+    throw new Error(`The server returned an invalid JSON response (HTTP ${response.status}).`);
+  }
+  if (!response.ok) {
+    const detail = typeof data?.detail === "string" ? data.detail : JSON.stringify(data?.detail || data);
+    throw new Error(`HTTP ${response.status}: ${detail || "Server request failed"}`);
+  }
+  return data;
+}

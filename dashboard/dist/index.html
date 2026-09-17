@@ -4,14 +4,14 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="theme-color" content="#203e39">
-    <meta name="description" content="Nekaise Studio — training loss, teaching iterations and run history.">
+    <meta name="description" content="Nekaise Studio — CoAPT Mid-training, teaching iterations and run history.">
     <title>Nekaise Studio</title>
     <link rel="icon" type="image/png" href="/assets/nekaise-mountain.png">
-    <link rel="stylesheet" href="/styles.css">
-    <script type="module" src="/app.js"></script>
+    <link rel="stylesheet" href="/styles.css?v=1f2d40bed9fc">
+    <script type="module" src="/app.js?v=1f2d40bed9fc"></script>
   </head>
   <body>
-    <a class="skip-link" href="#main">Skip to studio</a>
+    <a class="skip-link" href="#main">Skip to content</a>
     <header class="studio-header">
       <a class="brand" href="/" aria-label="Nekaise Studio home">
         <img src="/assets/nekaise-mountain.png" alt="" width="42" height="42">
@@ -19,6 +19,7 @@
       </a>
       <nav class="studio-nav" aria-label="Studio navigation">
         <button class="nav-item active" data-view="overview" aria-current="page">Studio</button>
+        <button class="nav-item" data-view="reports">Report</button>
         <button class="nav-item" data-view="history">Previous runs</button>
       </nav>
       <div class="header-tools">
@@ -35,14 +36,14 @@
         <div class="heading-actions" id="campaign-actions"></div>
       </div>
       <div id="error-banner" class="error-banner" role="alert" hidden></div>
-      <div id="content"><div class="empty-inline" role="status">Loading studio…</div></div>
+      <div id="content"><div class="empty-inline" role="status">Loading Studio…</div></div>
     </main>
     <footer class="workspace-footer"><span id="updated-label"></span></footer>
     <dialog id="campaign-dialog" class="modal">
       <form id="campaign-form">
         <div class="modal-heading">
           <div>
-            <div class="eyebrow">NEW RUN</div>
+            <div class="eyebrow">CoAPT Mid-training</div>
             <h2>Create a run</h2>
           </div>
           <button
@@ -115,7 +116,7 @@
           /></label>
         </div>
         <details>
-          <summary>Training & data settings</summary>
+          <summary>Mid-training recipe & data</summary>
           <div class="form-grid">
             <label>Suggested passes per round<input name="train_epochs" type="number" min="0" max="10" value="1" required></label>
             <label>Tokens per update<input name="tokens_per_update" type="number" min="64" max="65536" value="2048" required></label>
@@ -125,7 +126,7 @@
             <label>Initial source share<input name="mix_corpus" type="number" step="0.01" min="0" max="1" value="0.2" required></label>
             <label>Initial review share<input name="mix_replay" type="number" step="0.01" min="0" max="1" value="0.2" required></label>
           </div>
-          <p class="quiet">These are starting suggestions. The teacher chooses tasks, sources, review, token shares and assessments. Shares sum to 1.</p>
+          <p class="quiet">These are starting suggestions. The teacher chooses the recipe's CPT/SFT composition, sources, review, token shares and assessments. The teacher/source/review shares sum to 1.</p>
           <div class="form-grid">
             <label>Recovery orchestrator<select name="orchestrator_provider"><option value="codex">Codex CLI</option><option value="claude">Claude Code</option></select></label>
             <label>Orchestrator model<input name="orchestrator_model" value="gpt-6-astra" required></label>
@@ -160,7 +161,8 @@
             /></label>
           </div>
           <p class="quiet">
-            Full-parameter CPT, with corrected prose and QA as text. Models must
+            CoAPT Mid-training combines corrected prose and QA supervision in one
+            full-parameter training path. Models must
             be available locally.
           </p>
         </details>

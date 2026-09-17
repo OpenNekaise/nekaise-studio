@@ -18,6 +18,7 @@ from collections import defaultdict
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from nekaise_loop.training import prepare_dataset, update_batches, recipe_hash, training_code_hash
+from nekaise_loop.serialization import checkpoint_eos_ids, student_prompt
 
 
 def emit(kind, data):
@@ -30,6 +31,51 @@ def file_hash(path):
         for block in iter(lambda: f.read(4 * 1024 * 1024), b""):
             h.update(block)
     return h.hexdigest()
+
+
+def audit_generation(model, encoded, output):
+    """Observe raw next-token predictions without reusing generation's KV cache.
+
+    This is teacher forcing on the observed response, not a second free-running
+    answer or a correctness gate. Logit processors and numerical ties can explain
+    mismatches; retain margins and generation settings for operational review.
+    """
+    import torch
+
+    prompt_length = encoded.input_ids.shape[1]
+    generated = output[0, prompt_length:]
+    if not len(generated):
+        return {"method": "uncached_teacher_forcing", "tokens_checked": 0}
+    inputs = {"input_ids": output[:, :-1], "attention_mask": torch.cat(
+        [encoded.attention_mask, encoded.attention_mask.new_ones((1, len(generated)-1))], dim=1)}
+    # Preserve tokenizer-provided segment IDs where the model uses them.
+    if "token_type_ids" in encoded:
+        inputs["token_type_ids"] = torch.cat([encoded.token_type_ids,
+            encoded.token_type_ids[:, -1:].expand(-1, len(generated)-1)], dim=1)
+    started = time.monotonic()
+    with torch.inference_mode():
+        logits = model(**inputs, use_cache=False).logits[0, prompt_length-1:].float()
+        finite = bool(torch.isfinite(logits).all().item())
+        if not finite:
+            return {"method": "uncached_teacher_forcing", "tokens_checked": len(generated),
+                    "finite_logits": False, "seconds": round(time.monotonic()-started, 3)}
+        values, ids = logits.topk(min(5, logits.shape[-1]), dim=-1)
+        # topk does not promise argmax's first-index ordering for tied logits.
+        # Use the same tie rule as greedy generation and retain zero-gap ties.
+        argmax_ids = logits.argmax(dim=-1)
+        mismatch = argmax_ids != generated
+        positions = mismatch.nonzero().flatten().tolist()
+        observations = [{"position": i, "generated_token_id": int(generated[i]),
+                         "raw_argmax_token_id": int(argmax_ids[i]),
+                         "logit_gap": float(values[i, 0]-logits[i, generated[i]])}
+                        for i in positions]
+        first_probs = logits[0].softmax(dim=-1)
+        first_top = [{"token_id": int(token), "probability": float(first_probs[token])}
+                     for token in ids[0]]
+    return {"method": "uncached_teacher_forcing", "tokens_checked": len(generated),
+            "finite_logits": True, "raw_argmax_token_ids": argmax_ids.tolist(),
+            "mismatches": observations, "first_token_top": first_top,
+            "seconds": round(time.monotonic()-started, 3)}
 
 
 def main():
@@ -51,23 +97,56 @@ def main():
     if tokenizer.pad_token_id is None:
         tokenizer.pad_token = tokenizer.eos_token
     if task == "prepare":
-        emit("result", prepare_dataset(data["rows"], tokenizer, config))
+        emit("result", prepare_dataset(data["rows"], tokenizer, config, checkpoint_eos_ids(data["checkpoint"], tokenizer)))
         return
-    # FP32 master parameters + BF16 autocast keep Adam states numerically stable.
-    dtype = torch.float32 if task == "train" or device == "cpu" else torch.bfloat16
-    model = AutoModelForCausalLM.from_pretrained(data["checkpoint"], local_files_only=True, trust_remote_code=False, dtype=dtype, attn_implementation="sdpa").to(device)
+    if task == "generate":
+        # Validate every boundary before loading weights or emitting any answers.
+        # Keep the actual CPU encodings so generation uses the preflighted inputs.
+        prepared_prompts = []
+        for row in data["rows"]:
+            try:
+                rendered, add_special, serialization = student_prompt(tokenizer, row["prompt"], row.get("format", config.get("student_format", "raw_text")), max_tokens=config["max_seq_len"])
+                encoded = tokenizer(rendered, add_special_tokens=add_special, return_tensors="pt", truncation=serialization["format"] == "raw_text", max_length=config["max_seq_len"])
+                original_length = len(tokenizer.encode(rendered, add_special_tokens=add_special))
+            except ValueError as exc:
+                raise ValueError(f"Generation prompt row {row['id']!r}: {exc}") from exc
+            prepared_prompts.append((row, encoded, original_length,
+                                     {**serialization, "prompt_text": rendered}))
+    # Preserve checkpoint precision in inference as well as master parameters.
+    # Live BF16 diagnostics showed tied EOS logits and cache/forward divergence;
+    # use FP32 for generation and its audit so weight rounding is not a confound.
+    # Training still uses BF16 autocast with FP32 parameters and Adam states.
+    model = AutoModelForCausalLM.from_pretrained(data["checkpoint"], local_files_only=True, trust_remote_code=False, dtype=torch.float32, attn_implementation="sdpa").to(device)
     if task == "generate":
         model.eval()
+        # Checkpoints may define multiple response terminators. The tokenizer's
+        # single EOS is only a fallback, not an override of generation settings.
+        eos = model.generation_config.eos_token_id
+        if eos is None:
+            eos = tokenizer.eos_token_id
+        eos_ids = [eos] if isinstance(eos, int) else list(eos)
         answers = []
-        for row in data["rows"]:
-            encoded = tokenizer(row["prompt"], return_tensors="pt", truncation=True, max_length=config["max_seq_len"]).to(device)
-            original_length = len(tokenizer.encode(row["prompt"], add_special_tokens=True))
+        for row, encoded, original_length, serialization in prepared_prompts:
+            encoded = encoded.to(device)
             started = time.monotonic()
             with torch.inference_mode():
-                output = model.generate(**encoded, max_new_tokens=config["max_new_tokens"], do_sample=False, pad_token_id=tokenizer.pad_token_id, eos_token_id=tokenizer.eos_token_id, use_cache=True)
+                output = model.generate(**encoded, max_new_tokens=config["max_new_tokens"], do_sample=False, pad_token_id=tokenizer.pad_token_id, eos_token_id=eos, use_cache=True)
             generated = output[0, encoded.input_ids.shape[1]:]
             answer = {"id": row["id"], "text": tokenizer.decode(generated, skip_special_tokens=True).strip(), "tokens": len(generated), "seconds": round(time.monotonic()-started, 3)}
+            token_ids = generated.tolist()
+            stop_reason = "eos" if token_ids and token_ids[-1] in eos_ids else "max_new_tokens" if len(token_ids) >= config["max_new_tokens"] else "other"
+            answer.update({"generated_token_ids": token_ids, "raw_text": tokenizer.decode(generated, skip_special_tokens=False), "eos_token_ids": eos_ids, "stop_reason": stop_reason})
             answer.update({"prompt_tokens": int(encoded.input_ids.shape[1]), "prompt_truncated": original_length > encoded.input_ids.shape[1], "effective_prompt": tokenizer.decode(encoded.input_ids[0], skip_special_tokens=False)})
+            answer["prompt_token_ids"] = encoded.input_ids[0].tolist()
+            answer["prompt_serialization"] = serialization
+            answer["generation_audit"] = audit_generation(model, encoded, output)
+            answer["generation_settings"] = {**model.generation_config.to_diff_dict(),
+                "max_new_tokens": config["max_new_tokens"], "do_sample": False,
+                "pad_token_id": tokenizer.pad_token_id, "eos_token_id": eos, "use_cache": True}
+            import transformers
+            answer["runtime"] = {"device": device, "dtype": str(model.dtype),
+                "torch": torch.__version__, "transformers": transformers.__version__,
+                "attention": model.config._attn_implementation}
             answers.append(answer)
             emit("answer", answer)
         emit("result", answers)
@@ -137,7 +216,7 @@ def main():
         raise FileExistsError("Checkpoint directory already exists; use a fresh stage attempt")
     temporary.mkdir(parents=True)
     model.config.use_cache = True
-    # Retain FP32 master weights across short rounds; inference loads a BF16 copy.
+    # Retain FP32 master weights across short rounds and for inference.
     model.save_pretrained(temporary, safe_serialization=True)
     tokenizer.save_pretrained(temporary)
     torch.save({"optimizer": optimizer.state_dict(), "global_step": global_step, "global_tokens": global_tokens, "recipe_hash": recipe, "training_code": training_code}, temporary / "training_state.pt")

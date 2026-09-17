@@ -1,7 +1,8 @@
 # Tailscale access
 
-This server's dashboard is **http://100.123.76.107:8766**, also reachable through
-`http://afk.tail5ec85b.ts.net:8766` with MagicDNS. Connect your viewing device to the
+This server's dashboard is **http://afk:8766**, also reachable through
+`http://afk.tail5ec85b.ts.net:8766` or `http://100.123.76.107:8766`.
+The short name uses Tailscale MagicDNS. Connect your viewing device to the
 tailnet. The listener binds to the Tailscale IP, and Tailscale access rules control who
 can reach it. There is no separate application login.
 
@@ -33,9 +34,13 @@ For another server, obtain its IPv4 address with `tailscale ip -4` and DNS name 
 NEKAISE_DASHBOARD_HOST=100.x.y.z
 NEKAISE_DASHBOARD_PORT=8766
 NEKAISE_DASHBOARD_DNS=your-server.your-tailnet.ts.net
+NEKAISE_DASHBOARD_SHORT_DNS=your-server
 ```
 
 Save those actual values in `workspace/dashboard.env`, then install the service:
+
+The short-name setting explicitly permits its HTTP Host header; DNS resolution alone
+does not grant access. If omitted, the unit defaults to the already-allowed `localhost`.
 
 ```bash
 mkdir -p ~/.config/systemd/user
@@ -49,7 +54,7 @@ The units assume this checkout lives at `~/Code/nekaise-studio`. Adjust its path
 if needed. For a foreground process instead:
 
 ```bash
-.venv/bin/nekaise-loop serve --host 100.x.y.z --port 8766 --allow-host your-server.your-tailnet.ts.net
+.venv/bin/nekaise-loop serve --host 100.x.y.z --port 8766 --allow-host your-server.your-tailnet.ts.net --allow-host your-server
 ```
 
 The server's former `~/Code/nekaise-studio-loop` path is a compatibility symlink to this

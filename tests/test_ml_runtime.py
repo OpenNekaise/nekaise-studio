@@ -19,3 +19,6 @@ def test_actual_trainer_preserves_optimizer_and_fp32_weights_across_rounds(tmp_p
     assert observation["global_steps"] == 4
     assert observation["weighted_loss_verified"]
     assert observation["prompt_observations_verified"]
+    assert observation["generation_stopping_verified"]
+    assert observation["generation_audit_verified"]
+    assert observation["native_chat_verified"]

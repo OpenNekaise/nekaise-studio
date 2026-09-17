@@ -22,6 +22,7 @@ def tick(service):
     settings, store = service.settings, service.store
     if service.worker_alive() or locked(settings.workspace/"recovery.lock"):
         return None
+    service.reconcile_execution()
     if store.one("SELECT id FROM actions WHERE handled_at IS NULL LIMIT 1") or store.one("SELECT id FROM campaigns WHERE status IN ('running','queued','pausing','stopping') LIMIT 1"):
         return ["worker"]
     row = store.one("SELECT * FROM recoveries WHERE status IN ('pending','waiting','running','decided') ORDER BY id LIMIT 1")
@@ -42,12 +43,14 @@ def tick(service):
             return None
         if row["retry_at"] and row["retry_at"] <= now():
             try:
-                service.action(campaign["id"], "resume", spawn=False)
+                service.action(campaign["id"], "resume", spawn=False, actor="supervisor")
             except Conflict:
                 return None
             return ["worker"]
         return None
-    if row["status"] == "waiting" and (not row["retry_at"] or row["retry_at"] > now()):
+    # Legacy agent pauses without timers are reconsidered automatically. Explicit
+    # operator controls were already checked above and always take precedence.
+    if row["status"] == "waiting" and row["retry_at"] and row["retry_at"] > now():
         return None
     return ["recover", str(row["id"])]
 

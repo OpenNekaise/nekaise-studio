@@ -22,7 +22,8 @@ class CreateCampaign(BaseModel):
 
 class Action(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    action: Literal["start", "pause", "resume", "stop"]
+    action: Literal["start", "pause", "resume", "stop", "review"]
+    reason: str | None = Field(default=None, max_length=12000)
 
 
 def create_app(settings: Settings | None = None, *, allowed_hosts: tuple[str, ...] = ()):
@@ -30,7 +31,7 @@ def create_app(settings: Settings | None = None, *, allowed_hosts: tuple[str, ..
     hosts = {"localhost", "127.0.0.1", "::1", "testserver", *(h.lower() for h in allowed_hosts)}
     @asynccontextmanager
     async def lifespan(app):
-        if service.store.one("SELECT id FROM actions WHERE handled_at IS NULL LIMIT 1") or service.store.one("SELECT id FROM recoveries WHERE status IN ('pending','waiting','running','decided') LIMIT 1") or service.store.one("SELECT id FROM campaigns WHERE status IN ('running','queued','recovering') LIMIT 1"):
+        if service.store.one("SELECT id FROM actions WHERE handled_at IS NULL LIMIT 1") or service.store.one("SELECT id FROM recoveries WHERE status IN ('pending','waiting','running','decided') LIMIT 1") or service.store.one("SELECT id FROM campaigns WHERE status IN ('running','queued','pausing','stopping') OR (operator_hold IS NULL AND status NOT IN ('ready','complete') AND json_extract(config,'$.auto_recover')=1) LIMIT 1"):
             service.ensure_worker()
         yield
     app = FastAPI(title="Nekaise Studio", version="0.1.0", docs_url="/api/docs", redoc_url=None, lifespan=lifespan)
@@ -82,19 +83,53 @@ def create_app(settings: Settings | None = None, *, allowed_hosts: tuple[str, ..
 
     @app.post("/api/campaigns/{campaign_id}/actions", status_code=202)
     def action(campaign_id: str, body: Action):
-        return service.action(campaign_id, body.action)
+        return service.action(campaign_id, body.action, reason=body.reason)
 
     @app.get("/api/campaigns/{campaign_id}")
     def snapshot(campaign_id: str, round_id: str | None = None):
         return service.snapshot(campaign_id, round_id)
 
+    @app.get("/api/campaigns/{campaign_id}/telemetry")
+    def telemetry(campaign_id: str):
+        from .telemetry import training_telemetry
+        return training_telemetry(service, campaign_id)
+
+    @app.get("/api/campaigns/{campaign_id}/benchmark")
+    def benchmark(campaign_id: str):
+        from .benchmark import read_benchmark
+        service.store.campaign(campaign_id)
+        return JSONResponse(read_benchmark(campaign_id), headers={"Cache-Control": "no-store"})
+
     @app.get("/api/rounds/{round_id}")
     def round_detail(round_id: str):
         return service.round_detail(round_id)
 
+    @app.get("/api/rounds/{round_id}/materials")
+    def materials(round_id: str, offset: int = Query(0, ge=0), limit: int = Query(20, ge=1, le=100)):
+        return service.materials(round_id, offset, limit)
+
     @app.get("/api/events")
     def events(campaign_id: str | None = None, after: int = Query(0, ge=0), limit: int = Query(100, ge=1, le=200)):
         return service.store.events(campaign_id, after, limit)
+
+    @app.get("/api/history-reviews")
+    def history_reviews():
+        import json
+        rows = service.store.query("SELECT h.*,r.decision FROM history_reviews h JOIN recoveries r ON r.id=h.recovery_id ORDER BY h.applied_at DESC LIMIT 100")
+        for row in rows:
+            row["result"] = json.loads(row["result"])
+            row["decision"] = json.loads(row["decision"]) if row["decision"] else None
+        return rows
+
+    @app.get("/api/reports")
+    def reports(before: int | None = Query(None, ge=1), limit: int = Query(30, ge=1, le=100)):
+        from .reports import catalog, current_status
+        return {"current": current_status(service), **catalog(service, before=before, limit=limit)}
+
+    @app.get("/api/reports/{recovery_id}")
+    def report(recovery_id: int):
+        from .reports import detail
+        return detail(service, recovery_id)
 
     app.mount("/", StaticFiles(directory=service.settings.dashboard, html=True), name="dashboard")
     return app

@@ -7,7 +7,8 @@ from pathlib import Path
 
 from . import stages
 from .artifacts import Artifacts, digest, verify_checkpoint
-from .config import CampaignConfig, TokenMix, ROOT, STAGES, STAGE_LABELS, resolve_student
+from .config import CampaignConfig, ROOT, STAGES, STAGE_LABELS, resolve_student
+from .teaching import Curriculum
 from .processes import Cancelled, ProcessRunner
 from .providers.local import LocalModel
 from .providers.teacher import CliTeacher
@@ -21,14 +22,20 @@ class Context:
         self.campaign, self.round = campaign, row
         self.config = CampaignConfig.model_validate(campaign["config"])
         self.stage_id, self.attempt = stage_id, attempt
+        self.cancelled = controls
         self.directory = engine.settings.workspace / "runs" / row["id"] / f"{row['stage']}-{attempt}"
         self.directory.mkdir(parents=True, exist_ok=True)
         runner = ProcessRunner(self.store, stage_id, controls)
         self.teacher = engine.teacher_factory(self.config, engine.settings, self.store, campaign["id"], row["id"], runner, self.directory)
-        runtime_config = self.config if row["number"] == 1 else self.config.model_copy(update={"inherit_optimizer": True})
+        runtime_config = self.config
+        if not self.config.inherit_optimizer:
+            # Diagnostic rounds retain the parent state; only a completed weight
+            # update can consume the continuation's explicit optimizer reset.
+            trained = self.store.one("SELECT id FROM rounds WHERE campaign_id=? AND number<? AND status='complete' AND checkpoint!=model_before LIMIT 1", (campaign["id"], row["number"]))
+            runtime_config = self.config.model_copy(update={"inherit_optimizer": bool(trained)})
         if row["stage"] in {"freeze", "train"}:
-            curriculum = self.output("select")["curriculum"]
-            runtime_config = runtime_config.model_copy(update={"token_mix": TokenMix.model_validate(curriculum["token_mix"]), "train_epochs": curriculum["train_epochs"]})
+            curriculum = Curriculum.model_validate(self.output("material_select")["curriculum"])
+            runtime_config = runtime_config.model_copy(update={"token_mix": curriculum.token_mix, "train_epochs": curriculum.train_epochs})
         local = engine.model_factory(runtime_config, engine.settings, runner, self.directory)
         self.student, self.trainer = local, local
 
@@ -50,15 +57,19 @@ class Context:
         self.store.execute("INSERT OR REPLACE INTO metrics(round_id,attempt,step,data,created_at) VALUES(?,?,?,?,?)", (self.round["id"], self.attempt, data["step"], encode(data), now()))
 
 class Engine:
-    def __init__(self, settings, teacher_factory=CliTeacher, model_factory=LocalModel):
+    def __init__(self, settings, teacher_factory=CliTeacher, model_factory=LocalModel, material_client_factory=None):
         self.settings, self.store, self.artifacts = settings, Store(settings.workspace), Artifacts(settings.workspace)
         self.teacher_factory, self.model_factory = teacher_factory, model_factory
+        self.material_client_factory = material_client_factory
 
     def run(self, campaign_id, controls=lambda: False, pause=lambda: False):
         campaign = self.store.campaign(campaign_id)
         config = CampaignConfig.model_validate(campaign["config"])
         self.store.set_status(campaign_id, "running")
         try:
+            restoration = (self.artifacts.get(campaign["context_artifact"]).get("restoration")
+                           if campaign.get("context_artifact") else None)
+            restoration_checked = False
             unfinished = self.store.one("SELECT MIN(number) AS number FROM rounds WHERE campaign_id=? AND status!='complete'", (campaign_id,))
             last = self.store.one("SELECT COALESCE(MAX(number),0) AS number FROM rounds WHERE campaign_id=?", (campaign_id,))
             number = unfinished["number"] or last["number"]+1
@@ -81,6 +92,17 @@ class Engine:
                     round_id = new_id("round")
                     self.store.execute("INSERT INTO rounds(id,campaign_id,number,status,model_before,created_at,updated_at) VALUES(?,?,?,'ready',?,?,?)", (round_id, campaign_id, number, parent, now(), now()))
                     row = self.store.one("SELECT * FROM rounds WHERE id=?", (round_id,))
+                if restoration and not restoration_checked and row["model_before"] == restoration["reference"]["checkpoint"]:
+                    from .restoration import verify_restoration
+                    # Recheck before any work using Base, including stage retries
+                    # and diagnostic-only rounds. Descendant weights stand alone.
+                    verify_restoration(self.store, self.artifacts, restoration)
+                    restoration_checked = True
+                from .checkpoint_retention import storage_status
+                storage = storage_status(self.settings.workspace, row['model_before'])
+                if storage['pressure']:
+                    self.store.recover(campaign_id, 'storage_pressure', f"Insufficient checkpoint headroom: {storage['free_bytes']} bytes free, {storage['required_bytes']} required. Orchestrator must review checkpoint retention and storage before training.")
+                    return
                 dependency_hashes = []
                 prior_stage = self.store.one("SELECT s.artifact FROM stage_runs s JOIN rounds r ON r.id=s.round_id WHERE r.campaign_id=? AND r.number=? AND s.stage='train' AND s.status='complete' ORDER BY s.attempt DESC LIMIT 1", (campaign_id, number-1))
                 if prior_stage:
@@ -105,6 +127,11 @@ class Engine:
                             verify_checkpoint(output)
                         dependency_hashes.append(existing["artifact"])
                         continue
+                    if stage == 'train':
+                        storage = storage_status(self.settings.workspace, row['model_before'])
+                        if storage['pressure']:
+                            self.store.recover(campaign_id, 'storage_pressure', f"Insufficient checkpoint headroom before train: {storage['free_bytes']} bytes free, {storage['required_bytes']} required; review storage retention.")
+                            return
                     attempt = self.store.one("SELECT COALESCE(MAX(attempt),0)+1 AS n FROM stage_runs WHERE round_id=? AND stage=?", (row["id"], stage))["n"]
                     with self.store.connect(immediate=True) as db:
                         db.execute("UPDATE rounds SET status='running',stage=?,error=NULL,updated_at=? WHERE id=?", (stage, now(), row["id"]))
@@ -135,13 +162,20 @@ class Engine:
                 if pause():
                     self.store.set_status(campaign_id, "paused")
                     return
-                decision = self.artifacts.get(dependency_hashes[-1]).get("action", "continue")
+                reflection = self.artifacts.get(dependency_hashes[-1])
+                decision = reflection.get("action", "continue")
                 if decision == "pause":
                     from .service import Service
-                    Service(self.settings).action(campaign_id, "pause", spawn=False)
+                    Service(self.settings).action(campaign_id, "pause", spawn=False,
+                                                  actor="teacher", reason=reflection.get("reason"))
                     return
                 if decision == "complete":
                     break
+                if config.auto_recover and config.manage_history:
+                    from .history import review_due
+                    if review_due(self.store):
+                        self.store.recover(campaign_id, "history_review", "Scheduled orchestrator review of run history and training logs")
+                        return
                 number += 1
             self.store.set_status(campaign_id, "complete")
         except Cancelled:

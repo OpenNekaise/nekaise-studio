@@ -1,0 +1,356 @@
+import asyncio
+import json
+from pathlib import Path
+
+import httpx
+import pytest
+
+from conftest import FakeModel, FakeTeacher
+from nekaise_loop.author_config import AuthorPool, AuthorSpec, credential
+from nekaise_loop.config import CampaignConfig
+from nekaise_loop.engine import Engine
+from nekaise_loop.material_accounting import job_work
+from nekaise_loop.teacher_tools import query, replay_lesson
+
+
+def author(name="a", **changes):
+    return AuthorSpec(id=name, label=f"Fixture author {name}", base_url="https://fixture.invalid/v1", model="fixture-model", **changes)
+
+
+def response(request):
+    body = json.loads(request.content)
+    task = json.loads(body["messages"][1]["content"])["task"]
+    candidate = {"id": "variant", "kind": "sft", "concept": "Resistance and flow", "student_prompt": "What changes when R doubles?",
+                 "training_text": "At fixed temperature difference, doubling R halves heat flow.", "training_tokenization": "full_text",
+                 "source_keys": list(task["sources"])[:1], "seed_ids": task["job"]["seed_ids"], "rationale": "A varied relationship example"}
+    return httpx.Response(200, json={"model": "fixture-model-revision", "choices": [{"finish_reason": "stop", "message": {"content": json.dumps({"rows": [candidate]})}}],
+                                    "usage": {"prompt_tokens": 100, "completion_tokens": 30, "total_tokens": 130}})
+
+
+class AuthorTeacher(FakeTeacher):
+    jobs = [("one", "a"), ("two", "a")]
+    selection_seen = None
+    evaluation_materials = None
+    def curriculum(self, brief):
+        plan = super().curriculum(brief)
+        plan["expansion_jobs"] = [{"id": jid, "author_id": aid, "seed_ids": ["l1"], "instructions": "Vary physical quantities", "expected_items": 2, "max_output_tokens": 512} for jid, aid in self.jobs]
+        return plan
+
+    def select_materials(self, manifest):
+        type(self).selection_seen = manifest
+        return {"manifest_hash": manifest["manifest_hash"], "accepted_ids": [], "accepted_jobs": [j["plan_id"] for j in manifest["jobs"]],
+                "edits": [], "seed_exclusions": [], "token_mix": {"teacher": 1, "corpus": 0, "replay": 0}, "train_epochs": 2,
+                "review_scope": "Fixture chooses all explicit immutable candidate batches", "reason": "Fixture teacher choice"}
+
+    def evaluate(self, curriculum, lessons):
+        type(self).evaluation_materials = lessons
+        return super().evaluate(curriculum, lessons)
+
+
+def configured(setup_loop, handler=response, *, teacher=AuthorTeacher, pool=None):
+    settings, service, original, _ = setup_loop
+    config = CampaignConfig.model_validate({**original["config"], "rounds": 1, "material_authors": (pool or AuthorPool(authors=[author()])).model_dump()})
+    campaign = service.create("Material integration", config)
+    factory = lambda **kwargs: httpx.AsyncClient(transport=httpx.MockTransport(handler), **kwargs)
+    engine = Engine(settings, teacher, FakeModel, material_client_factory=factory)
+    return settings, service, campaign, engine
+
+
+def test_complete_package_preserves_teacher_choice_and_no_fake_attempts(setup_loop):
+    settings, service, campaign, engine = configured(setup_loop)
+    engine.run(campaign["id"])
+    assert service.store.campaign(campaign["id"])["status"] == "complete"
+    detail = service.snapshot(campaign["id"])["round"]
+    assert len(detail["materials"]) == 2 and len(detail["lessons"]) == 2
+    assert all(r["student"] is None and r["student_observation"] == "not_requested" for r in detail["materials"])
+    assert detail["curriculum"]["train_epochs"] == 2
+    assert len(AuthorTeacher.evaluation_materials) == 4
+    rows = FakeModel.datasets[-1]
+    aux = [r for r in rows if r.get("material_origin")]
+    assert len(aux) == 2 and aux[0]["material_origin"]["model"] == "fixture-model-revision"
+    assert all(r["stream"] == "sft" for r in aux)
+    assert all("variant" not in r["id"] for r in FakeModel.prompts)
+    replay = replay_lesson(settings.workspace, detail["id"], detail["materials"][0]["id"])
+    assert replay["material_origin"] == detail["materials"][0]["material_origin"] and replay["student"] is None
+    archived = query({"workspace": str(settings.workspace), "campaign_id": campaign["id"]}, {"op": "material_candidates", "round_id": detail["id"], "limit": 1})
+    assert len(archived["rows"]) == 1 and archived["next_offset"] == 1 and archived["total"] == 2
+    work = detail["learning_work"]["material_author_work"]
+    assert work["calls"] == 2 and work["reported_output_tokens"] == 60
+    assert detail["learning_work"]["material_sources"]["targets_by_origin"]["a"] > 0
+    # Fewer candidates than the teacher's requested count are preserved as an
+    # observed shortfall, never silently topped up or treated as learning failure.
+    assert AuthorTeacher.selection_seen["jobs"][0]["expected_items"] == 2
+    assert AuthorTeacher.selection_seen["jobs"][0]["candidate_count"] == 1
+
+
+def test_completed_jobs_reused_after_partial_failure(setup_loop):
+    calls = []
+    def handler(req):
+        task = json.loads(json.loads(req.content)["messages"][1]["content"])["task"]
+        name = task["job"]["id"]
+        calls.append(name)
+        if name == "two" and calls.count("two") == 1:
+            return httpx.Response(503, json={"error": "fixture"})
+        return response(req)
+    settings, service, campaign, engine = configured(setup_loop, handler, pool=AuthorPool(authors=[author()], concurrency=1))
+    engine.run(campaign["id"])
+    assert service.store.campaign(campaign["id"])["status"] == "failed"
+    assert not service.store.query("SELECT id FROM stage_runs WHERE stage='train' AND round_id IN (SELECT id FROM rounds WHERE campaign_id=?)", (campaign["id"],))
+    engine.run(campaign["id"])
+    assert service.store.campaign(campaign["id"])["status"] == "complete"
+    assert calls == ["one", "two", "two"]
+    rid = service.snapshot(campaign["id"])["round"]["id"]
+    assert job_work(service.store, rid)["calls"] == 3
+
+
+def test_concurrency_respects_global_author_and_shared_pools_without_head_blocking(setup_loop):
+    class ParallelTeacher(AuthorTeacher):
+        jobs = [("one", "a"), ("two", "b"), ("three", "a"), ("four", "c")]
+    running = set()
+    peak, pool_peak, seen_independent = 0, 0, False
+    async def handler(req):
+        nonlocal peak, pool_peak, seen_independent
+        task = json.loads(json.loads(req.content)["messages"][1]["content"])["task"]
+        jid, aid = task["job"]["id"], task["job"]["author_id"]
+        running.add((jid, aid))
+        peak = max(peak, len(running))
+        pool_peak = max(pool_peak, sum(a in {"a", "b"} for _, a in running))
+        seen_independent |= aid == "c" and len(running) == 2
+        await asyncio.sleep(.03)
+        running.remove((jid, aid))
+        return response(req)
+    pool = AuthorPool(authors=[author("a", resource_pool="gpu"), author("b", resource_pool="gpu"), author("c")], resource_limits={"gpu": 1}, concurrency=2)
+    _, service, campaign, engine = configured(setup_loop, handler, teacher=ParallelTeacher, pool=pool)
+    engine.run(campaign["id"])
+    assert service.store.campaign(campaign["id"])["status"] == "complete"
+    assert peak == 2 and pool_peak == 1 and seen_independent
+
+
+@pytest.mark.parametrize("status,kind", [(429, "rate_limit"), (402, "quota")])
+def test_quota_wait_preserves_material_plan(setup_loop, status, kind):
+    _, service, campaign, engine = configured(setup_loop, lambda req: httpx.Response(status, headers={"retry-after": "31"}))
+    engine.run(campaign["id"])
+    assert service.store.campaign(campaign["id"])["status"] == "waiting"
+    assert service.store.one("SELECT COUNT(*) AS n FROM material_jobs WHERE status='waiting'")["n"]
+    assert not service.store.query("SELECT * FROM stage_runs WHERE stage='material_select'")
+
+
+def test_cancellation_closes_outstanding_calls_and_records_uncertain_usage(setup_loop):
+    started = 0
+    closed = 0
+    async def handler(req):
+        nonlocal started, closed
+        started += 1
+        try:
+            await asyncio.sleep(10)
+        finally:
+            closed += 1
+        return response(req)
+    _, service, campaign, engine = configured(setup_loop, handler)
+    engine.run(campaign["id"], controls=lambda: started >= 2)
+    assert closed == started == 2
+    assert service.store.campaign(campaign["id"])["status"] == "stopped"
+    assert all(r["status"] == "cancelled" for r in service.store.query("SELECT status FROM material_calls"))
+
+
+def test_budget_reservation_is_atomic_across_concurrent_calls(setup_loop):
+    count = 0
+    def handler(req):
+        nonlocal count
+        count += 1
+        return httpx.Response(503)
+    pool = AuthorPool(authors=[author()], max_output_tokens_per_round=1024)
+    _, service, campaign, engine = configured(setup_loop, handler, pool=pool)
+    engine.run(campaign["id"])
+    engine.run(campaign["id"])
+    engine.run(campaign["id"])
+    assert count == 2
+    assert service.store.campaign(campaign["id"])["status"] == "waiting"
+    assert service.store.one("SELECT SUM(reserved_tokens) AS n FROM material_calls")["n"] == 1024
+
+
+@pytest.mark.parametrize("fault", ["length", "json", "source"])
+def test_invalid_outputs_are_saved_but_never_trained(setup_loop, fault):
+    def handler(req):
+        d = response(req).json()
+        if fault == "length": d["choices"][0]["finish_reason"] = "length"
+        elif fault == "json": d["choices"][0]["message"]["content"] = "not JSON"
+        else:
+            batch = json.loads(d["choices"][0]["message"]["content"])
+            batch["rows"][0]["source_keys"] = ["invented"]
+            d["choices"][0]["message"]["content"] = json.dumps(batch)
+        return httpx.Response(200, json=d)
+    _, service, campaign, engine = configured(setup_loop, handler)
+    engine.run(campaign["id"])
+    assert service.store.campaign(campaign["id"])["status"] == "failed"
+    assert service.store.one("SELECT artifact FROM material_calls WHERE artifact IS NOT NULL")
+    assert not FakeModel.datasets
+
+
+def test_teacher_can_omit_all_candidates_and_disable_training(setup_loop):
+    class Diagnostic(AuthorTeacher):
+        def select_materials(self, manifest):
+            d = super().select_materials(manifest)
+            d.update(accepted_jobs=[], train_epochs=0, token_mix={"teacher": 0, "corpus": 0, "replay": 0})
+            return d
+    _, service, campaign, engine = configured(setup_loop, teacher=Diagnostic)
+    engine.run(campaign["id"])
+    detail = service.snapshot(campaign["id"])["round"]
+    assert detail["status"] == "complete" and detail["checkpoint"] == detail["model_before"]
+    assert not any(r["use_for_training"] for r in detail["materials"])
+
+
+def test_local_endpoint_options_are_independent_and_registry_is_frozen(setup_loop):
+    settings, service, original, _ = setup_loop
+    pool = AuthorPool(authors=[author(location="local", options={"temperature": .3})])
+    settings.material_authors_path.write_text(pool.model_dump_json())
+    c = service.create("Default registry", CampaignConfig(student_model=original["config"]["student_model"]))
+    settings.material_authors_path.write_text(AuthorPool().model_dump_json())
+    assert c["config"]["material_authors"]["authors"][0]["location"] == "local"
+    assert c["config"]["material_authors"]["authors"][0]["options"] == {"temperature": .3}
+
+
+def test_dotenv_credentials_are_not_shell_evaluated_or_overwritten(tmp_path, monkeypatch):
+    path = tmp_path/".env"
+    path.write_text('DEEPSEEK_API_KEY="literal-$(do-not-run)" # comment\nOTHER=hidden\n')
+    monkeypatch.delenv("DEEPSEEK_API_KEY", raising=False)
+    assert credential("DEEPSEEK_API_KEY", path) == "literal-$(do-not-run)"
+    monkeypatch.setenv("DEEPSEEK_API_KEY", "environment-value")
+    assert credential("DEEPSEEK_API_KEY", path) == "environment-value"
+
+
+def test_transport_never_persists_echoed_credentials(setup_loop, monkeypatch):
+    monkeypatch.setenv("FIXTURE_AUTHOR_KEY", "fixture-secret-should-not-be-in-artifacts")
+    def handler(req):
+        assert req.headers["authorization"] == "Bearer fixture-secret-should-not-be-in-artifacts"
+        d = response(req).json();d["echo"] = "fixture-secret-should-not-be-in-artifacts"
+        return httpx.Response(200, json=d)
+    settings, service, campaign, engine = configured(setup_loop, handler, pool=AuthorPool(authors=[author(api_key_env="FIXTURE_AUTHOR_KEY")]))
+    engine.run(campaign["id"])
+    assert service.store.campaign(campaign["id"])["status"] == "failed"
+    for p in settings.workspace.rglob('*'):
+        if p.is_file(): assert b"fixture-secret-should-not-be-in-artifacts" not in p.read_bytes()
+
+
+def test_teacher_can_edit_exact_candidates_and_preserve_originals(setup_loop):
+    class Editing(AuthorTeacher):
+        def select_materials(self, manifest):
+            d = super().select_materials(manifest)
+            d.update(accepted_jobs=[], seed_exclusions=["l1"], edits=[{"candidate_id": manifest["candidate_preview"][0]["id"], "replacement": {
+                "id": "edited", "kind": "cpt", "concept": "Teacher correction", "training_tokenization": "full_text",
+                "training_text": "An exact teacher replacement.", "rationale": "Corrected by primary teacher", "source_keys": [], "seed_ids": []}}])
+            return d
+    _, service, campaign, engine = configured(setup_loop, teacher=Editing)
+    engine.run(campaign["id"])
+    detail = service.snapshot(campaign["id"])["round"]
+    assert detail["status"] == "complete"
+    chosen = [r for r in detail["materials"] if r["use_for_training"]]
+    assert len(chosen) == 1 and chosen[0]["teacher"] == "An exact teacher replacement."
+    assert chosen[0]["material_origin"]["teacher_edited"] is True
+    assert not next(r for r in detail["lessons"] if r["id"] == "l1")["use_for_training"]
+    original = service.artifacts.get(chosen[0]["material_origin"]["response_artifact"])
+    assert "An exact teacher replacement." not in json.dumps(original)
+
+
+def test_unknown_selection_cannot_enter_frozen_data(setup_loop):
+    class Invalid(AuthorTeacher):
+        def select_materials(self, manifest):
+            d = super().select_materials(manifest)
+            d["accepted_ids"] = ["nonexistent"]
+            return d
+    _, service, campaign, engine = configured(setup_loop, teacher=Invalid)
+    engine.run(campaign["id"])
+    assert service.store.campaign(campaign["id"])["status"] == "failed"
+    assert not FakeModel.datasets
+
+
+def test_request_deadline_saves_failure_without_fake_completion(setup_loop):
+    async def handler(req):
+        await asyncio.sleep(3)
+        return response(req)
+    _, service, campaign, engine = configured(setup_loop, handler, pool=AuthorPool(authors=[author(timeout_seconds=1)]))
+    engine.run(campaign["id"])
+    assert service.store.campaign(campaign["id"])["status"] == "failed"
+    assert "TimeoutError" in service.store.campaign(campaign["id"])["error"]
+    assert not service.store.query("SELECT id FROM material_jobs WHERE status='complete'")
+
+
+def test_material_api_pagination_has_no_content_cutoff(setup_loop):
+    from fastapi.testclient import TestClient
+    from nekaise_loop.api import create_app
+    settings, service, campaign, engine = configured(setup_loop)
+    engine.run(campaign["id"])
+    detail = service.snapshot(campaign["id"])["round"]
+    originals = detail["materials"]
+    rows = [{**originals[0], "id": f"material-{n}"} for n in range(45)]
+    service.store.execute("DELETE FROM records WHERE round_id=? AND kind='material'", (detail["id"],))
+    service.store.put_records(detail["id"], "material", rows)
+    client = TestClient(create_app(settings))
+    initial = client.get(f"/api/rounds/{detail['id']}").json()
+    assert initial["material_count"] == 45 and len(initial["materials"]) == 20
+    page = client.get(f"/api/rounds/{detail['id']}/materials?offset=20&limit=20").json()
+    assert page["next_offset"] == 40 and page["rows"][0]["id"] == "material-20"
+    last = client.get(f"/api/rounds/{detail['id']}/materials?offset=40&limit=20").json()
+    assert len(last["rows"]) == 5 and last["next_offset"] is None
+
+
+def test_malformed_envelope_and_missing_usage_preserve_evidence(setup_loop):
+    _, service, campaign, engine = configured(setup_loop, lambda req: httpx.Response(200, content=b"bad body"))
+    engine.run(campaign["id"])
+    raw = service.store.one("SELECT artifact FROM material_calls WHERE artifact IS NOT NULL")
+    assert service.artifacts.get(raw["artifact"])["response"]["raw_body"] == "bad body"
+    assert service.store.campaign(campaign["id"])["status"] == "failed"
+
+
+def test_local_serving_endpoint_uses_real_http_transport(setup_loop):
+    from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+    from threading import Thread
+    paths = []
+    class Handler(BaseHTTPRequestHandler):
+        def do_POST(self):
+            paths.append(self.path)
+            body = self.rfile.read(int(self.headers['Content-Length']))
+            payload = response(httpx.Request('POST', 'http://fixture.invalid', content=body)).content
+            self.send_response(200)
+            self.send_header('Content-Type', 'application/json')
+            self.send_header('Content-Length', str(len(payload)))
+            self.end_headers()
+            self.wfile.write(payload)
+        def log_message(self, *args):
+            pass
+    server = ThreadingHTTPServer(('127.0.0.1', 0), Handler)
+    thread = Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        local = author(location='local').model_copy(update={'base_url': f'http://127.0.0.1:{server.server_port}/v1'})
+        _, service, campaign, engine = configured(setup_loop, pool=AuthorPool(authors=[local]))
+        engine.material_client_factory = None
+        engine.run(campaign['id'])
+        assert service.store.campaign(campaign['id'])['status'] == 'complete'
+        assert paths == ['/v1/chat/completions', '/v1/chat/completions']
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=2)
+
+
+def test_distinct_job_candidate_pairs_cannot_collapse_during_selection(setup_loop):
+    class DistinctJobs(AuthorTeacher):
+        jobs = [("a-b", "a"), ("a", "a")]
+
+    def handler(request):
+        envelope = response(request).json()
+        task = json.loads(json.loads(request.content)["messages"][1]["content"])["task"]
+        batch = json.loads(envelope["choices"][0]["message"]["content"])
+        batch["rows"][0]["id"] = "c" if task["job"]["id"] == "a-b" else "b-c"
+        envelope["choices"][0]["message"]["content"] = json.dumps(batch)
+        return httpx.Response(200, json=envelope)
+
+    _, service, campaign, engine = configured(setup_loop, handler, teacher=DistinctJobs)
+    engine.run(campaign["id"])
+    assert service.store.campaign(campaign["id"])["status"] == "complete"
+    rows = service.snapshot(campaign["id"])["round"]["materials"]
+    assert len(rows) == 2
+    assert len({row["id"] for row in rows}) == 2
+    assert len({row["material_origin"]["job_id"] for row in rows}) == 2
+    assert all(row["use_for_training"] for row in rows)

@@ -6,21 +6,48 @@ import json
 import random
 from pathlib import Path
 
+from .serialization import chat_training
+
 
 def training_code_hash():
-    return hashlib.sha256((Path(__file__).parent / "workers/model.py").read_bytes() + Path(__file__).read_bytes()).hexdigest()
+    return hashlib.sha256((Path(__file__).parent / "workers/model.py").read_bytes()
+        + Path(__file__).read_bytes() + (Path(__file__).parent / "serialization.py").read_bytes()).hexdigest()
 
 
 def group_for(stream):
     return "teacher" if stream in {"cpt", "sft"} else stream
 
 
-def prepare_dataset(rows, tokenizer, config):
+def training_ids(row, tokenizer, eos_ids=None):
+    """Apply the recorded teacher choice without changing text or loss masking."""
+    mode = row.get("training_tokenization", "full_text")
+    if mode == "full_text":
+        return tokenizer.encode(row["text"], add_special_tokens=True)
+    if mode == "chat_response":
+        return chat_training(row, tokenizer, eos_ids or [tokenizer.eos_token_id])[0]
+    if mode != "prompt_prefix":
+        raise ValueError(f"Unknown training tokenization: {mode}")
+    prefix = row.get("training_prompt")
+    if not isinstance(prefix, str) or not prefix or not row["text"].startswith(prefix):
+        raise ValueError("prompt_prefix requires a nonempty exact training text prefix")
+    # Match generation's special-token handling only on the prompt. Encoding the
+    # suffix separately prevents BPE merges across the chosen response boundary.
+    return (tokenizer.encode(prefix, add_special_tokens=True)
+            + tokenizer.encode(row["text"][len(prefix):], add_special_tokens=False))
+
+
+def prepare_dataset(rows, tokenizer, config, eos_ids=None):
     groups = {name: [] for name in ("teacher", "corpus", "replay")}
+    serialized_rows = []
     for row in rows:
         group = group_for(row["stream"])
-        ids = tokenizer.encode(row["text"], add_special_tokens=True)
-        if not ids or ids[-1] != tokenizer.eos_token_id:
+        chat = row.get("training_tokenization") == "chat_response"
+        if chat:
+            ids, row = chat_training(row, tokenizer, eos_ids or [tokenizer.eos_token_id])
+        else:
+            ids = training_ids(row, tokenizer)
+        serialized_rows.append(row)
+        if not chat and (not ids or ids[-1] != tokenizer.eos_token_id):
             ids.append(tokenizer.eos_token_id)
         # Overlap one conditioning token within an example; never across examples.
         for start in range(0, max(0, len(ids)-1), config["max_seq_len"]-1):
@@ -52,7 +79,7 @@ def prepare_dataset(rows, tokenizer, config):
                         "requested_share": requested[name], "effective_share": shares[name],
                         "repeated_tokens": max(0, targets[name]-available[name])}
     rng.shuffle(samples)
-    return {"rows": rows, "samples": samples, "ledger": {"basis": "causal_loss_tokens_including_eos", "anchor_stream": anchor, "streams": ledger, "total_tokens": sum(targets.values()), "missing_streams": [k for k in groups if requested[k] and not available[k]]}}
+    return {"rows": serialized_rows, "samples": samples, "ledger": {"basis": "causal_loss_tokens_including_eos", "anchor_stream": anchor, "streams": ledger, "total_tokens": sum(targets.values()), "missing_streams": [k for k in groups if requested[k] and not available[k]]}}
 
 
 def update_batches(samples, tokens_per_update, epochs, seed, step_limit=0):

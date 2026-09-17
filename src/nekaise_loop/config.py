@@ -6,10 +6,11 @@ from pathlib import Path
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from .author_config import AuthorPool
 
 ROOT = Path(__file__).resolve().parents[2]
-STAGES = ("select", "plan", "draft", "revise", "gate", "freeze", "train", "evaluate", "answer", "grade", "adapt")
-STAGE_LABELS = dict(zip(STAGES, ("Teacher curriculum", "Prepare teacher tasks", "Student attempts", "Teacher revisions", "Teacher training choices", "Freeze dataset", "Train student", "Teacher assessment design", "Student evaluation", "Teacher judgment", "Teacher reflection & next steps")))
+STAGES = ("select", "plan", "draft", "revise", "expand", "material_select", "gate", "freeze", "train", "evaluate", "answer", "grade", "adapt")
+STAGE_LABELS = dict(zip(STAGES, ("Teacher curriculum", "Prepare teacher tasks", "Student attempts", "Teacher revisions", "Material authors", "Teacher material selection", "Teacher training choices", "Freeze dataset", "Train student", "Teacher assessment design", "Student evaluation", "Teacher judgment", "Teacher reflection & next steps")))
 
 
 class TokenMix(BaseModel):
@@ -28,8 +29,10 @@ class TokenMix(BaseModel):
 class CampaignConfig(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
     student_model: str = Field(default="openbmb/MiniCPM5-1B-Base", min_length=1, max_length=500)
+    student_format: Literal["raw_text", "chat_template"] = Field(default="raw_text", description="raw_text preserves literal continuation; chat_template uses the checkpoint's native single-user, no-thinking assistant prefix")
     teacher_provider: Literal["claude", "codex"] = "codex"
     teacher_model: str = Field(default="gpt-5.6-terra", min_length=1, max_length=150)
+    material_authors: AuthorPool = Field(default_factory=AuthorPool, description="Frozen author registry and execution allowances; teacher chooses whether and what to delegate")
     corpus_path: str = "../nekaise-corpus"
     focus: str = Field(default="building energy heat transfer", min_length=1, max_length=240)
     source_prefix: str = Field(default="crawl-energyplus-docs", max_length=150, description="Initial search suggestion, not a corpus restriction")
@@ -45,11 +48,15 @@ class CampaignConfig(BaseModel):
     token_mix: TokenMix = Field(default_factory=TokenMix)
     max_seq_len: int = Field(default=512, ge=64, le=4096)
     max_new_tokens: int = Field(default=192, ge=16, le=1024)
+    generation_batch_size: int = Field(default=4, ge=1, le=32, description="Maximum independent prompts per inference batch; does not choose teaching task counts")
+    generation_batch_tokens: int = Field(default=8192, ge=128, le=262144, description="Maximum padded prompt plus reserved completion token positions per inference batch")
+    workload_guidance: str = Field(default="", max_length=2000, description="Operator preference for useful training work and feedback granularity; the teacher chooses material, dose and diagnostic exceptions")
     passage_chars: int = Field(default=2400, ge=400, le=6000)
     replay_fraction: float = Field(default=0.2, ge=0, le=0.5)
     max_stage_seconds: int = Field(default=900, ge=30, le=7200)
     max_teacher_calls: int = Field(default=-1, ge=-1, le=2000, description="-1 has no local call cap; Resume renews a positive allowance")
     auto_recover: bool = True
+    manage_history: bool = True
     teacher_retry_seconds: int = Field(default=1800, ge=30, le=86400)
     orchestrator_provider: Literal["codex", "claude"] = "codex"
     orchestrator_model: str = Field(default="gpt-6-astra", min_length=1, max_length=150)
@@ -64,7 +71,7 @@ class CampaignConfig(BaseModel):
             raise ValueError("Use -1 for unlimited, or a positive number")
         return value
 
-    @field_validator("student_model", "teacher_model", "orchestrator_model", "corpus_path", "focus", "source_prefix")
+    @field_validator("student_model", "teacher_model", "orchestrator_model", "corpus_path", "focus", "source_prefix", "workload_guidance")
     @classmethod
     def no_control_characters(cls, value: str) -> str:
         if any(ord(c) < 32 for c in value):
@@ -85,6 +92,7 @@ class Settings:
         installed = self.workspace == ROOT/"workspace" and (Path.home()/".config/systemd/user"/unit).is_file()
         self.supervisor_service = os.environ.get("NEKAISE_LOOP_SUPERVISOR_SERVICE", unit if installed else "")
         self.dashboard = ROOT / "dashboard/dist"
+        self.material_authors_path = self.workspace / "material-authors.json"
 
 
 def resolve_student(reference: str) -> str:

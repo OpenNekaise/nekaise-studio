@@ -40,6 +40,69 @@ def latest_strategy(workspace, campaign_id):
         return {}
 
 
+def operational_context(workspace, campaign_id):
+    """Supply applied operations alongside, without rewriting, teaching notes.
+
+    Pending proposals and decisions applied to sibling continuations are not a
+    handoff to this campaign. All reports remain separately accessible.
+    """
+    requests = operator_review_requests(workspace, campaign_id)
+    with archive(workspace) as db:
+        campaign = db.execute("SELECT operator_hold FROM campaigns WHERE id=?", (campaign_id,)).fetchone()
+        action = db.execute("SELECT id,kind,actor,reason,handled_at FROM actions WHERE campaign_id=? ORDER BY id DESC LIMIT 1", (campaign_id,)).fetchone()
+        latest, visited, child_id = None, set(), None
+        while campaign_id and campaign_id not in visited:
+            visited.add(campaign_id)
+            row = db.execute("""SELECT id,campaign_id,status,decision,continuation_id,updated_at
+                FROM recoveries WHERE campaign_id=? AND status='resolved' AND decision IS NOT NULL
+                AND (continuation_id IS NULL OR continuation_id=?) ORDER BY id DESC LIMIT 1""",
+                (campaign_id, child_id)).fetchone()
+            if row and (latest is None or row["id"] > latest["id"]):
+                latest = dict(row)
+                latest["decision"] = json.loads(latest["decision"])
+            parent = db.execute("SELECT parent_campaign_id FROM campaigns WHERE id=?", (campaign_id,)).fetchone()
+            child_id, campaign_id = campaign_id, parent["parent_campaign_id"] if parent else None
+    return {"operator_hold": campaign["operator_hold"] if campaign else None,
+            "latest_action": dict(action) if action else None, "latest_applied_review": latest,
+            "operator_review_requests": requests}
+
+
+def operator_review_requests(workspace, campaign_id):
+    """Retain exact operator investigation requests across the ancestor chain.
+
+    Queue handling or recovery resolution is not evidence that an investigation
+    succeeded. Keep original requests available and let reports explain their
+    outcomes; this read never clears a hold or queues execution.
+    """
+    requests, visited = [], set()
+    with archive(workspace) as db:
+        while campaign_id and campaign_id not in visited:
+            visited.add(campaign_id)
+            requests.extend(dict(row) for row in db.execute("""SELECT id,campaign_id,kind,actor,reason,created_at,handled_at
+                FROM actions WHERE campaign_id=? AND actor='operator' AND kind='review' ORDER BY id""", (campaign_id,)))
+            parent = db.execute("SELECT parent_campaign_id FROM campaigns WHERE id=?", (campaign_id,)).fetchone()
+            campaign_id = parent["parent_campaign_id"] if parent else None
+    return {"requests": sorted(requests, key=lambda r: r["id"]),
+            "interpretation": "Historical operator review requests, not new commands. Read their reports for findings and remaining work. Handled commands and resolved recoveries do not establish that an underlying investigation is complete. Later explicit operator controls retain precedence."}
+
+
+def read_report(workspace, request):
+    """Reuse the dashboard report reader over a strictly read-only connection."""
+    from types import SimpleNamespace
+    from .reports import catalog, detail
+    with archive(workspace) as db:
+        def rows(sql, args=()):
+            return [dict(row) for row in db.execute(sql, args)]
+        def one(sql, args=()):
+            result = rows(sql, args)
+            return result[0] if result else None
+        service = SimpleNamespace(settings=SimpleNamespace(workspace=Path(workspace)),
+                                  store=SimpleNamespace(query=rows, one=one))
+        if request["op"] == "report":
+            return detail(service, int(request["recovery_id"]))
+        return catalog(service, before=request.get("before"), limit=int(request.get("limit", 20)))
+
+
 def replay_lesson(workspace, round_id, lesson_id):
     with archive(workspace) as db:
         row = db.execute("SELECT artifact FROM stage_runs WHERE round_id=? AND stage='gate' AND status='complete' ORDER BY attempt DESC LIMIT 1", (round_id,)).fetchone()
@@ -48,7 +111,19 @@ def replay_lesson(workspace, round_id, lesson_id):
     lessons = Artifacts(Path(workspace)).get(row["artifact"])["lessons"]
     for lesson in lessons:
         if lesson["id"] == lesson_id:
-            return {**lesson, "origin_round_id": round_id, "origin_artifact": row["artifact"]}
+            result = {**lesson, "origin_round_id": round_id, "origin_artifact": row["artifact"]}
+            if lesson.get("training_tokenization") == "chat_response":
+                # The diagnostic prompt may have used raw text. Bind replay to
+                # the template actually used for training, not that prompt's mode.
+                with archive(workspace) as db:
+                    frozen = db.execute("SELECT artifact FROM stage_runs WHERE round_id=? AND stage='freeze' AND status='complete' ORDER BY attempt DESC LIMIT 1", (round_id,)).fetchone()
+                rows = Artifacts(Path(workspace)).get(frozen["artifact"])["rows"] if frozen else []
+                trained = next((r for r in rows if r["id"] == lesson_id and r["stream"] in {"cpt", "sft"}), None)
+                if trained is None:
+                    raise ValueError("Chat replay requires a frozen training row; re-author an unprepared lesson explicitly")
+                result["training_template_sha256"] = trained["serialization"]["template_sha256"]
+                result["origin_freeze_artifact"] = frozen["artifact"]
+            return result
     raise ValueError(f"Unknown lesson {round_id}/{lesson_id}")
 
 
@@ -67,13 +142,32 @@ def query(context, request):
             "metrics": "Actual optimizer metrics; optional round_id; offset/limit",
             "events": "Activity and failures; optional campaign_id; offset/limit",
             "calls": "Teacher call metadata; optional campaign_id; offset/limit; full prompts/results in runs/",
+            "log_summaries": "Orchestrator summaries and recovery locations of cleaned raw logs; offset/limit",
+            "reports": "All operational reports including proposals and outcomes; limit/before; follow next_before",
+            "report": "Full operational report, decision turns, host checks and outcomes: recovery_id",
             "artifact": "Read immutable JSON: hash",
+            "material_candidates": "Read all exact material-author candidates: round_id, offset/limit, optional candidate_id; full sources and provenance included",
+            "author_jobs": "All material-author jobs including partial failures; optional round_id, author_id; offset/limit; saved input/result artifact hashes",
+            "author_calls": "Material-author attempts, reservations, reported usage and response artifact hashes; optional round_id; offset/limit",
             "lesson": "Read a historical teacher lesson: round_id, lesson_id",
             "sources": "Search the entire corpus: query, optional prefix, offset/limit (prefix hint is not a restriction)",
             "source": "Read verified source: document_id, start (default 0), length (0=all)"
-        }, "current_campaign_id": context["campaign_id"], "workspace": str(workspace), "corpus_path": context["corpus_path"], "latest_strategy": latest_strategy(workspace, context["campaign_id"])}
+        }, "current_campaign_id": context["campaign_id"], "workspace": str(workspace), "corpus_path": context["corpus_path"], "latest_strategy": latest_strategy(workspace, context["campaign_id"]), "operational_context": operational_context(workspace, context["campaign_id"])}
+    if op in {"reports", "report"}:
+        return read_report(workspace, request)
     if op == "artifact":
         return Artifacts(workspace).get(request["hash"])
+    if op == "material_candidates":
+        with archive(workspace) as db:
+            stage = db.execute("SELECT artifact FROM stage_runs WHERE round_id=? AND stage='expand' AND status='complete' ORDER BY id DESC LIMIT 1", (request["round_id"],)).fetchone()
+        if not stage:
+            raise ValueError("No completed material expansion for this round")
+        result = Artifacts(workspace).get(stage["artifact"])
+        rows = result["candidates"]
+        if request.get("candidate_id"):
+            rows = [r for r in rows if r["id"] == request["candidate_id"]]
+        return {"manifest_hash": result["manifest_hash"], "rows": rows[offset:offset+limit],
+                "next_offset": offset+limit if offset+limit < len(rows) else None, "total": len(rows)}
     if op == "lesson":
         return replay_lesson(workspace, request["round_id"], request["lesson_id"])
     if op == "sources":
@@ -87,7 +181,10 @@ def query(context, request):
         "stages": ("stage_runs x", "x.*", "x.id DESC", {"round_id":"x.round_id"}),
         "metrics": ("metrics x", "x.*", "x.id DESC", {"round_id":"x.round_id"}),
         "events": ("events x", "x.*", "x.id DESC", {"campaign_id":"x.campaign_id"}),
-        "calls": ("teacher_calls x", "x.*", "x.id DESC", {"campaign_id":"x.campaign_id"})
+        "calls": ("teacher_calls x", "x.*", "x.id DESC", {"campaign_id":"x.campaign_id"}),
+        "author_jobs": ("material_jobs x", "x.*", "x.created_at DESC,x.id", {"round_id":"x.round_id", "author_id":"x.author_id"}),
+        "author_calls": ("material_calls x JOIN material_jobs j ON x.job_id=j.id", "x.*,j.round_id,j.author_id", "x.id DESC", {"round_id":"j.round_id"}),
+        "log_summaries": ("log_cleanup x", "x.*", "x.id DESC", {})
     }
     if op not in specs:
         raise ValueError(f"Unknown archive operation: {op}")
@@ -101,9 +198,14 @@ def query(context, request):
         where.append("x.data LIKE ?")
         args.append("%"+request["query"]+"%")
     with archive(workspace) as db:
+        if op in {"author_jobs", "author_calls"} and not db.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='material_jobs'").fetchone():
+            return {"rows": [], "next_offset": None}
         rows = [dict(r) for r in db.execute(f"SELECT {columns} FROM {table} WHERE {' AND '.join(where) or '1'} ORDER BY {order} LIMIT ? OFFSET ?", (*args, limit+1, offset))]
     more = len(rows)>limit
     for row in rows[:limit]:
+        if op == 'rounds' and row.get('checkpoint'):
+            from .checkpoint_retention import receipt
+            row['checkpoint_retention'] = receipt(Path(row['checkpoint']))
         for key in ("config", "data", "usage"):
             if key in row:
                 row[key] = json.loads(row[key])

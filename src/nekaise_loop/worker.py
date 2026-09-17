@@ -42,25 +42,42 @@ def _run_worker(settings):
                 stop_owned(stage["process_pid"], stage["process_start"])
             store.execute("UPDATE stage_runs SET status='interrupted',error='Worker stopped before completing this stage',finished_at=?,process_pid=NULL,process_start=NULL WHERE id=?", (now(), stage["id"]))
         store.execute("UPDATE rounds SET status='interrupted' WHERE status='running'")
-        # A queued explicit start survives a restart. In-flight work needs Resume.
+        # A queued start survives a restart. Explicit holds survive a consumed
+        # command too, including a crash before the status update was persisted.
         for campaign in store.query("SELECT * FROM campaigns WHERE status IN ('running','pausing','stopping')"):
             pending = store.one("SELECT id FROM actions WHERE campaign_id=? AND handled_at IS NULL", (campaign["id"],))
             if pending:
+                continue
+            if campaign["operator_hold"]:
+                store.set_status(campaign["id"], "paused" if campaign["operator_hold"] == "pause" else "stopped")
                 continue
             store.set_status(campaign["id"], "interrupted", "Worker exited before completing the campaign")
             if CampaignConfig.model_validate_json(campaign["config"]).auto_recover:
                 store.recover(campaign["id"], "worker_exit", "Worker exited before completing the campaign")
         for campaign in store.query("SELECT id FROM campaigns WHERE status='queued'"):
             if not store.one("SELECT id FROM actions WHERE campaign_id=? AND handled_at IS NULL", (campaign["id"],)):
-                store.execute("INSERT INTO actions(campaign_id,kind,created_at) VALUES(?,'resume',?)", (campaign["id"], now()))
+                store.execute("INSERT INTO actions(campaign_id,kind,created_at,actor) VALUES(?,'resume',?,'supervisor')", (campaign["id"], now()))
         while not closing[0]:
             action = store.one("SELECT * FROM actions WHERE handled_at IS NULL ORDER BY id LIMIT 1")
             if not action:
                 return
             store.execute("UPDATE actions SET handled_at=? WHERE id=?", (now(), action["id"]))
             campaign_id = action["campaign_id"]
+            if action["kind"] == "review":
+                store.recover(campaign_id, "status_review", action["reason"] or "Operator requested an orchestrator review")
+                continue
             if action["kind"] not in {"start", "resume"}:
                 store.set_status(campaign_id, "paused" if action["kind"] == "pause" else "stopped")
+                continue
+            if store.operator_cancelled(campaign_id):
+                hold = store.campaign(campaign_id)["operator_hold"]
+                if hold:
+                    store.set_status(campaign_id, "paused" if hold == "pause" else "stopped")
+                continue
+            # An old queued start/resume cannot cross a newer review handoff,
+            # including queues persisted by earlier controller implementations.
+            if (store.one("SELECT id FROM actions WHERE campaign_id=? AND kind='review' AND handled_at IS NULL", (campaign_id,))
+                    or store.one("SELECT id FROM recoveries WHERE campaign_id=? AND status IN ('pending','running','waiting','decided')", (campaign_id,))):
                 continue
             stop_requested, pause_requested = [False], [False]
             def controls():

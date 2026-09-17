@@ -3,17 +3,36 @@
 Design updated after user direction — 2026-09-14. Initial draft discussed with Claude Code (Fable 5.1).
 
 A framework for improving a small language model by adapting training to its measured
-weaknesses. Start with `openbmb/MiniCPM5-1B-Base`, as configured in the existing studio.
+weaknesses. The original lineage starts with `openbmb/MiniCPM5-1B-Base`. A separate
+`openbmb/MiniCPM5-1B-SFT` campaign uses its native single-turn no-thinking interface and
+fresh optimizer, preserving Base history for teacher-led comparison. These are explicit
+starting-point choices, not a prescribed CPT/SFT training sequence.
 Two separate roles use coding-agent transports: the teacher (default GPT-5.6 Terra)
 teaches and diagnoses; the orchestrator (default GPT-6 Astra) handles interruptions and
 repairs execution. A simple supervisor schedules workers and availability retries. Codex
 and Claude Code are implemented transports; OpenCode remains an extension. Training tools
 perform the weight updates. `rounds=-1` means continuous learning. Quota exhaustion is
 a normal wait; other faults wake the orchestrator after training is quiescent.
+The orchestrator decides how to recover, including when to validate, continue, wait or
+pause. Host validation results return to it as evidence for its next decision. Preserve
+reports of its investigation, repairs, observations and decisions.
+It also reviews run history and training logs, decides what to keep, archive or clean up,
+and leaves reports and useful log summaries. Routine reviews happen between completed
+rounds at an interval it selects. Archived teaching history remains accessible.
+Studio is the default homepage, with training usage and teacher-assessment charts. The
+Report tab presents operational status and decisions. The orchestrator also reads
+the report archive and makes operational decisions without a user approval step. Agent
+waits and pauses schedule its next review; explicit user pause/stop remains an override.
+
+**CoAPT Mid-training** is this project's unified name for **CPT + SFT** and the current
+development focus. Unless qualified, training means this shared path; CPT and SFT are
+distinguished only within recipes, material composition and provenance. **CoAPT
+Post-training** is the collective name for the planned **RL + OPD** mechanisms. Their
+concrete implementation is deferred. See [the terminology contract](docs/COAPT.md#project-terminology-and-current-scope).
 
 ```mermaid
 flowchart LR
-    P[Prepare dataset using CoAPT] --> T[Train student]
+    P[Prepare CoAPT teaching material] --> T[CoAPT Mid-training]
     T --> E[Teacher creates online evaluation]
     E --> G[Record knowledge and capability gaps]
     G --> P
@@ -27,22 +46,20 @@ initial assessment of the base student. A fixed benchmark is not required to sta
 authority and access to all teaching history; it chooses both the curriculum and how
 much of that history to consult. The executable teaching contract is [docs/COAPT.md](docs/COAPT.md).
 
-1. **Prepare data through CoAPT (Co-Adaptive Pretraining and Tuning).** The teacher
+1. **Prepare CoAPT Mid-training material.** The teacher
    consults all teaching history, selects sources from the eligible, cleaned corpus or
    authors its own tasks, observes the student's attempts, and writes corrected teaching
    text. It decides which examples enter training, the raw reading/review material,
    token shares and dataset passes. Preserve sources, decisions and actual attempts.
    No second semantic validation overrides the teacher.
 
-   **CPT (continued pretraining):** the student drafts a continuation or explanation;
-   the teacher corrects it into supported teaching prose. **SFT (supervised fine-tuning):**
-   the teacher creates a question, chooses what context the student sees, and corrects
-   its answer. In both, the student's mistakes inform the next lesson. The teacher can
-   also choose reading-only, review-only or diagnostic rounds.
+   The student drafts explanations or answers teacher-authored questions, with context
+   chosen by the teacher. Corrections become teaching material in the shared recipe;
+   the student's mistakes inform the next lesson. The teacher can also choose
+   reading-only, review-only or diagnostic rounds.
 
-2. **Train the student.** Freeze the CPT/SFT datasets and train from the retained
-   checkpoint under a recorded recipe and budget. The proposed on-policy stage below
-   fixes its task curriculum while refreshing student rollouts. Mix targeted lessons,
+2. **Run CoAPT Mid-training.** Freeze the combined dataset and train from the retained
+   checkpoint under a recorded recipe and budget. Mix targeted lessons,
    broader corpus coverage, and previous material to limit forgetting. Save checkpoint lineage.
 
 3. **Create an online evaluation and diagnose.** After training, the teacher generates
@@ -78,6 +95,13 @@ Readable instructions, round files, and CLI tools let another agent resume the l
 Persist stage progress, selection rationale, teaching records, dataset and checkpoint
 identities, evaluations, gap profiles, and checkpoint decisions.
 
+## Future: CoAPT Post-training
+
+CoAPT Post-training groups RL and OPD under the same outer teaching loop. The extension
+notes below preserve design ideas, not implemented capabilities or a required training
+sequence. Current work remains focused on Mid-training; post-training recipes and
+supporting trajectory infrastructure are deferred.
+
 To train **agentic reasoning**, the student itself must practice planning, using tools,
 checking results, and recovering from errors. Begin with short, verifiable domain tasks:
 find parameters in a document, calculate heat transfer, and check units. Give it a
@@ -92,7 +116,7 @@ Grounding now includes source passages, actual tool outputs, and executable chec
   snapshot and regenerate observations; an edited action cannot inherit old results.
   SFT learns verified corrections, with prompts, observations, and earlier erroneous
   actions masked from the loss. Those errors may remain as context for learning recovery.
-- **Add on-policy distillation (OPD).** Within training, repeatedly sample fresh trajectories
+- **Candidate OPD recipe within Post-training.** Within training, repeatedly sample fresh trajectories
   from the current student, ask a frozen teacher scorer for token probabilities on those
   exact student prefixes, update the student, and sample again. A candidate recipe uses
   sampled reverse KL, `KL(student || teacher)`, with a policy-gradient update on
@@ -116,17 +140,17 @@ Grounding now includes source passages, actual tool outputs, and executable chec
   correctness. Longer reasoning text is not a success metric. Feed diagnosed failures
   into new tasks and lessons. Independent benchmark tasks stay in the separate process.
 
-The outer loop stays the same: CoAPT chooses what to teach; trajectory SFT and OPD
-provide behavior-training mechanisms. Extend the saved artifacts with environment
+The outer loop stays the same: the teacher chooses what to teach, with CoAPT Post-training
+as a future training path. Extend the saved artifacts with environment
 versions, trajectories, scoring-model identity, and validation results.
 
 This adapts the [preserved studio CoAPT description](docs/reference/COAPT-upstream-2026-09-14.md) using the existing
-[corpus](../nekaise-corpus/README.md). The current studio mixes prose and QA text in CPT.
-Text rounds can retain that format; role-aware trajectory SFT and OPD are proposed
+[corpus](../nekaise-corpus/README.md). The current studio combines prose and QA supervision
+in CoAPT Mid-training. CoAPT Post-training and role-aware trajectory support are proposed
 additions, with adaptive diagnostics driving the next curriculum.
 
-Implement two complete text rounds with online teacher evaluations first, then verified
-tool-use SFT, then OPD on short tasks. Show that evaluation changes the next curriculum.
-Later, the separate benchmark process can compare OPD with continued SFT at matched total
-budgets, including teacher scoring and student rollout costs. Improved knowledge or
-agentic ability in a 1B student remains an experimental question.
+Focus now on CoAPT Mid-training and demonstrate complete rounds with online teacher
+evaluations that change the next curriculum. CoAPT Post-training is future work. Later,
+the separate benchmark process can compare its recipes with continued Mid-training at
+matched total budgets, including teacher scoring and student rollout costs. Improved
+knowledge or agentic ability in a 1B student remains an experimental question.

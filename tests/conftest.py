@@ -123,7 +123,7 @@ def setup_loop(tmp_path, corpus):
     base = tmp_path/"base-model"
     base.mkdir()
     (base/"model.safetensors").write_bytes(b"TEST FAKE BASE WEIGHTS")
-    config = CampaignConfig(student_model=str(base), corpus_path=str(corpus), rounds=2, lessons_per_round=2, eval_questions=2, train_steps=3, auto_recover=False)
+    config = CampaignConfig(student_model=str(base), corpus_path=str(corpus), rounds=2, lessons_per_round=2, eval_questions=2, train_steps=3, auto_recover=False, manage_history=False)
     service = Service(settings)
     campaign = service.create("Integration test", config)
     engine = Engine(settings, FakeTeacher, FakeModel)

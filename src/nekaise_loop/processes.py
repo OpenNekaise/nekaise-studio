@@ -59,7 +59,7 @@ class ProcessRunner:
             raise ValueError("Invalid process owner table")
         self.table = table
 
-    def run(self, command: list[str], *, cwd: Path, log: Path, timeout: int, stdin: str | None = None, on_message=lambda _: None, env=None) -> str:
+    def run(self, command: list[str], *, cwd: Path, log: Path, timeout: int, stdin: str | None = None, on_message=None, env=None) -> str:
         log.parent.mkdir(parents=True, exist_ok=True)
         with log.open("a") as log_file, tempfile.TemporaryFile() as input_file:
             if stdin is not None:
@@ -92,7 +92,9 @@ class ProcessRunner:
                             output.append(value)
                             if len(output) > 1000:
                                 output = output[-1000:]
-                            if value.startswith("LOOP "):
+                            # Only model transports opt into LOOP events. Agent logs
+                            # may quote the protocol or print its documentation.
+                            if on_message is not None and value.startswith("LOOP "):
                                 on_message(json.loads(value[5:]))
                 if pending:
                     value = pending.decode(errors="replace")

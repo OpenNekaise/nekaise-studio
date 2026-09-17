@@ -19,11 +19,37 @@ teacher-evaluated training loop. Independent benchmarks stay outside the loop an
 become a startup requirement or automatic acceptance gate. The teacher is trusted for
 teaching and curriculum decisions. Keep the teacher and recovery orchestrator as separate
 roles; quota exhaustion is waiting, and other interruptions wake the orchestrator by default.
+Studio is the default homepage; Report is the user's operational status interface. The orchestrator reads prior reports
+and decides operations without a routine user approval gate. Agent wait/pause schedules
+another automatic review; explicit user pause/stop still overrides execution.
 The teacher has full access to all teaching history and decides sources, tasks, exact student
 prompts and training text, review, token mix, assessment, notes and next teaching actions.
 Do not reintroduce fixed curriculum rules, recency cutoffs or a second teaching gate.
 `docs/COAPT.md` is included in teacher requests and is part of the execution fingerprint.
 
+The orchestrator owns recovery decisions, including validation requests, further repairs,
+retry, continuation, waiting and pausing. Host checks return evidence to the orchestrator;
+the controller must not infer a recovery action from a check result. Preserve a report of
+what the orchestrator investigated or changed, the evidence, its decision and reasons.
+It also owns investigation and resolution of suspected execution or generation defects,
+including empty outputs, copied directives and broken response boundaries. Pursue concrete
+diagnostics, supported repairs and verification; carry unresolved operational issues into
+the next actionable review rather than leaving them as unspecified future work. A wait
+must identify the external blocker or bounded cooldown. The teacher still owns teaching
+content and assessment; this responsibility does not add a learning-score acceptance gate.
+Operator commands, process ownership, provenance and explicit execution budgets still apply.
+The orchestrator also owns run/log retention: analyze usefulness and dependencies, decide
+keep/archive and explicit raw-log cleanup, and retain reasons and summaries. Cleanup moves
+closed logs to recoverable workspace trash. Archived runs remain in the teacher's complete
+history; datasets, stage artifacts and lineage are preserved.
+Do not impose age/status/score-based retention rules. The orchestrator chooses the next
+review interval; the worker yields only at a completed-round boundary for routine reviews.
+
+- Use **CoAPT Mid-training** for this project's unified CPT + SFT training. This is the
+  current development scope and the default meaning of training in project discussions.
+  Distinguish CPT and SFT only within recipes, material composition and provenance.
+  Use **CoAPT Post-training** for the planned RL + OPD family; implementation details
+  remain future work. These names do not impose a fixed mixture or training sequence.
 - Work in this repository. Treat `../nekaise-corpus` and `../nekaise-studio-bak` as read-only
   sources of data and architectural context; their live operations belong to those repos.
 - Keep HTTP/UI, application service, worker, stages, persistence, and providers separate.
@@ -46,5 +72,24 @@ Do not reintroduce fixed curriculum rules, recency cutoffs or a second teaching 
   validation, not as an automatic unit test. Inspect and preserve failed runs.
 - Keep the UI practical and consistent with its Nordic typography, surfaces and palette.
   Main surfaces are lessons, revisions, loss, online diagnostics and activity, not marketing.
-- Document extension contracts and concrete limitations. Agentic SFT/OPD remain planned
-  until their real training and evaluation paths are implemented and validated.
+- Document extension contracts and concrete limitations. CoAPT Post-training and agentic
+  trajectory support remain planned until their real training and evaluation paths are
+  implemented and validated.
+
+## Independent benchmark display (authorized 2026-09-16)
+
+The dashboard may read Bench's allowlisted aggregate projection through its dedicated read-only
+endpoint. No scores enter teaching records, normal Report history, teacher tools, recovery inputs
+or checkpoint decisions. Bench owns asynchronous scheduling and private evidence. This does not
+claim filesystem secrecy under the shared Unix account. Preserve the training source lock during
+deployment. Consult **Claude Fable 5.1** (`claude-fable-5-1`) for design questions or uncertainty.
+
+## Checkpoint storage decisions (authorized 2026-09-16)
+
+The orchestrator owns whether checkpoint bytes remain resumable, inference-only, or records-only.
+It must inspect storage inventory and preserve useful findings/reasons before explicit deletion.
+Original manifests, datasets, teaching history, metrics and lineage stay immutable; weights and
+optimizer states are no longer subject to a blanket keep-forever rule. Use structured
+`checkpoint_retention` decisions and the guarded journaled executor, never manual unlinking.
+Current resumption and active inference dependencies are protected. Low disk capacity requests
+an orchestrator review before further saves. Benchmark scores do not inform these decisions.

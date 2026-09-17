@@ -5,7 +5,7 @@ import json
 import fcntl
 import sqlite3
 import uuid
-from contextlib import contextmanager
+from contextlib import contextmanager, nullcontext
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -60,7 +60,7 @@ class Store:
                 db.execute("ALTER TABLE campaigns ADD COLUMN implementation_hash TEXT")
                 db.execute("UPDATE schema_version SET version=2")
                 version = 2
-            if version != 2:
+            if version not in {2, 3, 4}:
                 raise RuntimeError("Unsupported database schema version")
             db.executescript("""
                 CREATE TABLE IF NOT EXISTS recoveries (
@@ -73,7 +73,39 @@ class Store:
                 CREATE UNIQUE INDEX IF NOT EXISTS idx_one_open_recovery ON recoveries(campaign_id)
                     WHERE status IN ('pending','running','waiting','decided');
                 CREATE INDEX IF NOT EXISTS idx_recovery_due ON recoveries(status,retry_at);
+                CREATE TABLE IF NOT EXISTS run_retention (
+                    campaign_id TEXT PRIMARY KEY REFERENCES campaigns(id), disposition TEXT NOT NULL,
+                    label TEXT NOT NULL, reason TEXT NOT NULL, recovery_id INTEGER NOT NULL REFERENCES recoveries(id), updated_at TEXT NOT NULL
+                );
+                CREATE TABLE IF NOT EXISTS log_cleanup (
+                    id INTEGER PRIMARY KEY, recovery_id INTEGER NOT NULL REFERENCES recoveries(id),
+                    path TEXT NOT NULL, sha256 TEXT NOT NULL, summary TEXT NOT NULL, reason TEXT NOT NULL,
+                    bytes INTEGER NOT NULL, status TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
+                    UNIQUE(recovery_id,path)
+                );
+                CREATE TABLE IF NOT EXISTS history_reviews (
+                    recovery_id INTEGER PRIMARY KEY REFERENCES recoveries(id), completed_rounds INTEGER NOT NULL,
+                    next_review_round INTEGER NOT NULL, result TEXT NOT NULL, applied_at TEXT NOT NULL
+                );
             """)
+            # executescript ends the preceding transaction. Keep every v4
+            # column/backfill/version change in one crash-safe transaction.
+            db.execute("BEGIN IMMEDIATE")
+            if version == 2:
+                db.execute("UPDATE schema_version SET version=3")
+                version = 3
+            if version == 3:
+                db.execute("ALTER TABLE campaigns ADD COLUMN operator_hold TEXT CHECK(operator_hold IN ('pause','stop'))")
+                db.execute("ALTER TABLE actions ADD COLUMN actor TEXT NOT NULL DEFAULT 'operator'")
+                db.execute("ALTER TABLE actions ADD COLUMN reason TEXT")
+                # Legacy commands did not record their author. Preserve all old
+                # holds; an explicit review/resume can release a known agent pause.
+                db.execute("UPDATE campaigns SET operator_hold=CASE WHEN status IN ('stopped','stopping') THEN 'stop' ELSE 'pause' END WHERE status IN ('paused','pausing','stopped','stopping')")
+                db.execute("""UPDATE campaigns SET operator_hold=(SELECT kind FROM actions
+                    WHERE campaign_id=campaigns.id ORDER BY id DESC LIMIT 1)
+                    WHERE (SELECT kind FROM actions WHERE campaign_id=campaigns.id
+                    ORDER BY id DESC LIMIT 1) IN ('pause','stop')""")
+                db.execute("UPDATE schema_version SET version=4")
 
     @contextmanager
     def connect(self, immediate=False):
@@ -121,9 +153,16 @@ class Store:
             db.execute("UPDATE campaigns SET status=?,error=?,updated_at=? WHERE id=?", (status, error, now(), campaign_id))
             self.event(campaign_id, None, "campaign", f"Campaign {status}", {"status": status, "error": error}, db=db)
 
-    def recover(self, campaign_id, kind, error, *, retry_at=None):
+    def operator_cancelled(self, campaign_id, *, db=None):
+        with (nullcontext(db) if db is not None else self.connect()) as conn:
+            row = conn.execute("SELECT operator_hold FROM campaigns WHERE id=?", (campaign_id,)).fetchone()
+            return bool(row and row["operator_hold"]) or bool(conn.execute("SELECT id FROM actions WHERE campaign_id=? AND actor='operator' AND handled_at IS NULL AND kind IN ('pause','stop')", (campaign_id,)).fetchone())
+
+    def recover(self, campaign_id, kind, error, *, retry_at=None, db=None):
         from .ownership import source_fingerprint
-        with self.connect(immediate=True) as db:
+        with (nullcontext(db) if db is not None else self.connect(immediate=True)) as db:
+            if self.operator_cancelled(campaign_id, db=db):
+                return None
             old = db.execute("SELECT id FROM recoveries WHERE campaign_id=? AND status IN ('pending','running','waiting','decided')", (campaign_id,)).fetchone()
             if old:
                 return old["id"]

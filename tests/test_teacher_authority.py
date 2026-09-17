@@ -9,7 +9,7 @@ from nekaise_loop.config import CampaignConfig
 from nekaise_loop.engine import Engine
 from nekaise_loop.storage import now
 from nekaise_loop.teaching import Curriculum
-from nekaise_loop.teacher_tools import archive, query, latest_strategy
+from nekaise_loop.teacher_tools import archive, query, latest_strategy, operational_context
 
 
 def plan():
@@ -93,6 +93,84 @@ def test_teacher_can_prepare_material_and_assess_without_enabling_training(setup
     assert not service.store.query("SELECT * FROM metrics")
 
 
+@pytest.mark.parametrize("diagnostic_rounds", [0, 2])
+def test_optimizer_reset_waits_for_first_actual_training_round(setup_loop, diagnostic_rounds):
+    settings, service, original, _ = setup_loop
+    config = CampaignConfig.model_validate(original["config"]).model_copy(update={"inherit_optimizer":False, "rounds":diagnostic_rounds+2})
+    campaign = service.create("Explicit reset after diagnostics", config)
+    inherited = []
+    class Teacher(AutonomousTeacher):
+        def curriculum(self, brief):
+            result = plan()
+            if brief["round_number"] <= diagnostic_rounds:
+                result.update(train_epochs=0, token_mix={"teacher":0,"corpus":0,"replay":0})
+            return result
+    class Model(FakeModel):
+        def train(self, checkpoint, dataset, dataset_hash, on_metric):
+            inherited.append(self.config.inherit_optimizer)
+            return super().train(checkpoint, dataset, dataset_hash, on_metric)
+    Engine(settings, Teacher, Model).run(campaign["id"])
+    assert service.store.campaign(campaign["id"])["status"] == "complete"
+    assert inherited == [False, True]
+    child = service.continue_campaign(campaign["id"], {"rounds": 1})
+    assert child["config"]["inherit_optimizer"] is True
+    reset = service.continue_campaign(campaign["id"], {"rounds": 1, "inherit_optimizer": False})
+    assert reset["config"]["inherit_optimizer"] is False
+
+
+@pytest.mark.parametrize("trained_first", [False, True])
+def test_continuation_preserves_pending_reset_through_diagnostics_only(setup_loop, trained_first):
+    settings, service, original, _ = setup_loop
+    config = CampaignConfig.model_validate(original["config"]).model_copy(update={"inherit_optimizer": False, "rounds": 2})
+    campaign = service.create("Reset consumption fixture", config)
+    class Teacher(AutonomousTeacher):
+        def curriculum(self, brief):
+            result = plan()
+            if not trained_first or brief["round_number"] == 2:
+                result.update(train_epochs=0, token_mix={"teacher": 0, "corpus": 0, "replay": 0})
+            return result
+    Engine(settings, Teacher, FakeModel).run(campaign["id"])
+    assert service.store.campaign(campaign["id"])["status"] == "complete"
+    child = service.continue_campaign(campaign["id"], {"rounds": 1})
+    assert child["config"]["inherit_optimizer"] is trained_first
+
+
+def test_zero_mix_diagnostic_round_preserves_decision_and_next_round_trains(setup_loop):
+    settings, service, campaign, _ = setup_loop
+    class Teacher(AutonomousTeacher):
+        def curriculum(self, brief):
+            result = plan()
+            if brief["round_number"] == 1:
+                result.update(train_epochs=0, token_mix={"teacher":0,"corpus":0,"replay":0})
+            return result
+    Engine(settings, Teacher, FakeModel).run(campaign["id"])
+    assert service.store.campaign(campaign["id"])["status"] == "complete"
+    rounds = service.store.query("SELECT * FROM rounds WHERE campaign_id=? ORDER BY number", (campaign["id"],))
+    first, second = (service.round_detail(r["id"]) for r in rounds)
+    assert first["curriculum"]["token_mix"] == {"teacher":0,"corpus":0,"replay":0}
+    assert first["checkpoint"] == first["model_before"] == campaign["config"]["student_model"]
+    assert first["lessons"][0]["student"] and first["lessons"][0]["training_text"]
+    assert len(first["evaluations"]) == 3
+    assert first["metrics"] == []
+    frozen = next(s for s in first["stages"] if s["stage"] == "freeze")
+    dataset = service.artifacts.get(frozen["artifact"])
+    assert dataset["ledger"]["total_tokens"] == 0
+    assert dataset["samples"] == [] and dataset["rows"]
+    assert second["model_before"] == first["checkpoint"]
+    assert second["checkpoint"] != second["model_before"]
+    assert second["metrics"] and len(FakeModel.datasets) == 1
+
+
+@pytest.mark.parametrize("epochs,mix", [
+    (1, {"teacher":0,"corpus":0,"replay":0}),
+    (0, {"teacher":.2,"corpus":.2,"replay":0}),
+    (0, {"teacher":-1,"corpus":1,"replay":0}),
+])
+def test_invalid_curriculum_mix_is_not_silently_changed(epochs, mix):
+    with pytest.raises(ValueError):
+        Curriculum.model_validate({**plan(), "train_epochs":epochs, "token_mix":mix})
+
+
 def test_teacher_can_defer_assessment(setup_loop):
     settings, service, campaign, _ = setup_loop
     class Teacher(AutonomousTeacher):
@@ -128,8 +206,14 @@ def test_full_history_is_paginated_searchable_read_only_and_cross_campaign(setup
             db.execute("DELETE FROM campaigns")
 
 
-def test_replay_can_select_an_old_lesson_from_another_campaign(setup_loop):
+@pytest.mark.parametrize("mode", [None, "full_text", "prompt_prefix"])
+def test_replay_can_select_an_old_lesson_from_another_campaign(setup_loop, mode):
     settings, service, parent, engine = setup_loop
+    if mode is not None:
+        class Parent(FakeTeacher):
+            def revise(self, lessons):
+                return [{**r, "training_tokenization": mode} for r in super().revise(lessons)]
+        engine = Engine(settings, Parent, FakeModel)
     engine.run(parent["id"])
     first = service.store.one("SELECT id FROM rounds WHERE campaign_id=? AND number=1", (parent["id"],))
     child = service.continue_campaign(parent["id"])
@@ -145,6 +229,26 @@ def test_replay_can_select_an_old_lesson_from_another_campaign(setup_loop):
     Engine(settings, Teacher, FakeModel).run(child["id"])
     assert service.store.campaign(child["id"])["status"] == "complete"
     assert all(row["origin_round_id"] == first["id"] and row["stream"] == "replay" for rows in FakeModel.datasets for row in rows)
+    for rows in FakeModel.datasets:
+        for row in rows:
+            if mode == "prompt_prefix":
+                assert row["training_tokenization"] == mode
+                assert row["training_prompt"] == "Explain thermal resistance."
+                assert row["text"].startswith(row["training_prompt"])
+            else:
+                assert "training_tokenization" not in row and "training_prompt" not in row
+
+
+def test_explicit_prefix_mismatch_fails_before_preparation_without_rewriting(setup_loop):
+    settings, service, campaign, _ = setup_loop
+    class Teacher(AutonomousTeacher):
+        def revise(self, lessons):
+            return [{**r, "training_tokenization": "prompt_prefix", "training_text": "A different context"}
+                    for r in super().revise(lessons)]
+    Engine(settings, Teacher, FakeModel).run(campaign["id"])
+    failed = service.store.one("SELECT * FROM stage_runs WHERE stage='freeze' AND status='failed'")
+    assert "exact student_prompt" in failed["error"]
+    assert not FakeModel.datasets
 
 
 def test_teacher_can_select_sources_outside_configured_prefix(setup_loop):
@@ -182,11 +286,19 @@ def test_archive_resolves_legacy_relative_corpus_paths_from_repository_root(setu
 
 
 @pytest.mark.parametrize("provider", ["codex","claude"])
-def test_live_adapter_supplies_handbook_archive_tools_and_strict_decisions(setup_loop, provider):
+@pytest.mark.parametrize("large_field", [None, "task", "latest_strategy"])
+def test_live_adapter_supplies_handbook_archive_tools_and_strict_decisions(setup_loop, provider, large_field, monkeypatch):
     from nekaise_loop.providers.teacher import CliTeacher
     settings, service, campaign, engine = setup_loop
     engine.run(campaign["id"],pause=lambda:True)
     row = service.store.one("SELECT id FROM rounds")
+    recovery_id = service.store.recover(campaign["id"], "status_review", "Teacher requested diagnostics")
+    applied = {"action": "retry", "reason": "Collect generation evidence", "report": "Fixture checks passed; live generation remains unverified."}
+    service.store.execute("UPDATE recoveries SET status='resolved',decision=? WHERE id=?", (json.dumps(applied), recovery_id))
+    large_data = {"rows": [{"text": "教学 evidence " * 100_000}, {"text": "last record preserved"}]}
+    if large_field == "latest_strategy":
+        monkeypatch.setattr("nekaise_loop.providers.teacher.latest_strategy", lambda *args: large_data)
+    payload = large_data if large_field == "task" else {}
     calls = []
     class Runner:
         def run(self, command, **kwargs):
@@ -195,18 +307,107 @@ def test_live_adapter_supplies_handbook_archive_tools_and_strict_decisions(setup
             assert "full educational authority" in saved["prompt"]
             assert "TEACHING HANDBOOK" in saved["prompt"]
             assert "nekaise_loop.teacher_tools" in saved["prompt"]
+            assert saved["inputs"]["operations"]["latest_applied_review"]["decision"] == applied
+            expected_strategy = large_data if large_field == "latest_strategy" else latest_strategy(settings.workspace, campaign["id"])
+            assert saved["inputs"]["latest_strategy"] == expected_strategy
+            assert kwargs["stdin"] == saved["prompt"]
+            assert len(kwargs["stdin"]) < 1_048_576
+            evidence_path = kwargs["cwd"] / "recorded-data.json"
+            if large_field:
+                from nekaise_loop.artifacts import digest
+                evidence = json.loads(evidence_path.read_text())
+                assert evidence == saved["inputs"]
+                assert evidence[large_field] == large_data
+                assert str(evidence_path.resolve()) in kwargs["stdin"]
+                assert digest(evidence) in kwargs["stdin"]
+                assert "last record preserved" not in kwargs["stdin"]
+            else:
+                assert not evidence_path.exists()
+                assert json.loads(kwargs["stdin"].split("\n\nRECORDED DATA:\n", 1)[1]) == saved["inputs"]
             assert (settings.workspace/"loop.sqlite3-shm").exists()
             tool_context = json.loads((kwargs["cwd"]/"context.json").read_text())
             assert query(tool_context,{"op":"campaigns"})["rows"]
             schema = saved["schema"]
-            assert set(schema["$defs"]["TokenMix"]["required"]) == {"teacher","corpus","replay"}
+            assert set(schema["properties"]["token_mix"]) == {"$ref"}
+            mix_schema = schema["$defs"][schema["properties"]["token_mix"]["$ref"].split("/")[-1]]
+            assert mix_schema["description"] == "Shares sum to 1; all zero is also valid when train_epochs=0"
+            assert set(mix_schema["required"]) == {"teacher","corpus","replay"}
             if provider == "codex":
+                assert json.loads(Path(command[command.index("--output-schema")+1]).read_text()) == schema
                 Path(command[command.index("--output-last-message")+1]).write_text(json.dumps(plan()))
                 assert "--json" in command
                 return ""
             assert command[command.index("--tools")+1] == "Read,Glob,Grep,Bash"
+            assert json.loads(command[command.index("--json-schema")+1]) == schema
             return json.dumps({"structured_output":plan()})
     config = CampaignConfig.model_validate({**campaign["config"],"teacher_provider":provider})
     teacher = CliTeacher(config,settings,service.store,campaign["id"],row["id"],Runner(),settings.workspace/"adapter-check")
-    assert teacher.curriculum({}) == Curriculum.model_validate(plan()).model_dump()
+    assert teacher.curriculum(payload) == Curriculum.model_validate(plan()).model_dump()
     assert len(calls)==1
+
+
+def test_operational_handoff_follows_applied_lineage_and_preserves_hold(setup_loop):
+    settings, service, parent, engine = setup_loop
+    engine.run(parent["id"])
+    strategy = latest_strategy(settings.workspace, parent["id"])
+    child = service.create("Child", CampaignConfig.model_validate(parent["config"]), parent_id=parent["id"])
+    sibling = service.create("Sibling", CampaignConfig.model_validate(parent["config"]), parent_id=parent["id"])
+    applied = {"action":"continue", "report":"Collect diagnostic evidence; no learning claim."}
+    rid = service.store.recover(parent["id"], "status_review", "Teacher pause")
+    service.store.execute("UPDATE recoveries SET status='resolved',decision=?,continuation_id=? WHERE id=?", (json.dumps(applied), child["id"], rid))
+    other = service.store.recover(parent["id"], "status_review", "Other branch")
+    service.store.execute("UPDATE recoveries SET status='resolved',decision=?,continuation_id=? WHERE id=?", (json.dumps({"action":"continue","report":"Sibling only"}), sibling["id"], other))
+    pending = service.store.recover(child["id"], "status_review", "Unapplied proposal")
+    service.store.execute("UPDATE recoveries SET status='decided',decision=? WHERE id=?", (json.dumps({"action":"retry","report":"Not applied"}), pending))
+    service.action(child["id"], "pause", spawn=False, actor="operator", reason="Explicit hold")
+    result = operational_context(settings.workspace, child["id"])
+    assert result["operator_hold"] == "pause"
+    assert result["latest_action"]["actor"] == "operator"
+    assert result["latest_applied_review"]["id"] == rid
+    assert result["latest_applied_review"]["decision"] == applied
+    assert latest_strategy(settings.workspace, child["id"]) == strategy
+    # An applied retry on the same campaign supersedes the ancestor handoff.
+    service.store.execute("UPDATE recoveries SET status='resolved' WHERE id=?", (pending,))
+    assert operational_context(settings.workspace, child["id"])["latest_applied_review"]["id"] == pending
+
+
+def test_teacher_report_archive_exposes_checks_outcomes_and_all_pages_read_only(setup_loop):
+    settings, service, campaign, _ = setup_loop
+    context = {"workspace":str(settings.workspace), "campaign_id":campaign["id"], "corpus_path":campaign["config"]["corpus_path"]}
+    first = service.store.recover(campaign["id"], "failure", "Original fault")
+    service.store.execute("UPDATE recoveries SET status='cancelled' WHERE id=?", (first,))
+    second = service.store.recover(campaign["id"], "status_review", "Current investigation")
+    directory = settings.workspace/"recoveries"/str(first)/"attempt-1"/"turn-1"
+    directory.mkdir(parents=True)
+    (directory/"decision.json").write_text(json.dumps({"action":"check", "report":"Unverified proposal"}))
+    (directory/"checks.json").write_text(json.dumps({"status":"failed", "error":"Fixture environment failure"}))
+    service.store.event(campaign["id"], None, "recovery_applied", "Fixture outcome", {"recovery_id":first})
+    with archive(settings.workspace) as db:
+        before = list(db.iterdump())
+    help_ = query(context, {"op":"help"})
+    assert "reports" in help_["operations"] and "report" in help_["operations"]
+    page = query(context, {"op":"reports", "limit":1})
+    assert page["items"][0]["id"] == second
+    older = query(context, {"op":"reports", "limit":1, "before":page["next_before"]})
+    assert older["items"][0]["id"] == first and older["next_before"] is None
+    full = query(context, {"op":"report", "recovery_id":first})
+    assert full["turns"][0]["checks"]["status"] == "failed"
+    assert full["turns"][0]["decision"]["action"] == "check"
+    assert full["recovery"]["status"] == "cancelled"
+    assert any(event["message"] == "Fixture outcome" for event in full["events"])
+    with archive(settings.workspace) as db:
+        assert list(db.iterdump()) == before
+def test_teacher_work_estimate_and_operator_hint_are_not_training_gates(setup_loop):
+    settings, service, campaign, _ = setup_loop
+    class Teacher(AutonomousTeacher):
+        def curriculum(self, brief):
+            assert brief["execution_capabilities"]["max_prompts_per_batch"] == 4
+            return {**plan(), "work_plan": {"estimated_targets_per_pass": 100000,
+                "material_strategy": "Fixture coverage estimate", "dose_rationale": "Diagnostic information justified a small plan"}}
+    Engine(settings, Teacher, FakeModel).run(campaign["id"])
+    snapshot = service.snapshot(campaign["id"])
+    assert snapshot["campaign"]["status"] == "complete"
+    work = snapshot["round"]["learning_work"]
+    assert work["teacher_work_plan"]["estimated_targets_per_pass"] == 100000
+    assert work["preparation"]["targets_per_pass"] < 100000
+    assert len(snapshot["round"]["lessons"]) == 1

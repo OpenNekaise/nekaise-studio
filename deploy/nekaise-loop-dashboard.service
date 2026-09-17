@@ -7,8 +7,9 @@ Type=simple
 WorkingDirectory=%h/Code/nekaise-studio
 Environment=PATH=%h/.local/bin:/usr/local/bin:/usr/bin:/bin
 Environment=NEKAISE_LOOP_SUPERVISOR_SERVICE=nekaise-loop-supervisor.service
+Environment=NEKAISE_DASHBOARD_SHORT_DNS=localhost
 EnvironmentFile=%h/Code/nekaise-studio/workspace/dashboard.env
-ExecStart=%h/Code/nekaise-studio/.venv/bin/nekaise-loop serve --host ${NEKAISE_DASHBOARD_HOST} --port ${NEKAISE_DASHBOARD_PORT} --allow-host ${NEKAISE_DASHBOARD_DNS}
+ExecStart=%h/Code/nekaise-studio/.venv/bin/nekaise-loop serve --host ${NEKAISE_DASHBOARD_HOST} --port ${NEKAISE_DASHBOARD_PORT} --allow-host ${NEKAISE_DASHBOARD_DNS} --allow-host ${NEKAISE_DASHBOARD_SHORT_DNS}
 Restart=on-failure
 RestartSec=5
 KillMode=process

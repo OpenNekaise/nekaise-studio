@@ -1,8 +1,9 @@
-import { escapeHTML as e, time, modelLabel, readAPIResponse } from "./lib.js?v=1f2d40bed9fc";
-import { overview, iterationView, historyView, reportsView, emptyStudio, badge, recoveryNotice, studioScope, studioNavigation } from "./views.js?v=1f2d40bed9fc";
-import { elapsedLabel } from "./telemetry.js?v=1f2d40bed9fc";
+import { escapeHTML as e, time, modelLabel, readAPIResponse } from "./lib.js?v=dc552fa8ad53";
+import { overview, iterationView, historyView, reportsView, emptyStudio, badge, recoveryNotice, studioScope, studioNavigation } from "./views.js?v=dc552fa8ad53";
+import { elapsedLabel } from "./telemetry.js?v=dc552fa8ad53";
 
-import { createAssessmentHistory } from "./teacher-assessment.js?v=1f2d40bed9fc";
+import { createAssessmentHistory } from "./teacher-assessment.js?v=dc552fa8ad53";
+import { createBenchmarkBrowser } from "./benchmark-browser.js?v=dc552fa8ad53";
 
 const $ = id => document.getElementById(id);
 const state = {
@@ -17,6 +18,7 @@ const state = {
 };
 let timer, clockTimer, toastTimer;
 const loadAssessmentHistory = createAssessmentHistory(api);
+const benchmarkBrowser = createBenchmarkBrowser(api, () => render(true));
 
 async function api(path, options = {}) {
   const response = await fetch(`/api${path}`, {
@@ -69,7 +71,7 @@ function currentCampaign() {
 function render(force = false) {
   renderHeader();
   const s = state.data;
-  const signature = JSON.stringify([s, state.iterations, state.snapshots, state.campaigns, state.view, state.studioSection, state.historyQuery, state.historyFilter, state.selectedRound, state.lessonId, state.diff, state.expandedActivity, state.reports, state.reportDetail, state.reportId, state.reportBefore, state.telemetry, state.benchmark, state.teacherAssessment]);
+  const signature = JSON.stringify([s, state.iterations, state.snapshots, state.campaigns, state.view, state.studioSection, state.historyQuery, state.historyFilter, state.selectedRound, state.lessonId, state.diff, state.expandedActivity, state.reports, state.reportDetail, state.reportId, state.reportBefore, state.telemetry, state.benchmark, state.teacherAssessment, benchmarkBrowser.state]);
   if (!force && (signature === state.signature || window.getSelection()?.toString())) return;
   state.signature = signature;
   const content = $("content"), detailState = new Map();
@@ -80,9 +82,9 @@ function render(force = false) {
   const scrolls = new Map(sameScope ? [...content.querySelectorAll("details[data-detail] .prose")].map((el, index) => [index, el.scrollTop]) : []);
   const listScrolls = new Map([...content.querySelectorAll("[data-scroll]")].map(el => [el.dataset.scroll, el.scrollTop]));
   const focused = document.activeElement;
-  const focusKey = focused?.dataset?.scoreRound || focused?.dataset?.report || focused?.dataset?.round || focused?.dataset?.campaign || focused?.dataset?.studioSection || focused?.id;
+  const focusKey = focused?.dataset?.benchmarkPoint || focused?.dataset?.benchmarkMetric || focused?.dataset?.scoreRound || focused?.dataset?.report || focused?.dataset?.round || focused?.dataset?.campaign || focused?.dataset?.studioSection || focused?.id;
   const selection = typeof focused?.selectionStart === "number" ? [focused.selectionStart, focused.selectionEnd] : null;
-  const data = s ? { ...s, currentCampaign: currentCampaign(), iterations: state.iterations, teacherAssessment: state.teacherAssessment?.campaign_id === s.campaign.id ? state.teacherAssessment : null, expandedActivity: state.expandedActivity, benchmark: state.benchmark?.campaign_id === s.campaign.id ? state.benchmark : null, telemetry: state.telemetry?.campaign_id === s.campaign.id ? state.telemetry : null } : null;
+  const data = s ? { ...s, currentCampaign: currentCampaign(), iterations: state.iterations, teacherAssessment: state.teacherAssessment?.campaign_id === s.campaign.id ? state.teacherAssessment : null, expandedActivity: state.expandedActivity, benchmark: state.benchmark?.campaign_id === s.campaign.id ? state.benchmark : null, benchmarkBrowser: benchmarkBrowser.state.snapshot?.campaign_id === s.campaign.id ? benchmarkBrowser.state : {}, telemetry: state.telemetry?.campaign_id === s.campaign.id ? state.telemetry : null } : null;
   if (state.view === "reports") content.innerHTML = reportsView(state.reports, state.reportDetail, state.reportId, state.reportBefore);
   else if (state.view === "history") content.innerHTML = historyView(state.campaigns, { query: state.historyQuery, filter: state.historyFilter });
   else if (!s) content.innerHTML = state.campaigns.length ? '<div class="empty-inline" role="status">Loading run…</div>' : emptyStudio();
@@ -91,7 +93,7 @@ function render(force = false) {
   [...content.querySelectorAll("details[data-detail] .prose")].forEach((el, index) => { if (scrolls.has(index)) el.scrollTop = scrolls.get(index); });
   for (const el of content.querySelectorAll("[data-scroll]")) if (listScrolls.has(el.dataset.scroll)) el.scrollTop = listScrolls.get(el.dataset.scroll);
   if (focusKey) {
-    const restored = [...content.querySelectorAll("button,select,input,a[data-score-round]")].find(el => (el.dataset.scoreRound || el.dataset.report || el.dataset.round || el.dataset.campaign || el.dataset.studioSection || el.id) === focusKey);
+    const restored = [...content.querySelectorAll("button,select,input,a[data-score-round],a[data-benchmark-point]")].find(el => (el.dataset.benchmarkPoint || el.dataset.benchmarkMetric || el.dataset.scoreRound || el.dataset.report || el.dataset.round || el.dataset.campaign || el.dataset.studioSection || el.id) === focusKey);
     restored?.focus({ preventScroll: true });
     if (selection) restored?.setSelectionRange?.(...selection);
   }
@@ -116,7 +118,7 @@ async function fillBenchmark(id, version) {
   let evaluation;
   try { evaluation = await api(`/campaigns/${encodeURIComponent(id)}/benchmark`); }
   catch { evaluation = { campaign_id: id, status: "unavailable" }; }
-  if (version === state.selectionVersion) state.benchmark = evaluation;
+  if (version === state.selectionVersion) { state.benchmark = evaluation; benchmarkBrowser.observe(evaluation); }
 }
 function mergeIteration(prior, next) {
   if (prior?.updated_at === next.updated_at && prior?.material_count === next.material_count && (prior?.materials?.length || 0) > (next.materials?.length || 0)) {
@@ -299,6 +301,12 @@ async function showSystem() {
 }
 
 document.addEventListener("click", async event => {
+  const benchmarkPoint = event.target.closest("[data-benchmark-point]");
+  if (benchmarkPoint?.dataset?.benchmarkPoint && state.view === "overview" && state.studioSection === "overview") {
+    event.preventDefault();
+    benchmarkBrowser.select(benchmarkPoint.dataset.benchmarkPoint);
+    return;
+  }
   const score = event.target.closest("[data-score-round]");
   if (score?.dataset?.scoreRound) {
     event.preventDefault();
@@ -320,6 +328,14 @@ document.addEventListener("click", async event => {
   }
   const target = event.target.closest("button");
   if (!target) return;
+  if (state.view === "overview" && state.studioSection === "overview") {
+    if ("benchmarkOpen" in target.dataset) return benchmarkBrowser.open(state.benchmark);
+    if ("benchmarkClose" in target.dataset) return benchmarkBrowser.close();
+    if ("benchmarkRefresh" in target.dataset) return benchmarkBrowser.refresh();
+    if ("benchmarkOverview" in target.dataset) return benchmarkBrowser.overview();
+    if ("benchmarkPage" in target.dataset) return benchmarkBrowser.load(Number(target.dataset.benchmarkPage));
+    if ("benchmarkMetric" in target.dataset) return benchmarkBrowser.metric(target.dataset.benchmarkMetric);
+  }
   if (target.dataset.materialNext) {
     const id = target.dataset.materialNext, before = state.iterations[id], version = state.selectionVersion;
     if (!before || before.material_next_offset == null) return;

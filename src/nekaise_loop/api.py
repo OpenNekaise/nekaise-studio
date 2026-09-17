@@ -100,6 +100,14 @@ def create_app(settings: Settings | None = None, *, allowed_hosts: tuple[str, ..
         service.store.campaign(campaign_id)
         return JSONResponse(read_benchmark(campaign_id), headers={"Cache-Control": "no-store"})
 
+    @app.get("/api/campaigns/{campaign_id}/benchmark/history")
+    def benchmark_history(campaign_id: str, history: str = Query(pattern=r"^[a-f0-9]{64}$"),
+                          page: int = Query(ge=0)):
+        from .benchmark import read_benchmark_history
+        from fastapi.responses import JSONResponse
+        return JSONResponse(read_benchmark_history(campaign_id, history, page),
+                            headers={"Cache-Control": "no-store"})
+
     @app.get("/api/rounds/{round_id}")
     def round_detail(round_id: str):
         return service.round_detail(round_id)

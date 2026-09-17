@@ -1,5 +1,19 @@
 # Working on Nekaise Studio
 
+All coding agents, including the interactive assistant and the recovery orchestrator,
+must automatically commit completed code, prompt, configuration and documentation changes
+after relevant validation, then push the current branch to its configured upstream.
+The user authorized this workflow on 2026-09-17; do not request separate commit/push approval.
+Stage only the task's intended files or hunks, preserving unrelated working-tree and staged
+changes. Keep ignored workspace data, credentials, generated training material and weights
+out of Git. Use a descriptive commit message with the change's purpose and validation.
+The orchestrator publishes finalized repairs after reviewing host validation evidence;
+include the recovery/report reference and record the commit hash, remote/branch and actual
+push outcome in its report. If Git permissions, authentication, connectivity or remote
+divergence blocks publication, preserve the local work, report the concrete failure and
+carry an actionable publication retry into the next review. Never claim a failed push
+succeeded or force-push shared history to bypass a rejection.
+
 Read `IDEA.md`, `ARCHITECTURE.md`, and `README.md`. The user-approved behavior is an online
 teacher-evaluated training loop. Independent benchmarks stay outside the loop and must not
 become a startup requirement or automatic acceptance gate. The teacher is trusted for

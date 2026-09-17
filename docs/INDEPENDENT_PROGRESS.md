@@ -30,8 +30,10 @@ maintenance boundary. Resume through the orchestrator's continuation decision. T
 not change the trainer implementation or recipe. Preserve Bench's actual evaluation source and
 runtime identity separately when upgrading its observer; never rewrite old protocol identities.
 
-Validation on 2026-09-17: 282 Python tests and 46 dashboard Node tests passed. Headless Chromium
+Validation on 2026-09-17: 282 Python tests and 47 dashboard Node tests passed. Headless Chromium
 exercised the complete app with fixture-only data: historical pages, metric selection, observation
 details, overview and desktop/mobile layouts. Deployed read-only endpoints passed aggregate
-schema, immutable-history, cache and Report-separation checks. No benchmark values are recorded
+schema, immutable-history, cache and Report-separation checks. The live browser also passed history
+opening, metric changes, observation selection during loading, closing and Report navigation.
+No benchmark values are recorded
 here, and fixtures are not student learning results.

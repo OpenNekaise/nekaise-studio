@@ -1,4 +1,4 @@
-import { METRICS } from "./benchmark.js?v=dc552fa8ad53";
+import { METRICS } from "./benchmark.js?v=723936ef071d";
 
 // A browsing session pins an immutable aggregate snapshot while live polling continues.
 export function createBenchmarkBrowser(read, changed = () => {}) {
@@ -31,6 +31,7 @@ export function createBenchmarkBrowser(read, changed = () => {}) {
         throw new Error("Observation page is unavailable or does not match this history.");
       }
       state.data = data;
+      if (!data.points.some(p => p.model_id === state.selected_model_id)) state.selected_model_id = null;
     } catch (error) {
       if (ticket !== serial || !state.open) return;
       state.error = `${error.message} Select the page again to retry.`;
@@ -52,7 +53,8 @@ export function createBenchmarkBrowser(read, changed = () => {}) {
     overview() { serial += 1; Object.assign(state, { page: null, data: null, loading: false, error: null, selected_model_id: null }); notify(); },
     metric(name) { if (Object.hasOwn(METRICS, name)) { state.metric = name; notify(); } },
     select(id) {
-      const points = state.page == null ? state.snapshot?.points : state.data?.points;
+      // The view shows the pinned overview until a page arrives, including failed reads.
+      const points = state.page == null || !state.data ? state.snapshot?.points : state.data.points;
       if (points?.some(p => p.model_id === id)) { state.selected_model_id = id; notify(); }
     },
   };

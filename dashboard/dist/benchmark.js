@@ -1,4 +1,4 @@
-import { escapeHTML as e, number, dateLabel } from "./lib.js?v=dc552fa8ad53";
+import { escapeHTML as e, number, dateLabel } from "./lib.js?v=723936ef071d";
 
 // Read-only display of Bench's aggregate projection. Observations only: nothing here is
 // interpolated, invented or turned into an acceptance decision. Missing values are never zero.

@@ -89,3 +89,23 @@ test("v1 or unavailable projections never trigger a history request", async () =
   await browser.open({ campaign_id: "a", status: "unavailable" });
   assert.equal(browser.state.open, false);
 });
+
+test("overview observations remain selectable while a page is loading or unavailable", async () => {
+  let finish;
+  const s = snapshot();
+  const browser = createBenchmarkBrowser(() => new Promise(resolve => { finish = resolve; }));
+  const opening = browser.open(s);
+  browser.select("baseline");
+  assert.equal(browser.state.selected_model_id, "baseline");
+  finish(page(s, 2)); await opening;
+  assert.equal(browser.state.selected_model_id, null); // The new page no longer shows that observation.
+  const loading = browser.load(0);
+  browser.select("baseline");
+  const data = page(s, 0); data.points[0].model_id = "baseline";
+  finish(data); await loading;
+  assert.equal(browser.state.selected_model_id, "baseline");
+  const failed = browser.load(1);
+  finish({status: "unavailable"}); await failed;
+  browser.select("baseline");
+  assert.equal(browser.state.selected_model_id, "baseline");
+});

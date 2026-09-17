@@ -1,9 +1,9 @@
-import { escapeHTML as e, time, modelLabel, readAPIResponse } from "./lib.js?v=dc552fa8ad53";
-import { overview, iterationView, historyView, reportsView, emptyStudio, badge, recoveryNotice, studioScope, studioNavigation } from "./views.js?v=dc552fa8ad53";
-import { elapsedLabel } from "./telemetry.js?v=dc552fa8ad53";
+import { escapeHTML as e, time, modelLabel, readAPIResponse } from "./lib.js?v=723936ef071d";
+import { overview, iterationView, historyView, reportsView, emptyStudio, badge, recoveryNotice, studioScope, studioNavigation } from "./views.js?v=723936ef071d";
+import { elapsedLabel } from "./telemetry.js?v=723936ef071d";
 
-import { createAssessmentHistory } from "./teacher-assessment.js?v=dc552fa8ad53";
-import { createBenchmarkBrowser } from "./benchmark-browser.js?v=dc552fa8ad53";
+import { createAssessmentHistory } from "./teacher-assessment.js?v=723936ef071d";
+import { createBenchmarkBrowser } from "./benchmark-browser.js?v=723936ef071d";
 
 const $ = id => document.getElementById(id);
 const state = {

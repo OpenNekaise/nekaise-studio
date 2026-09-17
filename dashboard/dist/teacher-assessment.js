@@ -1,4 +1,4 @@
-import { escapeHTML as e, number, dateLabel } from "./lib.js?v=dc552fa8ad53";
+import { escapeHTML as e, number, dateLabel } from "./lib.js?v=723936ef071d";
 
 const validScore = value => Number.isFinite(value) && value >= 0 && value <= 1;
 const pct = value => validScore(value) ? `${number(value * 100, 1)}%` : "—";

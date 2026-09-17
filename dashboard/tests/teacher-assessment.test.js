@@ -20,13 +20,19 @@ test("teacher chart requires completed grading after a weight update, including 
   assert.equal(assessmentPoint({ ...round("pending", "a", 2, 3), status: "running", stage: "grade" }), null);
 });
 
-test("teacher score dots preserve zero, escape labels and never draw an implied trend", () => {
+test("teacher score dots preserve zero and links, escape labels and identify the fitted trend", () => {
   const point = assessmentPoint(round('<img>', 'campaign_<script>', 1, 2, 0));
   const svg = assessmentChart([point]);
   assert.match(svg, /0\.0%/);assert.ok(!svg.includes('<path'));assert.ok(!svg.includes('<script>'));assert.ok(!svg.includes('<img>'));assert.ok(!/NaN|Infinity/.test(svg));
   assert.match(teacherAssessmentCard(null), /usage-total">—/);
   assert.match(teacherAssessmentCard({ points: [point], partial: true }), /Partial history/);
   assert.match(teacherAssessmentCard({ points: [point] }, { id: 'later' }), /Current iteration has no completed/);
+  const fitted = assessmentChart([point, { ...point, score: .9 }, { ...point, score: .2 }]);
+  assert.match(fitted, /class="score-trend"/);
+  assert.match(fitted, /Smoothed trend/);
+  assert.match(fitted, /questions vary each iteration/);
+  assert.equal((fitted.match(/data-score-round=/g) || []).length, 3);
+  assert.equal((fitted.match(/class="assessment-point /g) || []).length, 3);
 });
 
 test("assessment history follows ancestors, excludes siblings and observations after a branch", async () => {

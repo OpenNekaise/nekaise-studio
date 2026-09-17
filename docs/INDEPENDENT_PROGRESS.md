@@ -25,6 +25,12 @@ modification's effect. A causal claim still needs a common starting point, match
 budgets, predeclared comparisons and independent confirmation in Bench. No new confirmation bank
 or experiment launcher is implemented by this display. See Bench's `docs/LONGITUDINAL_PROGRESS.md`.
 
+At the user's request, the score charts now overlay a labeled smoothed trend while retaining
+clickable observations. Fitting is purely visual, uses the displayed horizontal coordinates
+and stays inside the observed extent and score bounds. Headline scores remain measured values;
+smoothed endpoints can differ from them. A history overview/page fits its displayed points.
+The Teacher assessment curve describes varying teacher questions, not a fixed benchmark.
+
 Deploy Studio Python changes under the exclusive training source lock after a command-queue
 maintenance boundary. Resume through the orchestrator's continuation decision. The display does
 not change the trainer implementation or recipe. Preserve Bench's actual evaluation source and
@@ -37,3 +43,8 @@ schema, immutable-history, cache and Report-separation checks. The live browser 
 opening, metric changes, observation selection during loading, closing and Report navigation.
 No benchmark values are recorded
 here, and fixtures are not student learning results.
+
+The fitted-chart update passed 51 dashboard Node tests and syntax checks for every module.
+Desktop/mobile Chromium fixture checks confirmed both curves, preserved observation links,
+bounded layout and a line that does not intercept pointer events. No training validation was
+launched for this display-only update.

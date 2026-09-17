@@ -267,6 +267,14 @@ del { background: #f4e0d5; text-decoration-color: #ac7c65; }
 .token-line { stroke: var(--usage); stroke-width: 2; fill: none; stroke-linecap: round; stroke-linejoin: round; }
 .token-point { fill: transparent; }
 .token-point:hover { fill: var(--usage); }
+.score-trend { fill: none; stroke: var(--usage); stroke-width: 2.5; stroke-linecap: round; stroke-linejoin: round; vector-effect: non-scaling-stroke; pointer-events: none; }
+.has-score-trend .assessment-point, .has-score-trend .eval-point { opacity: .32; }
+.has-score-trend .assessment-point.latest, .has-score-trend .eval-point.baseline, .has-score-trend .eval-point.milestone, .has-score-trend .eval-point.selected,
+.has-score-trend a:hover circle, .has-score-trend a:focus circle { opacity: 1; }
+.score-trend-legend { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px 18px; margin: 4px 0 12px; font-size: .6875rem; color: var(--muted); }
+.score-trend-legend span { display: inline-flex; align-items: center; gap: 6px; }
+.score-trend-legend span::before { content: ""; width: 18px; height: 2px; background: var(--usage); border-radius: 2px; }
+.score-trend-legend span + span::before { width: 5px; height: 5px; border-radius: 50%; opacity: .4; }
 .token-chart-empty { min-height: 200px; display: grid; place-items: center; color: var(--muted); font-size: .875rem; }
 .usage-footer { padding: 15px 26px; border-top: 1px solid var(--line); display: grid; gap: 7px; font-size: .75rem; color: var(--muted); }
 .secondary-diagnostics { margin-top: 26px; }

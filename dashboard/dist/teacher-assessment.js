@@ -1,4 +1,5 @@
-import { escapeHTML as e, number, dateLabel } from "./lib.js?v=723936ef071d";
+import { escapeHTML as e, number, dateLabel } from "./lib.js?v=5a2d168f3501";
+import { scoreTrend, trendLegend } from "./score-trend.js?v=5a2d168f3501";
 
 const validScore = value => Number.isFinite(value) && value >= 0 && value <= 1;
 const pct = value => validScore(value) ? `${number(value * 100, 1)}%` : "—";
@@ -104,11 +105,12 @@ export function assessmentChart(points) {
   const x = i => points.length === 1 ? (left + w - right) / 2 : left + i / (points.length - 1) * (w - left - right);
   const y = score => top + (1 - score) * (h - top - bottom);
   const grid = [0, .5, 1].map(score => `<line x1="${left}" x2="${w - right}" y1="${y(score)}" y2="${y(score)}"/><text x="${left - 8}" y="${y(score) + 4}" text-anchor="end">${score * 100}%</text>`).join("");
+  const trend = scoreTrend(points.map((p, i) => ({ x: i, y: p.score })), x, y);
   const dots = points.map((p, i) => {
     const label = `${p.reflection_incomplete ? "Reflection incomplete · " : ""}Assessment ${i + 1} · ${pct(p.score)} · Run ${p.campaign_id.replace(/^campaign_/, "")} · Iteration ${p.number}${p.questions !== null ? ` · ${p.questions} questions` : ""} · ${dateLabel(p.at)}`;
     return `<a href="#teacher-assessment" data-score-round="${e(p.round_id)}" data-score-campaign="${e(p.campaign_id)}" aria-label="${e(label)}"><circle class="assessment-hit" cx="${x(i)}" cy="${y(p.score)}" r="9"/><circle class="assessment-point ${i === points.length - 1 ? "latest" : ""}" cx="${x(i)}" cy="${y(p.score)}" r="${i === points.length - 1 ? 5 : 3.5}"/><title>${e(label)}</title></a>`;
   }).join("");
-  return `<svg viewBox="0 0 ${w} ${h}" role="group" aria-label="Teacher assessment scores by completed assessment; questions vary each iteration">${grid}${dots}<text x="${left}" y="${h - 10}">1</text><text x="${w - right}" y="${h - 10}" text-anchor="end">${points.length} completed assessments</text></svg>`;
+  return `<svg class="${trend ? "has-score-trend" : ""}" viewBox="0 0 ${w} ${h}" role="group" aria-label="Teacher assessment scores and smoothed trend by completed assessment; questions vary each iteration">${grid}${trend}${dots}<text x="${left}" y="${h - 10}">1</text><text x="${w - right}" y="${h - 10}" text-anchor="end">${points.length} completed assessments</text></svg>${trend ? trendLegend : ""}`;
 }
 
 export function teacherAssessmentCard(data, currentRound) {

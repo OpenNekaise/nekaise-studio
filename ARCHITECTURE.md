@@ -389,8 +389,14 @@ weight update and completed grading. It excludes input-checkpoint comparison gra
 partial grading and diagnostic rounds without weight changes. Completed grading remains
 visible if later reflection fails. Dots follow assessment order through the selected run's
 ancestor chain, stop each ancestor at the continuation boundary and exclude sibling runs.
-Because questions and rubrics vary, there is no interpolating trend or cross-round gain
-claim. Each point opens its owning iteration's answers and grading.
+At the user's request, both score charts overlay a labeled smoothed trend on the original
+clickable observations. The shared `score-trend.js` uses equal-observation Gaussian smoothing
+in the plotted horizontal coordinates, restricted to the observed extent. Its bandwidth is
+8% of that extent, floored at 1.5 median distinct-position gaps; fewer than three distinct
+positions produce no fit. Teacher questions and rubrics still vary, so this describes the
+recorded scores rather than establishing cross-round learning gains. Each teacher point
+opens its owning iteration's answers and grading. Independent history fits describe only
+the observations displayed on the current overview/page. No saved metric is altered.
 
 `teacher-assessment.js` reads the existing snapshot/round/event APIs and caches small
 chart projections. When a snapshot omits older rounds, paginated events discover their

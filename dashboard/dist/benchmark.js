@@ -1,7 +1,8 @@
-import { escapeHTML as e, number, dateLabel } from "./lib.js?v=723936ef071d";
+import { escapeHTML as e, number, dateLabel } from "./lib.js?v=5a2d168f3501";
+import { scoreTrend, trendLegend } from "./score-trend.js?v=5a2d168f3501";
 
 // Read-only display of Bench's aggregate projection. Observations only: nothing here is
-// interpolated, invented or turned into an acceptance decision. Missing values are never zero.
+// treated as an acceptance decision. A fitted display trend leaves observed values unchanged.
 const finite = x => Number.isFinite(x);
 const pct = x => finite(x) ? `${number(x * 100, 1)}%` : "—";
 const pp = x => finite(x) ? `${x > 0 ? "+" : ""}${number(x * 100, 2)} pp` : "—";
@@ -37,14 +38,15 @@ export function scoreChart(points, metric = "score", options = {}) {
   const baseline = options.baseline && finite(m.value(options.baseline)) ? m.value(options.baseline) : null;
   const reference = baseline === null ? "" : `<line class="eval-reference" x1="${left}" x2="${w-right}" y1="${y(baseline)}" y2="${y(baseline)}"><title>Starting model ${e(m.label.toLowerCase())} ${pct(baseline)}</title></line>`;
   const selected = options.selected || null;
-  // Dots are observations. No interpolated capability, no line across weight branches.
+  const trend = scoreTrend(valid.map(p => ({ x: p.retained_tokens, y: m.value(p) })), x, y);
+  // The caller scopes observations to one compatible weight lineage and displayed history.
   const dots = valid.map(p => {
     const title = `${pointName(p)} · ${kindLabel(p)} · ${m.label} ${pct(m.value(p))} · ${number(p.retained_tokens)} retained-weight tokens · ${dateLabel(p.evaluated_at)}`;
     const classes = `eval-point${p.observation_kind === "milestone" ? " milestone" : ""}${p.observation_kind === "baseline" ? " baseline" : ""}${selected && p.model_id === selected ? " selected" : ""}`;
     const circle = `<circle class="${classes}" cx="${x(p.retained_tokens)}" cy="${y(m.value(p))}" r="${p.observation_kind === "milestone" ? 6 : 5}"><title>${e(title)}</title></circle>`;
     return options.interactive && typeof p.model_id === "string" ? `<a href="#benchmark-history" role="button" data-benchmark-point="${e(p.model_id)}" aria-label="${e(`Show details for ${title}`)}" aria-pressed="${selected === p.model_id}">${circle}</a>` : circle;
   }).join("");
-  return `<svg viewBox="0 0 ${w} ${h}" role="img" aria-label="${e(`Independent evaluation observations by retained-weight training tokens: ${m.axis}`)}">${grid}${reference}${dots}<text x="${left}" y="${h-10}">0</text><text x="${w-right}" y="${h-10}" text-anchor="end">${number(max)} retained-weight tokens</text></svg>`;
+  return `<svg class="${trend ? "has-score-trend" : ""}" viewBox="0 0 ${w} ${h}" role="img" aria-label="${e(`Independent evaluation observations and smoothed trend by retained-weight training tokens: ${m.axis}`)}">${grid}${reference}${trend}${dots}<text x="${left}" y="${h-10}">0</text><text x="${w-right}" y="${h-10}" text-anchor="end">${number(max)} retained-weight tokens</text></svg>${trend ? trendLegend : ""}`;
 }
 
 function freshness(data, p) {

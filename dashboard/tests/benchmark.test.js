@@ -18,10 +18,15 @@ test("missing eval is not zero; real zero remains a score", () => {
   assert.match(html, /Earlier weights/); assert.match(html, /Evaluating/);
   assert.ok(!html.includes("<img>"));
 });
-test("chart shows measurements only, with no interpolating path or invalid numbers", () => {
+test("chart preserves observations and adds a labeled fit only with enough distinct positions", () => {
   const chart=scoreChart([{score:.5,retained_tokens:0},{score:.4,retained_tokens:10}]);
   assert.equal((chart.match(/<circle/g)||[]).length,2);
   assert.ok(!chart.includes("<path"));assert.ok(!/NaN|Infinity/.test(chart));
+  const fitted = scoreChart([point(0), point(2), point(9)], "numerical", { interactive: true });
+  assert.match(fitted, /class="score-trend"/);
+  assert.match(fitted, /Smoothed trend/);
+  assert.equal((fitted.match(/data-benchmark-point=/g) || []).length, 3);
+  assert.equal((fitted.match(/<circle/g) || []).length, 3);
 });
 test("usage and independent evaluation preserve separate measurement semantics", () => {
   const t={elapsed_seconds:1,completed_rounds:1,teacher:{total:10,input:8,output:2,cached:0,series:[]},training:{total:15,updates:1,series:[]}};
@@ -66,7 +71,7 @@ test("history panel metadata, metric selector and overview sample count", () => 
   assert.match(html, /data-benchmark-close/);
   assert.equal((html.match(/<circle/g) || []).length, 4);
   assert.match(html, /eval-point milestone/);assert.match(html, /eval-point baseline/);
-  assert.ok(!html.includes("<path"));assert.ok(!/NaN|Infinity|undefined/.test(html));
+  assert.match(html, /class="score-trend"/);assert.ok(!/NaN|Infinity|undefined/.test(html));
   const visible = html.replace(/<[^>]+>/g, " ");
   for (const jargon of ["invalid_rate", "budget_rate", "observation_kind", "delta_ci95", "schema_version"]) assert.ok(!visible.includes(jargon), jargon);
   assert.equal((html.match(/<th scope="col">Overall<\/th>/g) || []).length, 1);

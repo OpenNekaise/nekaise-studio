@@ -536,3 +536,34 @@ del { background: #f4e0d5; text-decoration-color: #ac7c65; }
 .eval-history .table-scroll { overflow-x: auto; max-width: 100%; }
 .eval-history-update { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; padding: 14px 24px; background: var(--paper, #fff); font-size: .8125rem; }
 .eval-comparison-scope { margin: 18px 24px 10px; color: var(--muted); font-size: .8125rem; }
+
+/* Teacher-owned experiment records share the teaching surfaces and type scale. */
+.experiment-layout { display: grid; grid-template-columns: minmax(230px, .8fr) minmax(0, 2fr); gap: 24px; align-items: start; }
+.experiment-register, .experiment-selection { min-width: 0; }
+.experiment-register .panel { overflow: hidden; padding: 0; }
+.experiment-row { width: 100%; display: grid; gap: 9px; padding: 20px; text-align: left; background: transparent; border: 0; border-bottom: 1px solid var(--line); color: inherit; }
+.experiment-row:last-child { border-bottom: 0; }
+.experiment-row:hover, .experiment-row.selected { background: var(--paper-deep, #f1f2ec); }
+.experiment-row.selected { box-shadow: inset 3px 0 var(--ink, #283c36); }
+.experiment-row strong { font-size: 15px; }
+.experiment-row > span:not(.eyebrow), .experiment-row small { font-size: 12px; line-height: 1.6; color: var(--muted); }
+.experiment-row > span:not(.eyebrow) { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+.experiment-pagination { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; margin-top: 16px; }
+.experiment-card { margin-bottom: 24px; }
+.experiment-body { padding: 0 24px 24px; }
+.experiment-field { min-width: 0; margin: 18px 0; }
+.experiment-field h3 { margin-bottom: 8px; }
+.experiment-field .prose { max-height: none; }
+.experiment-plan-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 24px; }
+.experiment-conclusion { border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); margin: 24px 0; padding: 20px 0 8px; }
+.experiment-metrics { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px; margin: 20px 0; }
+.experiment-metrics dt, .experiment-metrics span { color: var(--muted); font-size: 12px; }
+.experiment-metrics dd { margin: 8px 0; font-size: 25px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.experiment-card table th small { display: block; margin-top: 6px; font-weight: 400; color: var(--muted); }
+.experiment-card code, .experiment-card p { overflow-wrap: anywhere; }
+.experiment-card table th:first-child { min-width: 180px; }
+@media (max-width: 850px) {
+  .experiment-layout { grid-template-columns: 1fr; }
+  .experiment-plan-grid { grid-template-columns: 1fr; }
+  .experiment-body { padding: 0 18px 18px; }
+}

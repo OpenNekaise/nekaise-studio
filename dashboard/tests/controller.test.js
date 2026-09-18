@@ -28,6 +28,7 @@ test("iteration navigation, previous runs and stale requests keep the correct ru
   replace("fetch", async (path, options) => {
     requests.push({ path, method: options?.method || "GET" });
     if (path === "/api/campaigns") return response([campaign("a"), campaign("b")]);
+    if (path === "/api/experiments?limit=20") return response({ items: [], total: 0, next_before: null });
     if (failUsage && /\/(telemetry|benchmark)$/.test(path)) throw new Error("Measurement service unavailable");
     if (/^\/api\/campaigns\/[ab]\/telemetry$/.test(path)) return response({ campaign_id: path.split("/")[3], elapsed_seconds: 90, clock_running: false, completed_rounds: 1, teacher: { total: 120, input: 100, output: 20, cached: 80, series: [] }, training: { total: 50, updates: 1, series: [] } });
     if (/^\/api\/campaigns\/[ab]\/benchmark$/.test(path)) return response({ campaign_id: path.split("/")[3], status: "not_ready" });
@@ -73,6 +74,10 @@ test("iteration navigation, previous runs and stale requests keep the correct ru
     assert.match(get("content").innerHTML, /data-round="a1"/);
     assert.equal((get("content").innerHTML.match(/class="panel usage-card /g) || []).length, 5);
     failUsage = false;
+    const beforeExperiments = requests.length;
+    await click({ studioSection: "experiments" });
+    assert.match(get("content").innerHTML, /No teaching experiments recorded/);
+    assert.ok(requests.slice(beforeExperiments).every(r => !/telemetry|benchmark/.test(r.path)));
     await click({ studioSection: "teaching" });
     await click({ round: "a1" });
     assert.match(get("content").innerHTML, /Attempt a1/);

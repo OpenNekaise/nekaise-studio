@@ -5,6 +5,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from .config import TokenMix
 from .material_types import ExpansionJob, MaterialEdit
+from .experiment_types import ExperimentPlan, ExperimentReview
 
 
 class Record(BaseModel):
@@ -57,6 +58,7 @@ class Curriculum(Record):
     train_epochs: int = Field(ge=0, description="0 keeps weights unchanged; positive values train this many dataset passes")
     evaluation_instructions: str
     notes: str
+    experiment: ExperimentPlan | None = Field(default=None, description="Record a teaching hypothesis and strategy before execution; null when no explicit experiment is proposed. Does not require a fixed diagnostic or score gate.")
     expansion_jobs: list[ExpansionJob] = Field(default_factory=list, description="Delegated material-author jobs following your plan and corrected seeds. Required for positive training under required_v1; diagnostics may leave empty. Execution budgets are provided separately.")
     work_plan: WorkPlan | None = Field(default=None, description="Explicit teacher-owned work estimate and rationale; null is retained for older plans or when an estimate is unavailable")
     comparison_round_id: str = Field(default="", description="Optional completed historical round whose checkpoint should also answer the exact lesson prompts; empty disables comparison. Evidence only, never a checkpoint replacement.")
@@ -161,3 +163,4 @@ class Reflection(Record):
     next_round_instructions: str
     action: Literal["continue", "pause", "complete"]
     reason: str
+    experiment_review: ExperimentReview | None = Field(default=None, description="Interpret this round's recorded experiment without rewriting its plan; null if none or no conclusion is ready")

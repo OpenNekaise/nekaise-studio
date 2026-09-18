@@ -1,9 +1,10 @@
-import { escapeHTML as e, time, modelLabel, readAPIResponse } from "./lib.js?v=c570ecf46108";
-import { overview, iterationView, historyView, reportsView, emptyStudio, badge, recoveryNotice, studioScope, studioNavigation } from "./views.js?v=c570ecf46108";
-import { elapsedLabel } from "./telemetry.js?v=c570ecf46108";
+import { escapeHTML as e, time, modelLabel, readAPIResponse } from "./lib.js?v=45d8cb9d849a";
+import { overview, iterationView, historyView, reportsView, emptyStudio, badge, recoveryNotice, studioScope, studioNavigation } from "./views.js?v=45d8cb9d849a";
+import { elapsedLabel } from "./telemetry.js?v=45d8cb9d849a";
 
-import { createAssessmentHistory } from "./teacher-assessment.js?v=c570ecf46108";
-import { createBenchmarkBrowser } from "./benchmark-browser.js?v=c570ecf46108";
+import { createAssessmentHistory } from "./teacher-assessment.js?v=45d8cb9d849a";
+import { createBenchmarkBrowser } from "./benchmark-browser.js?v=45d8cb9d849a";
+import { createExperimentBrowser } from "./experiment-browser.js?v=45d8cb9d849a";
 
 const $ = id => document.getElementById(id);
 const state = {
@@ -19,6 +20,7 @@ const state = {
 let timer, clockTimer, toastTimer;
 const loadAssessmentHistory = createAssessmentHistory(api);
 const benchmarkBrowser = createBenchmarkBrowser(api, () => render(true));
+const experimentBrowser = createExperimentBrowser(api, () => render());
 
 async function api(path, options = {}) {
   const response = await fetch(`/api${path}`, {
@@ -71,7 +73,7 @@ function currentCampaign() {
 function render(force = false) {
   renderHeader();
   const s = state.data;
-  const signature = JSON.stringify([s, state.iterations, state.snapshots, state.campaigns, state.view, state.studioSection, state.historyQuery, state.historyFilter, state.selectedRound, state.lessonId, state.diff, state.expandedActivity, state.reports, state.reportDetail, state.reportId, state.reportBefore, state.telemetry, state.benchmark, state.teacherAssessment, benchmarkBrowser.state]);
+  const signature = JSON.stringify([s, state.iterations, state.snapshots, state.campaigns, state.view, state.studioSection, state.historyQuery, state.historyFilter, state.selectedRound, state.lessonId, state.diff, state.expandedActivity, state.reports, state.reportDetail, state.reportId, state.reportBefore, state.telemetry, state.benchmark, state.teacherAssessment, benchmarkBrowser.state, experimentBrowser.state]);
   if (!force && (signature === state.signature || window.getSelection()?.toString())) return;
   state.signature = signature;
   const content = $("content"), detailState = new Map();
@@ -82,9 +84,9 @@ function render(force = false) {
   const scrolls = new Map(sameScope ? [...content.querySelectorAll("details[data-detail] .prose")].map((el, index) => [index, el.scrollTop]) : []);
   const listScrolls = new Map([...content.querySelectorAll("[data-scroll]")].map(el => [el.dataset.scroll, el.scrollTop]));
   const focused = document.activeElement;
-  const focusKey = focused?.dataset?.benchmarkPoint || focused?.dataset?.benchmarkMetric || focused?.dataset?.scoreRound || focused?.dataset?.report || focused?.dataset?.round || focused?.dataset?.campaign || focused?.dataset?.studioSection || focused?.id;
+  const focusKey = focused?.id || focused?.dataset?.benchmarkPoint || focused?.dataset?.benchmarkMetric || focused?.dataset?.experimentRound || focused?.dataset?.experimentSelect || focused?.dataset?.experimentPage || focused?.dataset?.experimentStrategy || focused?.dataset?.scoreRound || focused?.dataset?.report || focused?.dataset?.round || focused?.dataset?.campaign || focused?.dataset?.studioSection || focused?.id;
   const selection = typeof focused?.selectionStart === "number" ? [focused.selectionStart, focused.selectionEnd] : null;
-  const data = s ? { ...s, currentCampaign: currentCampaign(), iterations: state.iterations, teacherAssessment: state.teacherAssessment?.campaign_id === s.campaign.id ? state.teacherAssessment : null, expandedActivity: state.expandedActivity, benchmark: state.benchmark?.campaign_id === s.campaign.id ? state.benchmark : null, benchmarkBrowser: benchmarkBrowser.state.snapshot?.campaign_id === s.campaign.id ? benchmarkBrowser.state : {}, telemetry: state.telemetry?.campaign_id === s.campaign.id ? state.telemetry : null } : null;
+  const data = s ? { ...s, experiments: experimentBrowser.state, currentCampaign: currentCampaign(), iterations: state.iterations, teacherAssessment: state.teacherAssessment?.campaign_id === s.campaign.id ? state.teacherAssessment : null, expandedActivity: state.expandedActivity, benchmark: state.benchmark?.campaign_id === s.campaign.id ? state.benchmark : null, benchmarkBrowser: benchmarkBrowser.state.snapshot?.campaign_id === s.campaign.id ? benchmarkBrowser.state : {}, telemetry: state.telemetry?.campaign_id === s.campaign.id ? state.telemetry : null } : null;
   if (state.view === "reports") content.innerHTML = reportsView(state.reports, state.reportDetail, state.reportId, state.reportBefore);
   else if (state.view === "history") content.innerHTML = historyView(state.campaigns, { query: state.historyQuery, filter: state.historyFilter });
   else if (!s) content.innerHTML = state.campaigns.length ? '<div class="empty-inline" role="status">Loading run…</div>' : emptyStudio();
@@ -93,7 +95,7 @@ function render(force = false) {
   [...content.querySelectorAll("details[data-detail] .prose")].forEach((el, index) => { if (scrolls.has(index)) el.scrollTop = scrolls.get(index); });
   for (const el of content.querySelectorAll("[data-scroll]")) if (listScrolls.has(el.dataset.scroll)) el.scrollTop = listScrolls.get(el.dataset.scroll);
   if (focusKey) {
-    const restored = [...content.querySelectorAll("button,select,input,a[data-score-round],a[data-benchmark-point]")].find(el => (el.dataset.benchmarkPoint || el.dataset.benchmarkMetric || el.dataset.scoreRound || el.dataset.report || el.dataset.round || el.dataset.campaign || el.dataset.studioSection || el.id) === focusKey);
+    const restored = [...content.querySelectorAll("button,select,input,a[data-score-round],a[data-benchmark-point]")].find(el => (el.id || el.dataset.benchmarkPoint || el.dataset.benchmarkMetric || el.dataset.experimentRound || el.dataset.experimentSelect || el.dataset.experimentPage || el.dataset.experimentStrategy || el.dataset.scoreRound || el.dataset.report || el.dataset.round || el.dataset.campaign || el.dataset.studioSection || el.id) === focusKey);
     restored?.focus({ preventScroll: true });
     if (selection) restored?.setSelectionRange?.(...selection);
   }
@@ -168,6 +170,7 @@ async function refresh(force = false) {
       localStorage.setItem("nekaise.campaign", id);
       if (state.view === "iteration" && !state.selectedRound) state.selectedRound = snapshot.round?.id || "";
       render(force);
+      if (state.studioSection === "experiments" && state.view === "overview") await experimentBrowser.refresh();
       if (["teaching", "overview"].includes(state.studioSection)) await Promise.all([
         fillIterations(snapshot, version),
         state.studioSection === "overview" && state.view === "overview" ? loadAssessmentHistory({ ...snapshot, rounds: snapshot.rounds.map(r => state.iterations[r.id]?.updated_at === r.updated_at ? state.iterations[r.id] : r) }, campaigns,
@@ -255,8 +258,23 @@ async function openIteration(id, lessonId = "", assessment = false) {
     if (assessment) document.querySelector?.(".iteration-assessment")?.scrollIntoView({ block: "start" });
   } catch (error) { if (version === state.selectionVersion && state.selectedRound === id) showError(`Unable to open iteration: ${error.message}`); }
 }
+async function openRecordedIteration(campaignId, roundId, assessment = false) {
+  // Records can belong to campaigns older than the run picker's current page.
+  if (!state.campaigns.some(c => c.id === campaignId)) {
+    const version = state.selectionVersion;
+    try {
+      const snapshot = await api(`/campaigns/${encodeURIComponent(campaignId)}`);
+      if (version !== state.selectionVersion) return;
+      state.campaigns.push(snapshot.campaign); remember(snapshot);
+    } catch (error) { return showError(`Unable to open iteration: ${error.message}`); }
+  }
+  const version = state.selectionVersion + (campaignId !== state.campaignId ? 1 : 0);
+  if (campaignId !== state.campaignId) await changeCampaign(campaignId);
+  if (state.selectionVersion !== version) return;
+  if (state.campaignId === campaignId) return openIteration(roundId, "", assessment);
+}
 async function changeStudioSection(section) {
-  if (!["overview", "teaching", "activity"].includes(section)) return;
+  if (!["overview", "teaching", "experiments", "activity"].includes(section)) return;
   state.selectionVersion += 1;
   state.refreshing = false;
   state.studioSection = section;
@@ -310,21 +328,7 @@ document.addEventListener("click", async event => {
   const score = event.target.closest("[data-score-round]");
   if (score?.dataset?.scoreRound) {
     event.preventDefault();
-    const campaignId = score.dataset.scoreCampaign, roundId = score.dataset.scoreRound;
-    // A lineage ancestor can be older than the campaign catalog's page.
-    if (!state.campaigns.some(c => c.id === campaignId)) {
-      const version = state.selectionVersion;
-      try {
-        const snapshot = await api(`/campaigns/${encodeURIComponent(campaignId)}`);
-        if (version !== state.selectionVersion) return;
-        state.campaigns.push(snapshot.campaign); remember(snapshot);
-      } catch (error) { return showError(`Unable to open assessment: ${error.message}`); }
-    }
-    const version = state.selectionVersion + (campaignId !== state.campaignId ? 1 : 0);
-    if (campaignId !== state.campaignId) await changeCampaign(campaignId);
-    if (state.selectionVersion !== version) return;
-    if (state.campaignId === campaignId) return openIteration(roundId, "", true);
-    return;
+    return openRecordedIteration(score.dataset.scoreCampaign, score.dataset.scoreRound, true);
   }
   const target = event.target.closest("button");
   if (!target) return;
@@ -335,6 +339,17 @@ document.addEventListener("click", async event => {
     if ("benchmarkOverview" in target.dataset) return benchmarkBrowser.overview();
     if ("benchmarkPage" in target.dataset) return benchmarkBrowser.load(Number(target.dataset.benchmarkPage));
     if ("benchmarkMetric" in target.dataset) return benchmarkBrowser.metric(target.dataset.benchmarkMetric);
+  }
+  if (target.dataset.experimentRound) return openRecordedIteration(target.dataset.experimentCampaign, target.dataset.experimentRound);
+  if ("experimentStrategy" in target.dataset) {
+    const reading = experimentBrowser.filter(target.dataset.experimentStrategy);
+    if (state.studioSection !== "experiments" || state.view !== "overview") await changeStudioSection("experiments");
+    return reading;
+  }
+  if (state.view === "overview" && state.studioSection === "experiments") {
+    if (target.dataset.experimentSelect) return experimentBrowser.select(target.dataset.experimentSelect);
+    if (target.dataset.experimentPage) return experimentBrowser.load(target.dataset.experimentPage === "latest" ? null : Number(target.dataset.experimentPage));
+    if ("experimentRefresh" in target.dataset) return experimentBrowser.refresh();
   }
   if (target.dataset.materialNext) {
     const id = target.dataset.materialNext, before = state.iterations[id], version = state.selectionVersion;

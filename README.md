@@ -43,7 +43,9 @@ three workspaces: **Report** for current execution and orchestrator decisions, *
 for teaching and student work, and **Previous runs** for searchable history and continuation
 lineage. **Studio is the homepage**, with teacher-token, trained-token, teacher-assessment
 and independent-evaluation charts visible together, followed by the current iteration and loss. Lessons & assessments
-and Activity have their own sections. Session time and token consumption follow the
+and Activity have their own sections. **Experiments** browses pre-training hypotheses,
+strategy versions, later Teacher conclusions and measured evidence across all runs;
+see [teaching experiments](docs/TEACHING_EXPERIMENTS.md). Session time and token consumption follow the
 selected continuation lineage; loss and activity describe the selected run. Historical
 views have an explicit return to the current run.
 The orchestrator also organizes previous runs and training logs. It gives retention reasons,

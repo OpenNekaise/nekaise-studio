@@ -120,6 +120,22 @@ def create_app(settings: Settings | None = None, *, allowed_hosts: tuple[str, ..
     def events(campaign_id: str | None = None, after: int = Query(0, ge=0), limit: int = Query(100, ge=1, le=200)):
         return service.store.events(campaign_id, after, limit)
 
+    @app.get("/api/experiments")
+    def experiments(campaign_id: str | None = None,
+                    strategy_version: str | None = Query(None, pattern=r"^[a-f0-9]{64}$"),
+                    before: int | None = Query(None, ge=1), limit: int = Query(20, ge=1, le=100)):
+        from .experiments import catalog
+        return catalog(service.store, campaign_id=campaign_id, strategy_version=strategy_version,
+                       before=before, limit=limit)
+
+    @app.get("/api/experiments/{round_id}")
+    def experiment(round_id: str):
+        from .experiments import detail
+        try:
+            return detail(service.store, service.artifacts, round_id)
+        except (OSError, ValueError) as exc:
+            raise HTTPException(status_code=409, detail=f"Experiment evidence unavailable: {exc}"[:600]) from exc
+
     @app.get("/api/history-reviews")
     def history_reviews():
         import json

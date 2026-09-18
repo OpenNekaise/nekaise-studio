@@ -103,6 +103,25 @@ def read_report(workspace, request):
         return catalog(service, before=request.get("before"), limit=int(request.get("limit", 20)))
 
 
+def read_experiment(workspace, request):
+    from types import SimpleNamespace
+    from . import experiments
+    with archive(workspace) as db:
+        def rows(sql, args=()):
+            return [dict(row) for row in db.execute(sql, args)]
+        def one(sql, args=()):
+            result = rows(sql, args)
+            return result[0] if result else None
+        store, artifacts = SimpleNamespace(query=rows, one=one), Artifacts(Path(workspace))
+        if request["op"] == "experiment":
+            return experiments.detail(store, artifacts, request["round_id"])
+        if request["op"] == "strategy":
+            return experiments.strategy(store, artifacts, request["version"])
+        return experiments.catalog(store, campaign_id=request.get("campaign_id"),
+            strategy_version=request.get("strategy_version"), before=int(request["before"]) if request.get("before") is not None else None,
+            limit=int(request.get("limit", 20)))
+
+
 def replay_lesson(workspace, round_id, lesson_id):
     with archive(workspace) as db:
         row = db.execute("SELECT artifact FROM stage_runs WHERE round_id=? AND stage='gate' AND status='complete' ORDER BY attempt DESC LIMIT 1", (round_id,)).fetchone()
@@ -145,6 +164,9 @@ def query(context, request):
             "log_summaries": "Orchestrator summaries and recovery locations of cleaned raw logs; offset/limit",
             "reports": "All operational reports including proposals and outcomes; limit/before; follow next_before",
             "report": "Full operational report, decision turns, host checks and outcomes: recovery_id",
+            "experiments": "All recorded teaching experiments, including interrupted/archived runs; optional campaign_id, strategy_version, limit/before; follow next_before",
+            "experiment": "Pre-training plan, immutable strategy, later Teacher judgment and actual teaching evidence: round_id; null if no plan was recorded",
+            "strategy": "Read an immutable teaching strategy definition: version (full content hash)",
             "artifact": "Read immutable JSON: hash",
             "material_candidates": "Read all exact material-author candidates: round_id, offset/limit, optional candidate_id; full sources and provenance included",
             "author_jobs": "All material-author jobs including partial failures; optional round_id, author_id; offset/limit; saved input/result artifact hashes",
@@ -155,6 +177,8 @@ def query(context, request):
         }, "current_campaign_id": context["campaign_id"], "workspace": str(workspace), "corpus_path": context["corpus_path"], "latest_strategy": latest_strategy(workspace, context["campaign_id"]), "operational_context": operational_context(workspace, context["campaign_id"])}
     if op in {"reports", "report"}:
         return read_report(workspace, request)
+    if op in {"experiments", "experiment", "strategy"}:
+        return read_experiment(workspace, request)
     if op == "artifact":
         return Artifacts(workspace).get(request["hash"])
     if op == "material_candidates":

@@ -252,6 +252,8 @@ class Service:
         row["metrics"] = self.store.metrics(round_id)
         from .learning_work import safe_round_work
         row["learning_work"] = safe_round_work(self.store, self.artifacts, round_id)
+        from .experiments import safe_detail
+        row["experiment"] = safe_detail(self.store, self.artifacts, round_id)
         row["score"] = self._score(row["evaluations"])
         row["curriculum"] = None
         row["teaching_strategy"] = None

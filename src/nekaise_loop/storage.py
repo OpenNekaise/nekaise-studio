@@ -47,6 +47,7 @@ class Store:
                 CREATE TABLE IF NOT EXISTS teacher_calls (id INTEGER PRIMARY KEY, campaign_id TEXT NOT NULL REFERENCES campaigns(id), round_id TEXT NOT NULL REFERENCES rounds(id), purpose TEXT NOT NULL, status TEXT NOT NULL, usage TEXT NOT NULL, created_at TEXT NOT NULL);
                 CREATE INDEX IF NOT EXISTS idx_rounds_campaign ON rounds(campaign_id,number);
                 CREATE INDEX IF NOT EXISTS idx_stages_round ON stage_runs(round_id,stage,status);
+                CREATE INDEX IF NOT EXISTS idx_experiment_strategy ON records(json_extract(data,'$.strategy_version')) WHERE kind='experiment';
                 CREATE INDEX IF NOT EXISTS idx_events_campaign ON events(campaign_id,id);
                 CREATE INDEX IF NOT EXISTS idx_actions_pending ON actions(id) WHERE handled_at IS NULL;
             """)

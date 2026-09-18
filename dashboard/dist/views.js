@@ -1,8 +1,9 @@
-import { efficiencyCard, ratioLabel } from "./efficiency.js?v=c570ecf46108";
-import { escapeHTML as e, number, duration, time, percent, safeURL, diffWords, lossChart, iterationMetrics, dateLabel, modelLabel } from "./lib.js?v=c570ecf46108";
-import { usageCharts, elapsedLabel, phaseFor, phases } from "./telemetry.js?v=c570ecf46108";
-import { benchmarkCard, benchmarkHistory } from "./benchmark.js?v=c570ecf46108";
-import { teacherAssessmentCard } from "./teacher-assessment.js?v=c570ecf46108";
+import { efficiencyCard, ratioLabel } from "./efficiency.js?v=45d8cb9d849a";
+import { escapeHTML as e, number, duration, time, percent, safeURL, diffWords, lossChart, iterationMetrics, dateLabel, modelLabel } from "./lib.js?v=45d8cb9d849a";
+import { usageCharts, elapsedLabel, phaseFor, phases } from "./telemetry.js?v=45d8cb9d849a";
+import { benchmarkCard, benchmarkHistory } from "./benchmark.js?v=45d8cb9d849a";
+import { teacherAssessmentCard } from "./teacher-assessment.js?v=45d8cb9d849a";
+import { experimentCard, experimentsView } from "./experiments.js?v=45d8cb9d849a";
 
 export const badge = (status, small = false) => `<span class="status ${e(status)} ${small ? "small" : ""}">${e(status || "pending")}</span>`;
 const empty = (text) => `<div class="empty-inline">${e(text)}</div>`;
@@ -65,7 +66,7 @@ const shortId = id => id?.replace(/^campaign_/, "") || "";
 const phaseLabel = (campaign, round) => ["running", "pausing", "stopping"].includes(campaign?.status) ? stageLabels[round?.stage] || "Preparing the next iteration" : phaseFor(campaign?.status, round?.stage).name;
 
 export function studioNavigation(section = "overview") {
-  return `<nav class="workspace-tabs" aria-label="Studio sections">${[["overview", "Overview"], ["teaching", "Lessons & assessments"], ["activity", "Activity"]].map(([id, name]) => `<button data-studio-section="${id}" class="workspace-tab ${section === id ? "active" : ""}" ${section === id ? 'aria-current="page"' : ""}>${name}</button>`).join(" ")}</nav>`;
+  return `<nav class="workspace-tabs" aria-label="Studio sections">${[["overview", "Overview"], ["teaching", "Lessons & assessments"], ["experiments", "Experiments"], ["activity", "Activity"]].map(([id, name]) => `<button data-studio-section="${id}" class="workspace-tab ${section === id ? "active" : ""}" ${section === id ? 'aria-current="page"' : ""}>${name}</button>`).join(" ")}</nav>`;
 }
 
 export function studioScope(s) {
@@ -93,6 +94,7 @@ function statusIcon(status) {
 
 export function overview(s, section = "overview") {
   const heading = studioScope(s);
+  if (section === "experiments") return heading + studioNavigation(section) + experimentsView(s.experiments);
   if (section === "activity") return heading + studioNavigation(section) + `<section class="panel"><div class="panel-heading"><h2>Execution activity</h2><span class="quiet">Selected run only</span></div>${eventsView(s.events, true)}</section>`;
   const round = s.round, detail = round ? detailsFor(s, round) || round : null;
   const lessons = detail?.lessons || [];
@@ -158,7 +160,7 @@ export function iterationView(s, state = {}) {
   if (!round) return navigation + empty("Loading iteration…");
   const lessons = round.lessons || [], items = round.evaluations || [], metrics = round.metrics || [], last = metrics.at(-1);
   const local = { ...s, round };
-  return `${navigation}<div class="iteration-heading"><div><h1>Iteration ${number(round.number)}</h1><p class="quiet">${e(dateLabel(round.created_at))} · ${count(lessons.length, "lesson")} · ${count(metrics.length, "recorded update")}${last ? ` · last loss ${number(last.loss, 3)}` : ""}</p></div>${badge(round.status)}</div><div class="section-heading"><h2>Lessons & revisions</h2><button class="button secondary small-button" data-diff="${!state.diff}" aria-pressed="${!!state.diff}">${state.diff ? "Hide changes" : "Highlight changes"}</button></div>${lessons.length ? lessons.map((row, i) => lessonCard(row, i, state.diff, state.lessonId)).join("") : empty("No lessons recorded in this iteration.")}${materialList(round)}<section class="iteration-assessment" tabindex="-1"><div class="section-heading"><h2>Assessment</h2><span class="quiet">${items.filter(item => item.grade).length} / ${items.length} reviewed${Number.isFinite(round.score) ? ` · ${number(round.score * 100, 1)}%` : ""}</span></div>${items.length ? items.map(assessmentCard).join("") : empty("No assessment recorded in this iteration.")}</section>${teachingPlan(local)}${learningWork(round.learning_work)}<details class="panel detail-panel" data-detail="training-details"><summary>CoAPT Mid-training · recipe & details</summary><div class="detail-body">${round.curriculum?.train_epochs === 0 ? '<p>No weight updates requested for this iteration.</p>' : ""}${tokenLedger(local)}<dl class="training-details"><div><dt>Learning rate</dt><dd>${last?.learning_rate?.toExponential(1) || "—"}</dd></div><div><dt>Elapsed training</dt><dd>${duration(last?.elapsed_seconds)}</dd></div><div><dt>Parent checkpoint</dt><dd><code>${e(round.model_before)}</code></dd></div><div><dt>Saved checkpoint</dt><dd><code>${e(round.checkpoint || "Not saved yet")}</code></dd></div>${round.checkpoint_retention ? `<div><dt>Checkpoint availability</dt><dd>${e({keep:"Full training state",weights:"Inference weights only; optimizer retired",summary:"Records only; model bytes retired"}[round.checkpoint_retention.disposition])}</dd></div>` : ""}</dl></div></details>`;
+  return `${navigation}<div class="iteration-heading"><div><h1>Iteration ${number(round.number)}</h1><p class="quiet">${e(dateLabel(round.created_at))} · ${count(lessons.length, "lesson")} · ${count(metrics.length, "recorded update")}${last ? ` · last loss ${number(last.loss, 3)}` : ""}</p></div>${badge(round.status)}</div><div class="section-heading"><h2>Lessons & revisions</h2><button class="button secondary small-button" data-diff="${!state.diff}" aria-pressed="${!!state.diff}">${state.diff ? "Hide changes" : "Highlight changes"}</button></div>${lessons.length ? lessons.map((row, i) => lessonCard(row, i, state.diff, state.lessonId)).join("") : empty("No lessons recorded in this iteration.")}${materialList(round)}<section class="iteration-assessment" tabindex="-1"><div class="section-heading"><h2>Assessment</h2><span class="quiet">${items.filter(item => item.grade).length} / ${items.length} reviewed${Number.isFinite(round.score) ? ` · ${number(round.score * 100, 1)}%` : ""}</span></div>${items.length ? items.map(assessmentCard).join("") : empty("No assessment recorded in this iteration.")}</section>${experimentCard(round.experiment, round.learning_work)}${teachingPlan(local)}${learningWork(round.learning_work)}<details class="panel detail-panel" data-detail="training-details"><summary>CoAPT Mid-training · recipe & details</summary><div class="detail-body">${round.curriculum?.train_epochs === 0 ? '<p>No weight updates requested for this iteration.</p>' : ""}${tokenLedger(local)}<dl class="training-details"><div><dt>Learning rate</dt><dd>${last?.learning_rate?.toExponential(1) || "—"}</dd></div><div><dt>Elapsed training</dt><dd>${duration(last?.elapsed_seconds)}</dd></div><div><dt>Parent checkpoint</dt><dd><code>${e(round.model_before)}</code></dd></div><div><dt>Saved checkpoint</dt><dd><code>${e(round.checkpoint || "Not saved yet")}</code></dd></div>${round.checkpoint_retention ? `<div><dt>Checkpoint availability</dt><dd>${e({keep:"Full training state",weights:"Inference weights only; optimizer retired",summary:"Records only; model bytes retired"}[round.checkpoint_retention.disposition])}</dd></div>` : ""}</dl></div></details>`;
 }
 
 export function historyView(campaigns, options = {}) {

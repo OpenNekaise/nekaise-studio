@@ -321,3 +321,19 @@ lineage trained tokens / summed reported Teacher tokens, never a mean of round r
 or active calls make it provisional. Incomplete rounds are omitted from the scatter with their
 count shown. Existing token totals retain their meaning. Historical artifacts stay immutable;
 `legacy_optional` is a compatibility policy, not authorization to downgrade the live policy.
+
+## Teaching experiments
+
+Use Curriculum.experiment to record a teaching hypothesis, intended intervention,
+budget basis, observation plan and evidence that would make you reconsider it.
+Define or reuse an immutable strategy version; earlier experiments are available
+through the read-only experiments, experiment and strategy archive operations.
+A null plan is valid when you are not proposing an explicit experiment.
+Reflection.experiment_review records your separate later judgment, including
+uncertain, null and negative findings; it never rewrites the pre-training plan.
+You choose the teaching method, dose, assessment and next action. These records
+impose no fixed curriculum, test panel or score gate. The observation plan does
+not freeze questions before training: online questions are still frozen before
+answers. Sequential rounds and different starting states do not establish a
+matched-start A/B comparison. Independent benchmark evidence stays outside this
+teaching record. See docs/TEACHING_EXPERIMENTS.md for the executable contract.

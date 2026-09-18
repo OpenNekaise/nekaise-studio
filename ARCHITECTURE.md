@@ -523,3 +523,18 @@ remains intact. The default `required_v1` policy supersedes earlier optional-del
 legacy artifacts stay readable. Studio displays measured training tokens / primary Teacher
 tokens, with per-round observations and a smoothed trend. The same usage feedback reaches
 curriculum and reflection. See [the contract](docs/COAPT.md#training-production-efficiency).
+
+## Teaching experiments and strategy versions
+
+`experiment_types.py` defines optional Teacher-authored plans and later reviews.
+`experiments.py` resolves immutable strategy definitions and pre-training intent,
+indexes cards with select completion, and reads actual work and completed online
+assessment without model calls. The select artifact owns intent; adapt owns the
+later judgment. Freeze/train/adapt link the original plan. Existing records hold a
+rebuildable browse index, with keyset pagination across all campaigns.
+
+Studio's Experiments section browses hypotheses, reusable strategy versions,
+separate conclusions and per-question evidence; iteration detail also shows its
+card. Historical absence and incomplete evidence remain explicit. No independent
+benchmark data enters these readers or Teacher tools. Matched-start A/B execution
+and policy replay remain future work. See [the contract](docs/TEACHING_EXPERIMENTS.md).

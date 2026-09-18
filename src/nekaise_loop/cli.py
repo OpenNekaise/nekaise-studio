@@ -23,6 +23,7 @@ def main():
     sub.add_parser("list")
     sub.add_parser("history-inventory")
     sub.add_parser("history-reviews")
+    sub.add_parser("reindex-experiments")
     reports = sub.add_parser("reports")
     reports.add_argument("--before", type=int)
     reports.add_argument("--limit", type=int, choices=range(1, 101), default=30)
@@ -71,6 +72,9 @@ def main():
         result = inventory(service)
     elif args.command == "history-reviews":
         result = service.store.query("SELECT * FROM history_reviews ORDER BY applied_at DESC")
+    elif args.command == "reindex-experiments":
+        from .experiments import rebuild_index
+        result = rebuild_index(service.store, service.artifacts)
     elif args.command == "reports":
         from .reports import catalog, current_status
         result = {"current": current_status(service), **catalog(service, before=args.before, limit=args.limit)}

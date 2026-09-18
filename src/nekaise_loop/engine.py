@@ -146,6 +146,9 @@ class Engine:
                         artifact = self.artifacts.put(result)
                         with self.store.connect(immediate=True) as db:
                             db.execute("UPDATE stage_runs SET status='complete',artifact=?,finished_at=? WHERE id=?", (artifact, now(), stage_id))
+                            if stage == "select":
+                                from .experiments import index_selection
+                                index_selection(self.store, row["id"], stage_id, artifact, result.get("experiment"), db)
                             if stage == "train":
                                 db.execute("UPDATE rounds SET checkpoint=? WHERE id=?", (result["checkpoint"], row["id"]))
                             self.store.event(campaign_id, row["id"], "stage_complete", f"{STAGE_LABELS[stage]} complete", {"stage": stage, "artifact": artifact}, db=db)

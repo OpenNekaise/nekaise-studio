@@ -265,6 +265,72 @@ def test_unknown_selection_cannot_enter_frozen_data(setup_loop):
     assert not FakeModel.datasets
 
 
+def test_hashed_job_selection_is_diagnosed_and_retry_reuses_author_results(setup_loop):
+    calls = []
+    class WrongNamespace(AuthorTeacher):
+        def select_materials(self, manifest):
+            choice = super().select_materials(manifest)
+            if not calls:
+                choice["accepted_jobs"] = [manifest["jobs"][0]["job_id"]]
+            calls.append(choice)
+            return choice
+    _, service, campaign, engine = configured(setup_loop, teacher=WrongNamespace)
+    engine.run(campaign["id"])
+    failed = service.store.campaign(campaign["id"])
+    assert failed["status"] == "failed"
+    assert "accepted_jobs must use manifest plan_id names, not job_id artifact hashes" in failed["error"]
+    assert "allowed plan_id values: ['one', 'two']" in failed["error"]
+    assert calls[0]["accepted_jobs"][0] in failed["error"]
+    assert not FakeModel.datasets
+    engine.run(campaign["id"])
+    assert service.store.campaign(campaign["id"])["status"] == "complete"
+    assert len(service.store.query("SELECT id FROM material_calls")) == 2
+    assert calls[1]["accepted_jobs"] == ["one", "two"]
+
+
+@pytest.mark.parametrize("provider", ["codex", "claude"])
+@pytest.mark.parametrize("selection", ["all", "none", "no_jobs"])
+def test_material_adapter_binds_plan_names_and_preserves_empty_choice(setup_loop, provider, selection):
+    from nekaise_loop.providers.teacher import CliTeacher
+    from nekaise_loop.teaching import MaterialSelection
+    settings, service, campaign, engine = setup_loop
+    engine.run(campaign["id"], pause=lambda: True)
+    row = service.store.one("SELECT id FROM rounds")
+    jobs = [] if selection == "no_jobs" else [
+        {"plan_id": "named_plan", "job_id": "a" * 64},
+        {"plan_id": "other_plan", "job_id": "b" * 64},
+    ]
+    choice = {"manifest_hash": "c" * 64, "accepted_ids": [],
+              "accepted_jobs": [j["plan_id"] for j in jobs] if selection == "all" else [],
+              "edits": [], "seed_exclusions": [], "token_mix": {"teacher": 0, "corpus": 0, "replay": 0},
+              "train_epochs": 0, "review_scope": "Fixture diagnostic", "reason": "Teacher may omit all jobs"}
+    class Runner:
+        def run(self, command, **kwargs):
+            saved = json.loads((kwargs["cwd"] / "input.json").read_text())
+            schema = saved["schema"]
+            field = schema["properties"]["accepted_jobs"]
+            if jobs:
+                assert field["items"]["enum"] == ["named_plan", "other_plan"]
+                assert all(j["job_id"] not in field["items"]["enum"] for j in jobs)
+            else:
+                assert field["maxItems"] == 0
+                assert "enum" not in field["items"]
+            assert field.get("minItems", 0) == 0
+            assert schema["additionalProperties"] is False
+            assert "accepted_jobs" in schema["required"]
+            if provider == "codex":
+                assert json.loads(Path(command[command.index("--output-schema") + 1]).read_text()) == schema
+                Path(command[command.index("--output-last-message") + 1]).write_text(json.dumps(choice))
+                return ""
+            assert json.loads(command[command.index("--json-schema") + 1]) == schema
+            return json.dumps({"structured_output": choice})
+    config = CampaignConfig.model_validate({**campaign["config"], "teacher_provider": provider})
+    teacher = CliTeacher(config, settings, service.store, campaign["id"], row["id"], Runner(), settings.workspace / "selection-adapter")
+    assert teacher.select_materials({"jobs": jobs}) == MaterialSelection.model_validate(choice).model_dump()
+    # A per-request enum must not leak into another round's base model schema.
+    assert "enum" not in MaterialSelection.model_json_schema()["properties"]["accepted_jobs"]["items"]
+
+
 def test_request_deadline_saves_failure_without_fake_completion(setup_loop):
     async def handler(req):
         await asyncio.sleep(3)

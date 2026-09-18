@@ -91,7 +91,7 @@ class Revisions(Record):
 class MaterialSelection(Record):
     manifest_hash: str
     accepted_ids: list[str]
-    accepted_jobs: list[str] = Field(description="Plan job IDs whose exact immutable candidates are all selected; no obligation to accept any job")
+    accepted_jobs: list[str] = Field(description="Exact jobs[].plan_id names whose immutable candidates are all selected, never jobs[].job_id artifact hashes. Empty is valid; no obligation to accept any job.")
     edits: list[MaterialEdit]
     seed_exclusions: list[str]
     token_mix: CurriculumTokenMix

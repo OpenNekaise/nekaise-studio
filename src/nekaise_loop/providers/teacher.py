@@ -50,14 +50,14 @@ class CliTeacher:
         self.campaign_id, self.round_id = campaign_id, round_id
         self.runner, self.directory = runner, directory
 
-    def request(self, purpose, payload, model):
+    def request(self, purpose, payload, model, *, schema=None):
         campaign = self.store.campaign(self.campaign_id)
         since = campaign.get("teacher_budget_since") or campaign["created_at"]
         count = self.store.one("SELECT COUNT(*) AS n FROM teacher_calls WHERE campaign_id=? AND created_at>=?", (self.campaign_id, since))["n"]
         if self.config.max_teacher_calls != -1 and count >= self.config.max_teacher_calls:
             raise TeacherUnavailable("Teacher call allowance used. Resume renews the allowance and retries this stage.", "budget")
         template = (ROOT / "prompts" / f"{purpose}.txt").read_text()
-        schema = model.model_json_schema()
+        schema = model.model_json_schema() if schema is None else schema
         def strict(node):
             if isinstance(node, dict):
                 node.pop("default", None)
@@ -133,7 +133,16 @@ class CliTeacher:
         return self.request("revise", {"lessons": lessons}, Revisions)["rows"]
 
     def select_materials(self, manifest):
-        return self.request("material_select", manifest, MaterialSelection)
+        schema = MaterialSelection.model_json_schema()
+        jobs = schema["properties"]["accepted_jobs"]
+        plan_ids = sorted({job["plan_id"] for job in manifest["jobs"]})
+        # Bind references to this request, not the immutable job artifact hashes.
+        # An empty list remains valid: the teacher may select individuals or none.
+        if plan_ids:
+            jobs["items"]["enum"] = plan_ids
+        else:
+            jobs["maxItems"] = 0
+        return self.request("material_select", manifest, MaterialSelection, schema=schema)
 
     def evaluate(self, curriculum, lessons):
         return self.request("evaluate", {"curriculum": curriculum, "lessons": lessons}, Evaluations)["rows"]

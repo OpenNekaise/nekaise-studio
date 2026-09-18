@@ -116,11 +116,17 @@ def select_materials(ctx):
     if by_id.keys() & {r["id"] for r in lessons}:
         raise ValueError("Synthetic material IDs collide with primary lesson IDs")
     jobs = {r["plan_id"] for r in manifest["jobs"]}
+    unknown_jobs = set(choice["accepted_jobs"]) - jobs
+    if unknown_jobs:
+        raise ValueError(
+            f"Teacher accepted_jobs must use manifest plan_id names, not job_id artifact hashes; "
+            f"unknown: {sorted(unknown_jobs)}; allowed plan_id values: {sorted(jobs)}"
+        )
     selected = set(choice["accepted_ids"])
     edits = {e["candidate_id"]: e["replacement"] for e in choice["edits"]}
     if (len(selected) != len(choice["accepted_ids"]) or len(edits) != len(choice["edits"])
             or not selected <= by_id.keys() or not edits.keys() <= by_id.keys()
-            or not set(choice["accepted_jobs"]) <= jobs or selected.intersection(edits)):
+            or selected.intersection(edits)):
         raise ValueError("Teacher selected missing, duplicate or conflicting material IDs")
     if not set(choice["seed_exclusions"]) <= {r["id"] for r in lessons}:
         raise ValueError("Teacher excluded an unknown seed")

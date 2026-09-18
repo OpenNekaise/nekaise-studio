@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 from .work_accounting import generation_work, preparation_work
 from .material_accounting import job_work
+from .efficiency import round_efficiency
 
 def prepared_coverage(frozen):
     """Split only exact known prefixes; report preparation, not consumption."""
@@ -78,7 +79,7 @@ def round_work(store, artifacts, round_id):
     capacity = config["tokens_per_update"]
     preparation = (frozen.get("preparation_work") or preparation_work(frozen,
         {**config, "train_epochs": selected.get("train_epochs", config["train_epochs"])})) if frozen else None
-    return {**row, "stage_seconds": wall, "finished_stage_seconds": sum(wall.values()),
+    return {**row, "expansion_policy": config.get("expansion_policy", "legacy_optional"), "stage_seconds": wall, "finished_stage_seconds": sum(wall.values()),
             "timing_complete": not missing,
             "teacher_stage_seconds": sum(wall.get(s, 0) for s in ("select", "revise", "evaluate", "grade", "adapt")) + (wall.get("material_select", 0) if outputs.get("material_select", {}).get("selection") is not None else 0),
             "unfinished_stage_timings": missing,
@@ -96,6 +97,9 @@ def round_work(store, artifacts, round_id):
                 "mean_fill": sum(update_sizes)/(len(update_sizes)*capacity) if update_sizes else None},
             "generation_work": generation_work(generations),
             "material_author_work": job_work(store, round_id), "material_sources": frozen.get("material_sources"),
+            "material_expansion": frozen.get("material_expansion"),
+            "teacher_efficiency": {**round_efficiency(store, artifacts.root.parent, round_id, sum(a["tokens"] for a in attempts.values())),
+                                   "final": row["status"] == "complete"},
             "checkpoint_bytes_present": present_bytes,
             "limitations": "Measured work includes retry attempts, not inherited global counters. Inner optimizer elapsed excludes model loading, inference and saving. Stage sums include finished attempts only, exclude between-round reviews and are not GPU utilization. Prepared coverage is not consumed exposure; continuation includes termination tokens. Present checkpoint bytes may reflect retention. Counts and scores do not establish learning."}
 

@@ -57,7 +57,7 @@ class Curriculum(Record):
     train_epochs: int = Field(ge=0, description="0 keeps weights unchanged; positive values train this many dataset passes")
     evaluation_instructions: str
     notes: str
-    expansion_jobs: list[ExpansionJob] = Field(default_factory=list, description="Optional delegated material-author jobs following your plan and corrected seeds. Empty disables expansion; execution budgets are provided separately.")
+    expansion_jobs: list[ExpansionJob] = Field(default_factory=list, description="Delegated material-author jobs following your plan and corrected seeds. Required for positive training under required_v1; diagnostics may leave empty. Execution budgets are provided separately.")
     work_plan: WorkPlan | None = Field(default=None, description="Explicit teacher-owned work estimate and rationale; null is retained for older plans or when an estimate is unavailable")
     comparison_round_id: str = Field(default="", description="Optional completed historical round whose checkpoint should also answer the exact lesson prompts; empty disables comparison. Evidence only, never a checkpoint replacement.")
     comparison_checkpoint: Literal["output", "input"] = Field(default="output", description="Select the historical round's output checkpoint, or its recorded input: a verified completed workspace checkpoint or pinned local Hub snapshot. Input requires immutable parent provenance and file integrity verification.")

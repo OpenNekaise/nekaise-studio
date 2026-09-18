@@ -10,25 +10,51 @@ from .material_types import Candidate
 from .teaching import MaterialSelection
 
 
+def validate_expansion_plan(config, curriculum):
+    """Enforce the operator's workflow requirement, without judging teaching content."""
+    jobs = curriculum.get("expansion_jobs", [])
+    if config.expansion_policy == "required_v1" and curriculum["train_epochs"] > 0 and not jobs:
+        raise ValueError("Positive training requires Material Author expansion_jobs under required_v1; only train_epochs=0 diagnostics may skip expansion")
+    limits = config.material_authors
+    if len(jobs) > limits.max_calls_per_round or sum(j["max_output_tokens"] for j in jobs) > limits.max_output_tokens_per_round:
+        raise ValueError("Teacher expansion plan exceeds the declared author allowance")
+    if len({j["id"] for j in jobs}) != len(jobs):
+        raise ValueError("Expansion job IDs must be unique")
+    authors = {a.id for a in limits.authors}
+    seeds = {r["id"] for r in curriculum["lessons"]}
+    for job in jobs:
+        if job["author_id"] not in authors or not set(job["seed_ids"]) <= seeds:
+            raise ValueError("Expansion requested an unknown author or seed")
+        if any(i < 0 or i >= len(curriculum["readings"]) for i in job["reading_indices"]):
+            raise ValueError("Expansion requested an unknown reading index")
+
+
+def expansion_receipt(ctx, curriculum, frozen):
+    if ctx.config.expansion_policy != "required_v1" or curriculum["train_epochs"] == 0:
+        return None
+    validate_expansion_plan(ctx.config, curriculum)
+    manifest = ctx.output("expand")
+    candidates = manifest["candidates"]
+    selected_ids = {r["id"] for r in ctx.output("material_select")["materials"] if r["use_for_training"]}
+    targets = sum(len(s["input_ids"])-1 for s in frozen["samples"] if s["row_id"] in selected_ids and s["stream"] == "teacher")
+    if not manifest["jobs"] or not candidates or not selected_ids or not targets:
+        raise ValueError("Positive training requires completed expansion and teacher-selected expanded training targets; revise the package or explicitly choose train_epochs=0")
+    return {"policy": "required_v1", "round_id": ctx.round["id"],
+            "manifest_hash": manifest["manifest_hash"], "job_ids": [j["job_id"] for j in manifest["jobs"]],
+            "produced_candidates": len(candidates), "selected_candidates": len(selected_ids),
+            "prepared_expanded_targets_per_pass": targets}
+
+
 def expand(ctx):
     selected = ctx.output("select")
+    validate_expansion_plan(ctx.config, selected["curriculum"])
     jobs = selected["curriculum"].get("expansion_jobs", [])
     if not jobs:
         return {"jobs": [], "candidates": [], "manifest_hash": digest([])}
-    limits = ctx.config.material_authors
-    if len(jobs) > limits.max_calls_per_round or sum(j["max_output_tokens"] for j in jobs) > limits.max_output_tokens_per_round:
-        raise ValueError("Teacher expansion plan exceeds the declared author allowance")
-    authors = {a.id for a in ctx.config.material_authors.authors}
     seeds = {r["id"]: r for r in ctx.output("revise")["lessons"]}
-    if len({j["id"] for j in jobs}) != len(jobs):
-        raise ValueError("Expansion job IDs must be unique")
     seed_artifact = ctx.store.one("SELECT artifact FROM stage_runs WHERE round_id=? AND stage='revise' AND status='complete' ORDER BY id DESC LIMIT 1", (ctx.round["id"],))["artifact"]
     specs = []
     for job in jobs:
-        if job["author_id"] not in authors or not set(job["seed_ids"]) <= seeds.keys():
-            raise ValueError("Expansion requested an unknown author or seed")
-        if any(i < 0 or i >= len(selected["readings"]) for i in job["reading_indices"]):
-            raise ValueError("Expansion requested an unknown reading index")
         sources, examples = {}, []
         for seed_id in job["seed_ids"]:
             seed = seeds[seed_id]

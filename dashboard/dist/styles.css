@@ -312,8 +312,8 @@ del { background: #f4e0d5; text-decoration-color: #ac7c65; }
 .session-clock > span { font-size: .75rem; color: var(--muted); }
 .session-clock strong { font-size: 1.45rem; font-weight: 550; letter-spacing: -.04em; font-variant-numeric: tabular-nums; }
 .session-clock small { grid-column: 1 / -1; color: var(--muted); font-size: .6875rem; text-align: right; }
-.studio-charts { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 18px; margin-bottom: 0; align-items: stretch; }
-.studio-charts .usage-card { display: flex; flex-direction: column; min-height: 338px; padding-top: 20px; box-shadow: 0 2px 4px #203e3904; border-top: 3px solid var(--usage); }
+.studio-charts { grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 18px; margin-bottom: 0; align-items: stretch; }
+.studio-charts .usage-card { grid-column: span 2; display: flex; flex-direction: column; min-height: 338px; padding-top: 20px; box-shadow: 0 2px 4px #203e3904; border-top: 3px solid var(--usage); }
 .studio-charts .usage-heading { padding: 0 18px; align-items: flex-start; gap: 5px; flex-direction: column; }
 .studio-charts .usage-heading h2 { font-size: .875rem; white-space: nowrap; }
 .studio-charts .usage-live { font-size: .6875rem; text-align: right; line-height: 1.5; }
@@ -324,6 +324,10 @@ del { background: #f4e0d5; text-decoration-color: #ac7c65; }
 .studio-charts .token-chart svg { min-height: 130px; }
 .studio-charts .token-chart-empty { min-height: 136px; font-size: .75rem; padding: 20px; text-align: center; background: repeating-linear-gradient(to top, transparent 0, transparent 43px, #e7eae366 44px); margin: 0 20px 16px; }
 .studio-charts .usage-footer { padding: 13px 18px; min-height: 114px; font-size: .6875rem; line-height: 1.6; gap: 4px; margin-top: auto; }
+.studio-charts .teacher-assessment, .studio-charts .eval-usage { grid-column: span 3; }
+.efficiency-usage { --usage: #88749b; }
+.efficiency-point { fill: var(--usage); opacity: .45; stroke: var(--surface); stroke-width: 1; }
+.efficiency-point:hover { opacity: 1; }
 .studio-charts .eval-usage { --usage: #537b67; }
 .teacher-assessment { --usage: #9a7d53; }
 .teacher-assessment .usage-total { color: #806544; }
@@ -433,6 +437,8 @@ del { background: #f4e0d5; text-decoration-color: #ac7c65; }
 .history-footnote .text-button { font-size: inherit; }
 @media (max-width: 1100px) {
   .studio-charts { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+  .studio-charts .usage-card { grid-column: auto; }
+  .studio-charts .efficiency-usage { grid-column: 1 / -1; }
   .studio-charts .usage-heading { flex-direction: column; gap: 4px; }
   .studio-charts .usage-live { text-align: left; }
   .studio-charts .usage-description { min-height: 34px; }

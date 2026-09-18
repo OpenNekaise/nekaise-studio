@@ -13,7 +13,7 @@ from .scoring import historical_training_pair
 from .teaching import Curriculum, Evaluation, Reflection
 from .teacher_tools import latest_strategy, replay_lesson
 from .author_config import catalog
-from .materials import expand, select_materials as material_select, source_accounting
+from .materials import expand, select_materials as material_select, source_accounting, validate_expansion_plan, expansion_receipt
 
 
 def _merge(rows, results, rename=None):
@@ -30,13 +30,14 @@ def select(ctx):
         "max_prompts_per_batch": ctx.config.generation_batch_size,
         "batch_token_positions": ctx.config.generation_batch_tokens,
         "teaching_task_count": "Teacher chooses independently of execution batch size"}
-    brief["material_authors"] = {"authors": catalog(ctx.config.material_authors, ctx.engine.settings.root/".env"),
+    brief["material_authors"] = {"expansion_policy": ctx.config.expansion_policy, "authors": catalog(ctx.config.material_authors, ctx.engine.settings.root/".env"),
         "max_calls_per_round": ctx.config.material_authors.max_calls_per_round,
         "max_output_tokens_per_round": ctx.config.material_authors.max_output_tokens_per_round,
         "concurrency": ctx.config.material_authors.concurrency}
     if ctx.campaign.get("context_artifact"):
         brief["campaign_context_artifact"] = ctx.campaign["context_artifact"]
     curriculum = Curriculum.model_validate(ctx.teacher.curriculum(brief)).model_dump()
+    validate_expansion_plan(ctx.config, curriculum)
     scoring = [historical_training_pair(ctx, rid) for rid in curriculum["scoring_round_ids"]]
     if len({r["id"] for r in curriculum["lessons"]}) != len(curriculum["lessons"]):
         raise ValueError("Teacher curriculum contains duplicate lesson IDs")
@@ -248,6 +249,7 @@ def freeze(ctx):
     return {**prepared, "dataset_hash": digest(prepared), "accepted": len(accepted), "rejected": len(lessons)-len(accepted),
             "preparation_work": preparation_work(prepared, {**ctx.config.model_dump(), "train_epochs": selected["curriculum"]["train_epochs"]}),
             "material_sources": source_accounting(prepared),
+            "material_expansion": expansion_receipt(ctx, selected["curriculum"], prepared),
             "prompt_training_prefixes": prompt_training_prefixes(lessons, prepared)}
 
 
@@ -257,6 +259,9 @@ def train(ctx):
         ctx.event("training_skipped", "Teacher chose a diagnostic round; weights are unchanged")
         return {**unchanged_checkpoint(ctx.round["model_before"], dataset["dataset_hash"]),
                 "student_format": ctx.config.student_format}
+    receipt = expansion_receipt(ctx, ctx.output("material_select")["curriculum"], dataset)
+    if receipt != dataset.get("material_expansion"):
+        raise ValueError("Frozen material expansion receipt does not match this round")
     result = ctx.trainer.train(ctx.round["model_before"], dataset, dataset["dataset_hash"], ctx.metric)
     if result["manifest"]["dataset_hash"] != dataset["dataset_hash"] or result["manifest"]["parent"] != ctx.round["model_before"]:
         raise ValueError("Checkpoint does not match its dataset or parent")

@@ -49,7 +49,7 @@ class AuthorTeacher(FakeTeacher):
 
 def configured(setup_loop, handler=response, *, teacher=AuthorTeacher, pool=None):
     settings, service, original, _ = setup_loop
-    config = CampaignConfig.model_validate({**original["config"], "rounds": 1, "material_authors": (pool or AuthorPool(authors=[author()])).model_dump()})
+    config = CampaignConfig.model_validate({**original["config"], "rounds": 1, "expansion_policy": "required_v1", "material_authors": (pool or AuthorPool(authors=[author()])).model_dump()})
     campaign = service.create("Material integration", config)
     factory = lambda **kwargs: httpx.AsyncClient(transport=httpx.MockTransport(handler), **kwargs)
     engine = Engine(settings, teacher, FakeModel, material_client_factory=factory)
@@ -76,6 +76,7 @@ def test_complete_package_preserves_teacher_choice_and_no_fake_attempts(setup_lo
     assert len(archived["rows"]) == 1 and archived["next_offset"] == 1 and archived["total"] == 2
     work = detail["learning_work"]["material_author_work"]
     assert work["calls"] == 2 and work["reported_output_tokens"] == 60
+    assert detail["learning_work"]["teacher_efficiency"]["teacher_tokens"] is None  # Author tokens never enter the denominator.
     assert detail["learning_work"]["material_sources"]["targets_by_origin"]["a"] > 0
     # Fewer candidates than the teacher's requested count are preserved as an
     # observed shortfall, never silently topped up or treated as learning failure.
@@ -354,3 +355,72 @@ def test_distinct_job_candidate_pairs_cannot_collapse_during_selection(setup_loo
     assert len({row["id"] for row in rows}) == 2
     assert len({row["material_origin"]["job_id"] for row in rows}) == 2
     assert all(row["use_for_training"] for row in rows)
+
+
+def test_required_training_rejects_empty_expansion_before_student_work(setup_loop):
+    _, service, campaign, engine = configured(setup_loop, teacher=FakeTeacher)
+    engine.run(campaign["id"])
+    assert service.store.campaign(campaign["id"])["status"] == "failed"
+    assert "requires Material Author expansion_jobs" in service.store.campaign(campaign["id"])["error"]
+    assert not FakeModel.prompts and not FakeModel.datasets
+
+
+def test_required_diagnostic_without_expansion_preserves_weights(setup_loop):
+    class Diagnostic(FakeTeacher):
+        def curriculum(self, brief):
+            plan = super().curriculum(brief)
+            plan["train_epochs"] = 0
+            return plan
+    _, service, campaign, engine = configured(setup_loop, teacher=Diagnostic)
+    engine.run(campaign["id"])
+    detail = service.snapshot(campaign["id"])["round"]
+    assert detail["status"] == "complete" and detail["checkpoint"] == detail["model_before"]
+    assert job_work(service.store, detail["id"]) is None
+    assert not FakeModel.datasets
+
+
+@pytest.mark.parametrize("mode", ["reject_all", "zero_teacher_share", "empty_batch"])
+def test_required_training_cannot_bypass_expanded_target_consumption(setup_loop, mode):
+    class Selected(AuthorTeacher):
+        def select_materials(self, manifest):
+            choice = super().select_materials(manifest)
+            if mode == "reject_all": choice["accepted_jobs"] = []
+            if mode == "zero_teacher_share": choice["token_mix"] = {"teacher": 0, "corpus": 1, "replay": 0}
+            return choice
+    def handler(req):
+        payload = response(req).json()
+        if mode == "empty_batch": payload["choices"][0]["message"]["content"] = '{"rows": []}'
+        return httpx.Response(200, json=payload)
+    _, service, campaign, engine = configured(setup_loop, handler, teacher=Selected)
+    engine.run(campaign["id"])
+    assert service.store.campaign(campaign["id"])["status"] == "failed"
+    assert not FakeModel.datasets
+    assert "teacher-selected expanded training targets" in service.store.campaign(campaign["id"])["error"]
+
+
+def test_required_receipt_binds_frozen_expansion_to_round_and_targets(setup_loop):
+    _, service, campaign, engine = configured(setup_loop)
+    engine.run(campaign["id"])
+    detail = service.snapshot(campaign["id"])["round"]
+    assert detail["status"] == "complete"
+    receipt = detail["learning_work"]["material_expansion"]
+    assert receipt["round_id"] == detail["id"]
+    assert receipt["policy"] == "required_v1"
+    assert receipt["produced_candidates"] == receipt["selected_candidates"] == 2
+    assert receipt["prepared_expanded_targets_per_pass"] > 0
+
+
+def test_train_rechecks_receipt_and_effective_training_choice(setup_loop):
+    from types import SimpleNamespace
+    from nekaise_loop.stages import train
+    _, service, campaign, engine = configured(setup_loop)
+    engine.run(campaign["id"])
+    detail = service.snapshot(campaign["id"])["round"]
+    outputs = {s["stage"]: service.artifacts.get(s["artifact"]) for s in detail["stages"] if s["status"] == "complete"}
+    context = SimpleNamespace(config=CampaignConfig.model_validate(campaign["config"]), round=detail, output=outputs.__getitem__)
+    outputs["freeze"]["material_expansion"]["round_id"] = "another-round"
+    with pytest.raises(ValueError, match="receipt does not match"):
+        train(context)
+    outputs["material_select"]["curriculum"]["expansion_jobs"] = []
+    with pytest.raises(ValueError, match="requires Material Author expansion_jobs"):
+        train(context)

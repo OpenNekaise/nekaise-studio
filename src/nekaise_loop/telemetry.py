@@ -1,77 +1,18 @@
 """Measured usage across one continuation lineage; no model calls or data writes."""
 from datetime import datetime, timezone
-from functools import lru_cache
 import json
-from pathlib import Path
 
 from .storage import now
+from .teacher_usage import normalize_usage, call_usage as recorded_call_usage
+from .efficiency import usage_summary, add_call, efficiency, efficiency_history
 
 
 def timestamp(value):
     return datetime.fromisoformat(value.replace("Z", "+00:00")).timestamp()
 
 
-def normalize_usage(usage):
-    if not isinstance(usage, dict):
-        return None
-    valid = lambda value: type(value) is int and value >= 0
-    if valid(usage.get("input_tokens")) and valid(usage.get("output_tokens")) and valid(usage.get("cached_input_tokens", 0)):
-        return {"input": usage["input_tokens"], "output": usage["output_tokens"],
-                "cached": usage.get("cached_input_tokens", 0)}
-    models = usage.get("models") or usage.get("modelUsage")
-    if isinstance(models, dict) and models and all(isinstance(m, dict) and valid(m.get("inputTokens")) and valid(m.get("outputTokens")) and valid(m.get("cacheReadInputTokens", 0)) and valid(m.get("cacheCreationInputTokens", 0)) for m in models.values()):
-        # Claude reports uncached input separately from cache reads/writes.
-        return {"input": sum(m["inputTokens"] + m.get("cacheReadInputTokens", 0) + m.get("cacheCreationInputTokens", 0) for m in models.values()),
-                "output": sum(m["outputTokens"] for m in models.values()),
-                "cached": sum(m.get("cacheReadInputTokens", 0) for m in models.values())}
-    return None
-
-
-@lru_cache(maxsize=512)
-def log_usage(path, size, modified):
-    """Read only provider usage envelopes; ignore embedded text/tool output.
-
-    Stat identity invalidates active logs. Completed logs are parsed once per API
-    process, and existing immutable provider evidence is not rewritten.
-    """
-    total = None
-    with Path(path).open(errors="replace") as stream:
-        for line in stream:
-            try:
-                envelope = json.loads(line)
-            except ValueError:
-                continue
-            if not isinstance(envelope, dict):
-                continue
-            if envelope.get("type") == "turn.completed":
-                value = normalize_usage(envelope.get("usage") or {})
-                if value:
-                    total = {k: (total or {}).get(k, 0) + v for k, v in value.items()}
-            elif envelope.get("type") == "result" and envelope.get("modelUsage"):
-                total = normalize_usage(envelope)
-    return total
-
-
 def call_usage(service, call):
-    value = normalize_usage(json.loads(call["usage"]))
-    if value is not None:
-        return value, None
-    workspace = service.settings.workspace
-    candidates = list((workspace / "runs" / call["round_id"]).glob(f"*/teacher-{call['id']}/provider.log"))
-    if not candidates:
-        rows = service.store.query("SELECT recovery_id,path FROM log_cleanup WHERE path LIKE ? AND status='removed'", (f"runs/{call['round_id']}/%/teacher-{call['id']}/provider.log",))
-        candidates = [workspace / "trash" / "history" / str(r["recovery_id"]) / r["path"] for r in rows]
-    for path in candidates:
-        if not path.resolve().is_relative_to(workspace.resolve()):
-            continue
-        try:
-            stat = path.stat()
-            value = log_usage(str(path), stat.st_size, stat.st_mtime_ns)
-            if value is not None:
-                return value, datetime.fromtimestamp(stat.st_mtime, timezone.utc).isoformat()
-        except OSError:
-            continue
-    return None, None
+    return recorded_call_usage(service.store, service.settings.workspace, call)
 
 
 def sampled(points, limit=240):
@@ -92,7 +33,7 @@ def training_telemetry(service, campaign_id):
     lineage.reverse()
     observed_at = now()
     observed = timestamp(observed_at)
-    calls, measurements, events = [], [], []
+    calls, measurements, events, rounds = [], [], [], []
     elapsed, started, clock_running = 0, None, False
     completed_rounds = 0
     for index, campaign in enumerate(lineage):
@@ -119,20 +60,19 @@ def training_telemetry(service, campaign_id):
         events.extend(campaign_events)
         calls.extend(store.query("SELECT * FROM teacher_calls WHERE campaign_id=? AND created_at<=? ORDER BY id", (cid, end)))
         measurements.extend(store.query("SELECT m.* FROM metrics m JOIN rounds r ON r.id=m.round_id WHERE r.campaign_id=? AND m.created_at<=? ORDER BY m.id", (cid, end)))
+        rounds.extend(store.query("SELECT id,campaign_id,number,status,updated_at FROM rounds WHERE campaign_id=? AND status='complete' AND updated_at<=? ORDER BY number", (cid, end)))
         completed_rounds += store.one("SELECT COUNT(*) AS n FROM rounds WHERE campaign_id=? AND status='complete' AND updated_at<=?", (cid, end))["n"]
 
     completed_calls = {e["data"]["call_id"]: e["created_at"] for e in events if e["kind"] == "teacher" and "call_id" in e["data"]}
     totals = {"input": 0, "output": 0, "cached": 0}
-    teacher_points, reported, missing, pending = [], 0, 0, 0
+    teacher_points = []
+    usage_by_round, all_usage = {}, usage_summary()
     for call in calls:
         usage, log_time = call_usage(service, call)
+        add_call(usage_by_round.setdefault(call["round_id"], usage_summary()), call, usage)
+        add_call(all_usage, call, usage)
         if usage is None:
-            if call["status"] == "running":
-                pending += 1
-            else:
-                missing += 1
             continue
-        reported += 1
         for key in totals:
             totals[key] += usage[key]
         teacher_points.append({"at": completed_calls.get(call["id"]) or log_time or call["created_at"], "delta": usage["input"] + usage["output"]})
@@ -157,17 +97,25 @@ def training_telemetry(service, campaign_id):
             streams[key] = metric["stream_tokens"]
         training_points.append({"at": row["created_at"], "tokens": trained})
 
+    trained_by_round = {}
+    for (rid, _), tokens in attempt_tokens.items():
+        trained_by_round[rid] = trained_by_round.get(rid, 0) + tokens
+    ratios = efficiency_history(rounds, usage_by_round, trained_by_round)
+    efficiency_result = {**efficiency(trained, all_usage), "series": sampled(ratios),
+                         "completed_observations": len(ratios),
+                         "missing_observations": sum(p["ratio"] is None for p in ratios)}
+
     origin = datetime.fromtimestamp(started, timezone.utc).isoformat() if started is not None else None
     def series(points, known=True):
         if not known or not origin:
             return []
         return sampled([{"at": origin, "tokens": 0}, *points, {"at": observed_at, "tokens": points[-1]["tokens"] if points else 0}])
-    known = reported > 0 or len(calls) == 0
+    known = all_usage["reported_calls"] > 0 or len(calls) == 0
     return {"campaign_id": campaign_id, "root_campaign_id": lineage[0]["id"], "campaign_count": len(lineage),
             "observed_at": observed_at, "started_at": origin, "elapsed_seconds": elapsed,
-            "clock_running": clock_running, "completed_rounds": completed_rounds,
-            "teacher": {**totals, "total": total if known else None, "reported_calls": reported,
-                        "missing_calls": missing, "pending_calls": pending, "series": series(teacher_points, known)},
+            "clock_running": clock_running, "completed_rounds": completed_rounds, "efficiency": efficiency_result,
+            "teacher": {**totals, "total": total if known else None, "reported_calls": all_usage["reported_calls"],
+                        "missing_calls": all_usage["missing_calls"], "pending_calls": all_usage["pending_calls"], "series": series(teacher_points, known)},
             "training": {"total": trained, "updates": len(training_points),
                          "streams": {name: sum(s.get(name, 0) for s in streams.values()) for name in ("teacher", "corpus", "replay")},
                          "series": series(training_points)}}

@@ -105,6 +105,13 @@ class CliTeacher:
                 run(command)
                 response = parse_json(result_path.read_text())
                 usage = {"cost_usd": None, "note": "CLI does not provide a cost estimate in this adapter"}
+            from ..teacher_usage import log_usage
+            log_path = call_dir / "provider.log"
+            if log_path.is_file():
+                stat = log_path.stat()
+                measured = log_usage(str(log_path), stat.st_size, stat.st_mtime_ns)
+                if measured is not None:
+                    usage.update(input_tokens=measured["input"], output_tokens=measured["output"], cached_input_tokens=measured["cached"])
             result = model.model_validate(response).model_dump()
             if "rows" in result and len({r["id"] for r in result["rows"]}) != len(result["rows"]):
                 raise ValueError("Teacher returned duplicate IDs")

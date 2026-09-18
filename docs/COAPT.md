@@ -290,10 +290,34 @@ The teacher still receives actual observations and decides what they establish.
 
 ## Delegated material authors
 
-The teacher may delegate material expansion to registered **Material Authors**. Authors follow the teacher's plan, corrected seeds and selected source snapshots. They may be remote APIs or locally served models. Author concurrency and request/output limits are execution budgets, not curriculum quotas. The teacher decides which authors/jobs to use and whether delegation is useful.
+The operator requires expansion through registered **Material Authors** in every positive-training round (authorized 2026-09-18; `expansion_policy=required_v1`). Authors follow the teacher's plan, corrected seeds and selected source snapshots. They may be remote APIs or locally served models. Author concurrency and request/output limits are execution budgets, not curriculum quotas. The teacher chooses authors/jobs and their content. Positive training must consume teacher-selected or edited expanded material; `train_epochs=0` diagnostics may omit expansion. Reject unsuitable candidates and explicitly preserve weights when all are rejected. Author failures retain ordinary waiting/recovery; the host never silently changes a recipe to a diagnostic. This operator requirement supersedes older optional-delegation guidance.
 
 After seed revision, the worker persists independent author jobs and their candidate artifacts. The teacher inspects the complete accessible candidate set using the paged material_candidates archive, chooses its own review scope, and selects exact immutable IDs/batches or supplies edits. Unselected candidates remain preserved. The teacher also chooses the final recipe shares/passes. No author, mechanical check, benchmark or score adds a second semantic teaching gate.
 
 Auxiliary synthetic material records provider/model, source/seed/job provenance and teacher selection. A variant without a student attempt is explicitly unobserved, never an empty student answer or an invented correction. Accepted variants join the existing teacher material stream with CPT/SFT labels and origin metadata. The student tokenizer applies its own native serialization. API reasoning fields are not copied into training. All selected material is visible to online assessment, reflection and later replay.
 
 Report distinguishes requested and completed jobs, reservations/retry usage, prepared targets by origin and actual optimizer work. These quantities do not establish learning. Failed jobs are preserved for orchestrator recovery; they are not silently omitted. Full teaching and operational history stays available even when large request bodies are supplied through immutable files rather than inline context.
+
+
+## Training production efficiency
+
+The operator wants more useful measured training exposure and **Tokens trained / Teacher tokens**.
+`learning_work.teacher_efficiency` divides actual optimizer target tokens across all passes and
+retry attempts by primary Teacher input + output, counting cache/reasoning once. Author API
+and orchestrator work remain separate. Different tokenizers are involved; this measures token
+production efficiency, not monetary cost or learning gain. The next curriculum gets complete
+round usage; reflection gets a provisional snapshot excluding its own call. Missing/pending
+usage produces no complete ratio; `reported_ratio` is explicitly partial. A zero or unknown
+denominator has no ratio.
+
+Use informative seeds, substantial useful delegated variation, and teacher review/selection.
+Read efficiency alongside prepared targets per pass, passes, source allocation and observed
+learning. Repetition raises exposure without distinct coverage; do not pad text, repeat solely
+for the metric or remove necessary assessment. No efficiency threshold or independent
+benchmark score controls teaching or checkpoint decisions.
+
+Studio plots completed-round ratios with a descriptive smoothed curve. Its headline is summed
+lineage trained tokens / summed reported Teacher tokens, never a mean of round ratios. Missing
+or active calls make it provisional. Incomplete rounds are omitted from the scatter with their
+count shown. Existing token totals retain their meaning. Historical artifacts stay immutable;
+`legacy_optional` is a compatibility policy, not authorization to downgrade the live policy.

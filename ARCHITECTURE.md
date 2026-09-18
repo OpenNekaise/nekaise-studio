@@ -502,8 +502,9 @@ services and simultaneous rollout/learning are not part of this implementation.
 transport; local serving endpoints use that same transport without server management.
 `material_jobs.py` owns worker-scoped bounded dispatch, durable call reservations and
 completed-job reuse. The workspace worker lock, not job TTLs, owns requests.
-`materials.py` prepares teacher delegation and exact final selection. Optional expand and
-material_select stages run after seed revision; no jobs means no extra provider calls.
+`materials.py` prepares teacher delegation and exact final selection. The expand and
+material_select stages run after seed revision. Under required_v1, positive training requires
+expanded targets in the frozen dataset; only diagnostics can omit jobs.
 The latter is a primary-teacher decision, not a second teaching gate.
 
 Accepted synthetic rows enter the existing freeze/training contract, retain their origin
@@ -512,3 +513,13 @@ complete package. Report exposes usage and prepared origin counts separately fro
 optimization. Large candidate sets use archive/API pagination; CLI message size bounds
 externalize complete recorded data without removing teaching history. See
 [Material Authors](docs/MATERIAL_AUTHORS.md) for contracts and concrete limitations.
+
+
+### Required expansion and efficiency (2026-09-18)
+
+Positive training requires Material Author expansion and teacher-selected expanded targets.
+Diagnostic rounds may preserve weights without expansion. Teacher content/review authority
+remains intact. The default `required_v1` policy supersedes earlier optional-delegation advice;
+legacy artifacts stay readable. Studio displays measured training tokens / primary Teacher
+tokens, with per-round observations and a smoothed trend. The same usage feedback reaches
+curriculum and reflection. See [the contract](docs/COAPT.md#training-production-efficiency).

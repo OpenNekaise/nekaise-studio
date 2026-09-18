@@ -93,3 +93,17 @@ optimizer states are no longer subject to a blanket keep-forever rule. Use struc
 `checkpoint_retention` decisions and the guarded journaled executor, never manual unlinking.
 Current resumption and active inference dependencies are protected. Low disk capacity requests
 an orchestrator review before further saves. Benchmark scores do not inform these decisions.
+
+## Required expansion and training efficiency (authorized 2026-09-18)
+
+Every positive-training round under default `expansion_policy=required_v1` must complete
+Material Author expansion and consume teacher-selected or edited expanded targets. Pure
+weight-preserving diagnostics may skip it. This supersedes older optional-delegation advice;
+do not change the live campaign to `legacy_optional` without an explicit operator request.
+The teacher retains content/review/candidate-rejection/recipe authority. Rejecting all candidates
+requires explicitly choosing zero passes; the host must not silently change the recipe.
+Provider failures follow ordinary quota waiting / orchestrator recovery. Increase useful
+measured training exposure and expose trained targets / primary Teacher input+output usage in
+feedback and Studio. Author usage is separate. Missing usage is not zero, repeated exposure
+is not distinct coverage, and efficiency is not learning or an acceptance threshold. Keep
+independent benchmark results outside all teaching feedback.

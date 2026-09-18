@@ -92,7 +92,7 @@ usage is unknown, not zero cost; no exactly-once billing guarantee is made.
 ## Durable stages and teacher authority
 
 `revise → expand → material_select → gate → freeze` preserves original seed teaching.
-With no expansion jobs, the added stages are deterministic no-ops with no author or
+For diagnostics or explicit legacy_optional policy, empty jobs make the added stages no-ops with no author or
 selection call. `material_select` belongs to the primary teacher and can select exact
 candidate IDs or whole immutable job batches, edit candidates, omit seeds, and choose
 final shares/passes. Every unselected candidate stays in the expansion artifact.
@@ -151,3 +151,16 @@ Official protocol references: [DeepSeek first call](https://api-docs.deepseek.co
 [concurrency and waiting](https://api-docs.deepseek.com/quick_start/rate_limit/),
 [thinking controls](https://api-docs.deepseek.com/guides/thinking_mode/),
 and [HTTPX async client](https://www.python-httpx.org/async/).
+
+
+## Required production workflow (2026-09-18)
+
+New recipes default to `expansion_policy=required_v1`. Selection rejects positive training
+plans without valid jobs before student inference. Freeze requires completed expansion,
+teacher-selected candidates and positive prepared expanded targets. Train verifies the same
+round-bound receipt before updates. These are execution/provenance requirements; semantic
+quality belongs to the teacher, who may edit/reject candidates and explicitly choose zero
+passes. API errors retain waiting/recovery behavior; the host invents no replacement recipe.
+Primary-teacher efficiency is measured trained targets / primary Teacher input+output;
+author usage stays separate. [The handbook](COAPT.md#training-production-efficiency) defines
+missing data, partial rounds, repetition and chart semantics.

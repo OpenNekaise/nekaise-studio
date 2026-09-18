@@ -154,3 +154,13 @@ evaluations that change the next curriculum. CoAPT Post-training is future work.
 the separate benchmark process can compare its recipes with continued Mid-training at
 matched total budgets, including teacher scoring and student rollout costs. Improved
 knowledge or agentic ability in a 1B student remains an experimental question.
+
+
+### Required expansion and efficiency (2026-09-18)
+
+Positive training requires Material Author expansion and teacher-selected expanded targets.
+Diagnostic rounds may preserve weights without expansion. Teacher content/review authority
+remains intact. The default `required_v1` policy supersedes earlier optional-delegation advice;
+legacy artifacts stay readable. Studio displays measured training tokens / primary Teacher
+tokens, with per-round observations and a smoothed trend. The same usage feedback reaches
+curriculum and reflection. See [the contract](docs/COAPT.md#training-production-efficiency).

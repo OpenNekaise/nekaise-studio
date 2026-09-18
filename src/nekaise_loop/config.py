@@ -32,7 +32,8 @@ class CampaignConfig(BaseModel):
     student_format: Literal["raw_text", "chat_template"] = Field(default="raw_text", description="raw_text preserves literal continuation; chat_template uses the checkpoint's native single-user, no-thinking assistant prefix")
     teacher_provider: Literal["claude", "codex"] = "codex"
     teacher_model: str = Field(default="gpt-5.6-terra", min_length=1, max_length=150)
-    material_authors: AuthorPool = Field(default_factory=AuthorPool, description="Frozen author registry and execution allowances; teacher chooses whether and what to delegate")
+    expansion_policy: Literal["required_v1", "legacy_optional"] = Field(default="required_v1", description="Operator requirement: positive training must consume teacher-selected expanded material. legacy_optional preserves explicitly selected historical/test behavior.")
+    material_authors: AuthorPool = Field(default_factory=AuthorPool, description="Frozen author registry and execution allowances; teacher chooses authors and expansion content")
     corpus_path: str = "../nekaise-corpus"
     focus: str = Field(default="building energy heat transfer", min_length=1, max_length=240)
     source_prefix: str = Field(default="crawl-energyplus-docs", max_length=150, description="Initial search suggestion, not a corpus restriction")

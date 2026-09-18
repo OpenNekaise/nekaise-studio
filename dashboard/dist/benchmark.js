@@ -1,5 +1,5 @@
-import { escapeHTML as e, number, dateLabel } from "./lib.js?v=5a2d168f3501";
-import { scoreTrend, trendLegend } from "./score-trend.js?v=5a2d168f3501";
+import { escapeHTML as e, number, dateLabel } from "./lib.js?v=c570ecf46108";
+import { scoreTrend, trendLegend } from "./score-trend.js?v=c570ecf46108";
 
 // Read-only display of Bench's aggregate projection. Observations only: nothing here is
 // treated as an acceptance decision. A fitted display trend leaves observed values unchanged.

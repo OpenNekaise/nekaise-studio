@@ -92,3 +92,13 @@ freezing; provenance, retry usage and unobserved synthetic examples remain expli
 Configure the registry in `workspace/material-authors.json` and credentials in the ignored
 root `.env`. See [Material Authors](docs/MATERIAL_AUTHORS.md) for setup, budgets, local
 server limits, archival access and extension contracts.
+
+
+### Required expansion and efficiency (2026-09-18)
+
+Positive training requires Material Author expansion and teacher-selected expanded targets.
+Diagnostic rounds may preserve weights without expansion. Teacher content/review authority
+remains intact. The default `required_v1` policy supersedes earlier optional-delegation advice;
+legacy artifacts stay readable. Studio displays measured training tokens / primary Teacher
+tokens, with per-round observations and a smoothed trend. The same usage feedback reaches
+curriculum and reflection. See [the contract](docs/COAPT.md#training-production-efficiency).

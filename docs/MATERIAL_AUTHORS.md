@@ -98,6 +98,13 @@ candidate IDs or whole immutable job batches, edit candidates, omit seeds, and c
 final shares/passes. Every unselected candidate stays in the expansion artifact.
 The teacher describes its chosen inspection scope; logs do not prove comprehension.
 
+Author requests keep the original teacher explanation in an input-only
+`seed_feedback` map keyed by seed ID. Seed examples contain material fields rather
+than a `teacher` field that is forbidden in candidate output. The original revision,
+exact training text and response, and source provenance remain intact. This avoids
+demonstrating an invalid output field; it does not guarantee that a provider will
+follow the schema or finish within the teacher's chosen output allowance.
+
 Complete jobs are keyed by round, immutable plan/seeds/sources, provider configuration
 and exact request content. Retry reuses only complete matching results. Responses are
 saved before successful completion is recorded; crashes before completion can still

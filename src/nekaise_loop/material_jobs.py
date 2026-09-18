@@ -42,6 +42,8 @@ def request_body(author, spec, schema):
         "Follow the teacher's expansion instructions and corrected seed demonstrations. Use only the supplied source keys for citations; "
         "an empty source list means authored material. Do not invent source identifiers or student attempts. "
         "Return one JSON object matching the supplied schema. All explanatory text intended for training belongs in the specified material fields. "
+        "seed_feedback is input-only primary-teacher context keyed by seed ID, not candidate fields. "
+        "Never emit teacher or seed_feedback keys in candidate rows; put the answer in training_response for chat_response or training_text for text modes. "
         "Do not insert model-specific role markers or a thinking prefill: the student tokenizer will serialize accepted content."
     )
     body = {**author.options, "model": author.model,

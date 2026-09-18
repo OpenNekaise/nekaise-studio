@@ -104,6 +104,34 @@ def test_completed_jobs_reused_after_partial_failure(setup_loop):
     assert job_work(service.store, rid)["calls"] == 3
 
 
+def test_author_seed_examples_separate_feedback_from_output_fields(setup_loop):
+    from nekaise_loop.material_types import Candidate
+    seen = []
+
+    def handler(req):
+        payload = json.loads(json.loads(req.content)["messages"][1]["content"])
+        task = payload["task"]
+        for seed in task["seeds"]:
+            assert set(seed) <= Candidate.model_fields.keys()
+            assert "teacher" not in seed
+        seen.append(task)
+        return response(req)
+
+    _, service, campaign, engine = configured(setup_loop, handler)
+    engine.run(campaign["id"])
+    assert service.store.campaign(campaign["id"])["status"] == "complete"
+    assert len(seen) == 2
+    for task in seen:
+        revised = service.artifacts.get(task["seed_artifact"])
+        originals = {row["id"]: row for row in revised["lessons"]}
+        assert task["seed_feedback"] == {
+            seed_id: originals[seed_id]["teacher"] for seed_id in task["job"]["seed_ids"]
+        }
+        for seed in task["seeds"]:
+            for field in ("student_prompt", "training_text", "training_response", "training_tokenization"):
+                assert seed[field] == originals[seed["id"]].get(field)
+
+
 def test_concurrency_respects_global_author_and_shared_pools_without_head_blocking(setup_loop):
     class ParallelTeacher(AuthorTeacher):
         jobs = [("one", "a"), ("two", "b"), ("three", "a"), ("four", "c")]
@@ -170,7 +198,7 @@ def test_budget_reservation_is_atomic_across_concurrent_calls(setup_loop):
     assert service.store.one("SELECT SUM(reserved_tokens) AS n FROM material_calls")["n"] == 1024
 
 
-@pytest.mark.parametrize("fault", ["length", "json", "source"])
+@pytest.mark.parametrize("fault", ["length", "json", "source", "teacher_field"])
 def test_invalid_outputs_are_saved_but_never_trained(setup_loop, fault):
     def handler(req):
         d = response(req).json()
@@ -178,7 +206,10 @@ def test_invalid_outputs_are_saved_but_never_trained(setup_loop, fault):
         elif fault == "json": d["choices"][0]["message"]["content"] = "not JSON"
         else:
             batch = json.loads(d["choices"][0]["message"]["content"])
-            batch["rows"][0]["source_keys"] = ["invented"]
+            if fault == "teacher_field":
+                batch["rows"][0]["teacher"] = "Input-only feedback must not enter candidates"
+            else:
+                batch["rows"][0]["source_keys"] = ["invented"]
             d["choices"][0]["message"]["content"] = json.dumps(batch)
         return httpx.Response(200, json=d)
     _, service, campaign, engine = configured(setup_loop, handler)

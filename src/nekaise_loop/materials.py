@@ -55,7 +55,7 @@ def expand(ctx):
     seed_artifact = ctx.store.one("SELECT artifact FROM stage_runs WHERE round_id=? AND stage='revise' AND status='complete' ORDER BY id DESC LIMIT 1", (ctx.round["id"],))["artifact"]
     specs = []
     for job in jobs:
-        sources, examples = {}, []
+        sources, examples, feedback = {}, [], {}
         for seed_id in job["seed_ids"]:
             seed = seeds[seed_id]
             keys = []
@@ -63,12 +63,16 @@ def expand(ctx):
                 key = digest(source)
                 sources[key] = source
                 keys.append(key)
-            examples.append({k: seed.get(k) for k in ("id", "kind", "concept", "student_prompt", "teacher", "training_text", "training_response", "training_tokenization")} | {"source_keys": keys})
+            # Keep explanatory feedback available without demonstrating a
+            # forbidden candidate field that authors may copy into their rows.
+            feedback[seed_id] = seed.get("teacher")
+            examples.append({k: seed.get(k) for k in ("id", "kind", "concept", "student_prompt", "training_text", "training_response", "training_tokenization")} | {"source_keys": keys})
         for i in job["reading_indices"]:
             source = selected["readings"][i]
             sources[digest(source)] = source
         specs.append({"job": job, "teacher_plan": selected["curriculum"]["notes"],
-                      "seed_artifact": seed_artifact, "seeds": examples, "sources": sources})
+                      "seed_artifact": seed_artifact, "seeds": examples,
+                      "seed_feedback": feedback, "sources": sources})
     results = run_jobs(ctx, specs)
     rows = []
     for result in results:

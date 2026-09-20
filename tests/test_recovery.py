@@ -314,8 +314,125 @@ def test_unavailable_orchestrator_does_not_use_repair_allowance(setup_loop):
     assert row["status"] == "waiting"
     assert row["attempts"] == 0
     assert row["retry_at"]
+    assert row["kind"] == "failure" and row["error"] == "fixture failure"
+    assert "usage limit" in service.store.campaign(campaign["id"])["error"]
     handle_recovery(settings, recovery_id, agent=agent)
     assert len(list((settings.workspace/"recoveries"/str(recovery_id)).glob("attempt-*"))) == 2
+
+
+def test_orchestrator_availability_backoff_survives_restart_and_is_bounded(setup_loop):
+    from datetime import datetime
+    from nekaise_loop.reports import detail
+
+    settings, service, campaign = new_campaign(setup_loop, teacher_retry_seconds=1800)
+    recovery_id = service.store.recover(campaign["id"], "failure", "Original author JSON rejection")
+
+    def unavailable(*args):
+        raise RuntimeError("You've hit your usage limit; try again at Sep 23rd, 2026 9:06 AM.")
+
+    for number, delay in enumerate((1800, 3600, 7200, 14400, 21600, 21600), 1):
+        # No in-memory counter survives these fresh service/handler invocations.
+        service = Service(settings)
+        handle_recovery(settings, recovery_id, agent=unavailable)
+        recovery = service.store.one("SELECT * FROM recoveries WHERE id=?", (recovery_id,))
+        assert recovery["kind"] == "failure" and recovery["error"] == "Original author JSON rejection"
+        assert recovery["status"] == "waiting" and recovery["attempts"] == 0
+        wait = [e for e in detail(service, recovery_id)["events"] if e["kind"] == "recovery_wait"][-1]
+        assert wait["data"]["availability"] == {
+            "kind": "quota", "consecutive_waits": number,
+            "retry_seconds": delay, "delay_source": "backoff"}
+        actual = (datetime.fromisoformat(recovery["retry_at"]) - datetime.fromisoformat(wait["created_at"])).total_seconds()
+        assert delay - 1 <= actual <= delay
+        assert tick(Service(settings)) is None
+        assert service.store.one("SELECT retry_at FROM recoveries WHERE id=?", (recovery_id,))["retry_at"] == recovery["retry_at"]
+        assert not service.store.query("SELECT * FROM actions")
+        service.store.execute("UPDATE recoveries SET retry_at='2000-01-01' WHERE id=?", (recovery_id,))
+        # Availability never changes this incident into an automatic teacher retry.
+        assert tick(service) == ["recover", str(recovery_id)]
+
+
+def test_orchestrator_wait_honors_retry_after_and_counts_kind_changes(setup_loop):
+    settings, service, campaign = new_campaign(setup_loop, teacher_retry_seconds=1800)
+    recovery_id = service.store.recover(campaign["id"], "failure", "fixture failure")
+    for message, kind, delay, source in (
+        ("HTTP 429: too many requests; retry-after: 43200 seconds", "rate_limit", 43200, "retry_after"),
+        ("You've hit your usage limit", "quota", 3600, "backoff"),
+        ("HTTP 429: too many requests", "rate_limit", 240, "backoff"),
+    ):
+        def unavailable(*args):
+            raise RuntimeError(message)
+        handle_recovery(settings, recovery_id, agent=unavailable)
+        event = service.store.one("SELECT data FROM events WHERE kind='recovery_wait' ORDER BY id DESC")
+        evidence = json.loads(event["data"])["availability"]
+        assert evidence["kind"] == kind
+        assert evidence["retry_seconds"] == delay and evidence["delay_source"] == source
+
+
+@pytest.mark.parametrize("interruption", ["decision", "failure", "legacy_wait"])
+def test_orchestrator_wait_streak_resets_after_decision_or_other_failure(setup_loop, interruption):
+    settings, service, campaign = new_campaign(setup_loop, teacher_retry_seconds=30)
+    recovery_id = service.store.recover(campaign["id"], "failure", "fixture failure")
+
+    def unavailable(*args):
+        raise RuntimeError("You've hit your usage limit")
+
+    handle_recovery(settings, recovery_id, agent=unavailable)
+    if interruption == "decision":
+        handle_recovery(settings, recovery_id, agent=lambda *args: decision("wait"))
+        apply_recovery(settings, recovery_id)
+    elif interruption == "failure":
+        def failed(*args):
+            raise RuntimeError("fixture agent transport failure")
+        handle_recovery(settings, recovery_id, agent=failed)
+    else:
+        service.store.event(campaign["id"], None, "recovery_wait", "Legacy usage limit",
+                            {"recovery_id": recovery_id, "retry_at": "2000-01-01"})
+    handle_recovery(settings, recovery_id, agent=unavailable)
+    event = service.store.one("SELECT data FROM events WHERE kind='recovery_wait' ORDER BY id DESC")
+    evidence = json.loads(event["data"])["availability"]
+    assert evidence["consecutive_waits"] == 1 and evidence["retry_seconds"] == 30
+
+
+@pytest.mark.parametrize("action", ["pause", "stop"])
+def test_operator_control_cancels_orchestrator_availability_wait(setup_loop, action):
+    settings, service, campaign = new_campaign(setup_loop)
+    recovery_id = service.store.recover(campaign["id"], "failure", "fixture failure")
+
+    def unavailable(*args):
+        raise RuntimeError("You've hit your usage limit")
+
+    handle_recovery(settings, recovery_id, agent=unavailable)
+    service.action(campaign["id"], action, spawn=False)
+    before = service.store.query("SELECT * FROM events WHERE kind='recovery_wait'")
+    handle_recovery(settings, recovery_id, agent=lambda *args: pytest.fail("cancelled wait launched agent"))
+    assert service.store.query("SELECT * FROM events WHERE kind='recovery_wait'") == before
+    assert service.store.one("SELECT status FROM recoveries")["status"] == "cancelled"
+    assert service.store.query("SELECT kind FROM actions WHERE handled_at IS NULL") == [{"kind": action}]
+
+
+def test_legacy_overwritten_incident_still_provides_failed_stage_evidence(setup_loop):
+    from nekaise_loop.recovery import run_agent
+
+    settings, service, campaign = new_campaign(setup_loop)
+    FakeTeacher.fail_gate_once = True
+    Engine(settings, FakeTeacher, FakeModel).run(campaign["id"])
+    incident = service.store.one("SELECT * FROM recoveries")
+    service.store.execute("UPDATE recoveries SET error='Orchestrator: usage limit' WHERE id=?", (incident["id"],))
+
+    class UnavailableRunner:
+        def run(self, *args, **kwargs):
+            raise RuntimeError("You've hit your usage limit")
+
+    def agent(settings, row, campaign, directory, runner):
+        return run_agent(settings, row, campaign, directory, UnavailableRunner())
+
+    handle_recovery(settings, incident["id"], agent=agent)
+    path = settings.workspace/"recoveries"/str(incident["id"])/"attempt-1/turn-1/incident.json"
+    context = json.loads(path.read_text())
+    assert context["incident"]["error"] == "Orchestrator: usage limit"
+    assert context["incident_stage"]["id"] == incident["stage_id"]
+    assert context["incident_stage"]["stage"] == "revise"
+    assert context["incident_stage"]["error"] == "Temporary teacher failure"
 
 
 def test_repair_burst_cools_down_then_reconsiders_and_stop_cancels_agent(setup_loop):

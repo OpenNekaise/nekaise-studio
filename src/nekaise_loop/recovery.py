@@ -14,7 +14,7 @@ from typing import Literal
 
 from .artifacts import atomic_write, canonical
 from .config import CampaignConfig
-from .failures import quota_kind
+from .failures import quota_kind, retry_seconds
 from .ownership import source_lock, source_fingerprint
 from .processes import ProcessRunner, Cancelled, process_start, stop_owned
 from .service import Service, Conflict
@@ -74,19 +74,47 @@ def operator_cancelled(store, campaign_id):
     return store.operator_cancelled(campaign_id)
 
 
-def defer(service, row, reason, seconds, *, decision=None):
+def availability_wait(store, row, config, error):
+    """Persisted provider waits back off independently of the repair allowance."""
+    kind = quota_kind(error)
+    if not kind:
+        return None
+    # Each invocation emits a start event. Only a previous wait or a returned
+    # decision determines whether this is another consecutive availability wait.
+    previous = store.one("""SELECT kind,data FROM events WHERE campaign_id=?
+        AND json_extract(data,'$.recovery_id')=?
+        AND kind IN ('recovery_wait','orchestrator_decision') ORDER BY id DESC LIMIT 1""",
+        (row["campaign_id"], row["id"]))
+    prior = json.loads(previous["data"]).get("availability", {}) if previous and previous["kind"] == "recovery_wait" else {}
+    count = prior.get("consecutive_waits", 0) + 1
+    hint = retry_seconds(error)
+    base = 60 if kind == "rate_limit" else config.teacher_retry_seconds
+    delay = hint if hint is not None else min(21600, base * 2 ** min(count - 1, 10))
+    return {"kind": kind, "consecutive_waits": count, "retry_seconds": delay,
+            "delay_source": "retry_after" if hint is not None else "backoff"}
+
+
+def defer(service, row, reason, seconds, *, decision=None, availability=None):
     with service.store.connect(immediate=True) as db:
-        current = db.execute("SELECT status FROM recoveries WHERE id=?", (row["id"],)).fetchone()
+        current = db.execute("SELECT status,error FROM recoveries WHERE id=?", (row["id"],)).fetchone()
         if not current or current["status"] not in {"pending", "running", "waiting", "decided"}:
             return
         if service.store.operator_cancelled(row["campaign_id"], db=db):
             db.execute("UPDATE recoveries SET status='cancelled',updated_at=? WHERE id=?", (now(), row["id"]))
             return
         retry_at = later(seconds) if seconds is not None else None
-        db.execute("UPDATE recoveries SET status='waiting',error=?,retry_at=?,decision=?,updated_at=? WHERE id=?", (reason[-3000:], retry_at, encode(decision) if decision else row.get("decision"), now(), row["id"]))
+        # Availability is a blocker to investigating this incident, not a new
+        # incident. Return the reserved repair attempt in the same transaction.
+        error = current["error"] if availability else reason[-3000:]
+        db.execute("UPDATE recoveries SET status='waiting',error=?,retry_at=?,decision=?,updated_at=? WHERE id=?", (error, retry_at, encode(decision) if decision else row.get("decision"), now(), row["id"]))
+        if availability:
+            db.execute("UPDATE recoveries SET attempts=MAX(0,attempts-1) WHERE id=?", (row["id"],))
         db.execute("UPDATE campaigns SET status='waiting',error=?,updated_at=? WHERE id=?", (reason, now(), row["campaign_id"]))
         service.store.event(row["campaign_id"], row["round_id"], "campaign", "Campaign waiting", {"status": "waiting", "error": reason}, db=db)
-        service.store.event(row["campaign_id"], row["round_id"], "recovery_wait", reason, {"recovery_id": row["id"], "retry_at": retry_at}, db=db)
+        data = {"recovery_id": row["id"], "retry_at": retry_at}
+        if availability:
+            data["availability"] = availability
+        service.store.event(row["campaign_id"], row["round_id"], "recovery_wait", reason, data, db=db)
 
 
 def run_agent(settings, row, campaign, directory, runner):
@@ -96,6 +124,11 @@ def run_agent(settings, row, campaign, directory, runner):
     snapshot = Service(settings).snapshot(campaign["id"])
     # Pass bounded operational context; lesson/source text stays in local artifacts.
     context = {"incident": row, "campaign": campaign, "rounds": [{k:r[k] for k in ("id", "number", "status", "stage", "model_before", "checkpoint", "error")} for r in snapshot["rounds"][:3]], "events": snapshot["events"][:20]}
+    # The recorded attempt remains authoritative even for legacy recoveries whose
+    # mutable error was overwritten by an orchestrator availability message.
+    context["incident_stage"] = Service(settings).store.one(
+        "SELECT id,round_id,stage,attempt,status,error FROM stage_runs WHERE id=?",
+        (row.get("stage_id"),))
     inventory_path = directory/"history-inventory.json"
     atomic_write(inventory_path, canonical(inventory(Service(settings))))
     context["history_inventory"] = str(inventory_path)
@@ -244,11 +277,10 @@ def _handle(service, recovery_id, agent):
     except Exception as exc:
         if source_fingerprint() != before:
             restore_failed_source(settings, directory)
-        unavailable = quota_kind(exc)
-        if unavailable:
-            store.execute("UPDATE recoveries SET attempts=attempts-1 WHERE id=?", (recovery_id,))
+        unavailable = availability_wait(store, row, config, exc)
         cooldown = min(3600, 60 * 2 ** min(previous_attempts // config.max_repair_attempts, 6))
-        defer(service, row, f"Orchestrator: {exc}", config.teacher_retry_seconds if unavailable else cooldown)
+        defer(service, row, f"Orchestrator: {exc}",
+              unavailable["retry_seconds"] if unavailable else cooldown, availability=unavailable)
 
 
 def apply_recovery(settings, recovery_id):

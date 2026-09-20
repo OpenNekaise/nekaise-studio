@@ -306,6 +306,19 @@ The worker releases its shared source lock before the agent acquires an exclusiv
 The agent can inspect logs and repair this repository, but cannot operate neighboring
 repos, alter training artifacts, launch training, or recursively start repair agents.
 
+Orchestrator quota/rate failures also wait without consuming the repair allowance.
+Consecutive availability waits are recorded in `recovery_wait` event data, survive
+restart, and back off from the configured teacher retry interval (60 seconds for rate
+limits) up to six hours. Numeric `Retry-After` hints take precedence within the existing
+30-second to 24-hour bounds. A returned decision or another failure resets the streak;
+legacy events without this evidence start a new streak. The durable `retry_at` controls
+the next attempt, so restarting the supervisor does not extend the wait. Timezone-less
+reset messages are retained as text, not converted into an assumed UTC deadline.
+Availability preserves the incident error and kind; the campaign and report events show
+the provider blocker. Recovery context also includes the recorded failed stage, including
+for older incidents whose mutable error was overwritten. The orchestrator must still
+decide how to resolve that failure once available; availability never resumes teaching.
+
 Agent output is a strict retry/wait/continue/pause decision, or a check request, with
 allowlisted recipe changes and a required report. The orchestrator owns these decisions.
 Source and teacher-handbook changes, or an explicit check request, run Python integration

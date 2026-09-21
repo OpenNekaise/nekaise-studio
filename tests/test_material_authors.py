@@ -198,6 +198,33 @@ def test_budget_reservation_is_atomic_across_concurrent_calls(setup_loop):
     assert service.store.one("SELECT SUM(reserved_tokens) AS n FROM material_calls")["n"] == 1024
 
 
+def test_unfunded_retry_does_not_dispatch_partial_package_or_renew_automatically(setup_loop):
+    class ThreeJobs(AuthorTeacher):
+        jobs = [("one", "a"), ("two", "a"), ("three", "a")]
+    calls = []
+    fail = [True]
+    def handler(req):
+        name = json.loads(json.loads(req.content)["messages"][1]["content"])["task"]["job"]["id"]
+        calls.append(name)
+        return httpx.Response(503) if fail[0] and name == "two" else response(req)
+    pool = AuthorPool(authors=[author()], concurrency=1, max_output_tokens_per_round=1536)
+    _, service, campaign, engine = configured(setup_loop, handler, teacher=ThreeJobs, pool=pool)
+    service.store.execute("UPDATE campaigns SET teacher_budget_since='2000-01-01' WHERE id=?", (campaign["id"],))
+    engine.run(campaign["id"])
+    assert calls == ["one", "two"]
+    service.action(campaign["id"], "resume", spawn=False, actor="orchestrator")
+    assert service.store.campaign(campaign["id"])["teacher_budget_since"] == "2000-01-01"
+    engine.run(campaign["id"])
+    assert service.store.campaign(campaign["id"])["status"] == "waiting"
+    assert calls == ["one", "two"]  # 512 left cannot fund the two 512-token jobs.
+    assert "1024 required" in service.store.campaign(campaign["id"])["error"]
+    fail[0] = False
+    service.action(campaign["id"], "resume", spawn=False, actor="operator")
+    engine.run(campaign["id"])
+    assert service.store.campaign(campaign["id"])["status"] == "complete"
+    assert calls == ["one", "two", "two", "three"]
+
+
 @pytest.mark.parametrize("fault", ["length", "json", "source", "teacher_field"])
 def test_invalid_outputs_are_saved_but_never_trained(setup_loop, fault):
     def handler(req):

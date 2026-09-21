@@ -320,6 +320,19 @@ def test_unavailable_orchestrator_does_not_use_repair_allowance(setup_loop):
     assert len(list((settings.workspace/"recoveries"/str(recovery_id)).glob("attempt-*"))) == 2
 
 
+@pytest.mark.parametrize("action", ["retry", "continue"])
+def test_automatic_recovery_preserves_allowance_epoch(setup_loop, action):
+    settings, service, campaign = new_campaign(setup_loop)
+    epoch = "2020-01-01T00:00:00+00:00"
+    service.store.execute("UPDATE campaigns SET teacher_budget_since=? WHERE id=?", (epoch, campaign["id"]))
+    recovery_id = service.store.recover(campaign["id"], "failure", "fixture failure")
+    handle_recovery(settings, recovery_id, agent=lambda *args: decision(action))
+    apply_recovery(settings, recovery_id)
+    row = service.store.one("SELECT continuation_id FROM recoveries WHERE id=?", (recovery_id,))
+    active = row["continuation_id"] or campaign["id"]
+    assert service.store.campaign(active)["teacher_budget_since"] == epoch
+
+
 def test_orchestrator_availability_backoff_survives_restart_and_is_bounded(setup_loop):
     from datetime import datetime
     from nekaise_loop.reports import detail

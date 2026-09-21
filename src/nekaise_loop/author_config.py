@@ -17,7 +17,7 @@ class AuthorSpec(BaseModel):
     label: str = Field(min_length=1, max_length=160)
     transport: str = "openai_chat"
     location: str = Field(default="remote", pattern=r"^(remote|local)$")
-    base_url: str
+    base_url: str = ""
     model: str = Field(min_length=1, max_length=160)
     api_key_env: str = Field(default="", pattern=r"^([A-Z][A-Z0-9_]*)?$")
     concurrency: int = Field(default=4, ge=1, le=256)
@@ -30,6 +30,8 @@ class AuthorSpec(BaseModel):
     @field_validator("base_url")
     @classmethod
     def endpoint(cls, value):
+        if not value:
+            return value
         parsed = urlsplit(value)
         if parsed.scheme not in {"http", "https"} or not parsed.hostname or parsed.username or parsed.password or parsed.query or parsed.fragment:
             raise ValueError("Author endpoint must be an HTTP(S) URL without credentials, query or fragment")
@@ -43,6 +45,25 @@ class AuthorSpec(BaseModel):
             raise ValueError("Author options cannot override transport, credentials, messages or execution limits")
         json.dumps(value, allow_nan=False)
         return value
+
+    @model_validator(mode="after")
+    def transport_options(self):
+        if self.transport == "claude_code":
+            if self.base_url or self.api_key_env:
+                raise ValueError("Claude Code uses its existing CLI authentication, not an author endpoint or key")
+            if not self.model.startswith("claude-"):
+                raise ValueError("Claude Code authors require a pinned full model ID")
+            if set(self.options) - {"effort", "thinking"}:
+                raise ValueError("Claude Code author options allow only effort and thinking")
+            if self.options.get("effort", "medium") not in {"low", "medium", "high"}:
+                raise ValueError("Claude Code author effort must be low, medium or high")
+            if type(self.options.get("thinking", False)) is not bool:
+                raise ValueError("Claude Code author thinking must be boolean")
+            if self.max_output_tokens < 256:
+                raise ValueError("Claude Code needs at least 256 reserved output tokens")
+        elif not self.base_url:
+            raise ValueError("HTTP material authors require an endpoint")
+        return self
 
 
 class AuthorPool(BaseModel):
@@ -97,6 +118,9 @@ def load_pool(path: Path) -> AuthorPool:
 
 def catalog(pool: AuthorPool, env_file: Path):
     return [{"id": a.id, "label": a.label, "model": a.model, "location": a.location,
+             "transport": a.transport,
              "max_output_tokens": a.max_output_tokens,
+             "max_response_output_tokens": a.max_output_tokens // 2 if a.transport == "claude_code" else a.max_output_tokens,
+             "output_budget_basis": "Claude Code allows one streamed model response using half the reservation; half covers a possible in-flight continuation on cancellation. Visible payload shares its response with reasoning." if a.transport == "claude_code" else "Provider output includes reasoning and final content",
              "credentials_configured": not a.api_key_env or bool(credential(a.api_key_env, env_file))}
             for a in pool.authors]

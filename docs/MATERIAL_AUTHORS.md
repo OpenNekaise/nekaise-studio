@@ -64,9 +64,46 @@ For local models, register an operator-managed compatible serving endpoint with
 This implementation connects to the endpoint; it does not launch model servers,
 load arbitrary checkpoints or manage their VRAM. If the server shares the student's
 GPU, account for its resident memory before training. A shared resource pool limits
-author requests, not server residency. Native local-process adapters can implement
-`MaterialAuthor` and register explicitly in `AUTHOR_TRANSPORTS` later; none is claimed
-by the HTTP implementation. Unsupported transports fail before dispatch.
+author requests, not server residency. Unsupported transports fail before dispatch.
+
+### Claude Code authors
+
+The `claude_code` transport launches the configured Claude executable through the
+workspace worker. Use an existing authenticated CLI installation and a pinned model
+ID verified on that installation, for example:
+
+```json
+{
+  "id": "claude-opus", "label": "Claude Code Opus 5",
+  "transport": "claude_code", "model": "claude-opus-5",
+  "concurrency": 2, "resource_pool": "claude-account",
+  "max_output_tokens": 32768, "timeout_seconds": 600,
+  "options": {"effort": "medium", "thinking": false}
+}
+```
+
+Include `"claude-account": 2` in the registry's `resource_limits`. Omit `base_url`
+and `api_key_env`: this adapter uses the CLI's existing authentication. It runs in
+an isolated job directory with tools disabled, safe mode, empty settings sources,
+strict MCP configuration and no session persistence. The worker records each
+process PID and start identity; cancellation joins its runner, and a replacement
+worker reconciles only recorded owned children.
+
+The CLI emits structured candidates and a streamed result envelope. On the validated
+CLI 2.1.278, `--max-turns 1` alone does **not** prevent internal truncation recovery.
+The adapter therefore allows one observed model request and aborts on truncation or
+another request. Half the job output reservation is the response cap; half reserves
+room for an already accepted continuation during cancellation. CLI transport retries
+are disabled and structured-output attempts are limited to one. Timeout, cancellation
+and incomplete envelopes retain reservations and mark usage unknown; server-side
+cancellation and exactly-once charging cannot be guaranteed. Revalidate this contract
+when upgrading the CLI. No host JSON repair or automatic generation fallback occurs.
+
+Reported input includes fresh input, cache creation and cache reads once. Opus author
+usage is separate from primary Teacher usage and available in `by_author`; missing
+usage remains unknown. CLI `costUSD` is preserved as provider evidence, not represented
+as actual subscription spend. Teacher selection/editing and the ordinary freeze/train
+provenance checks still determine what enters training.
 
 ## Parallelism and execution accounting
 
@@ -85,7 +122,10 @@ Reserve one call and the requested maximum output tokens atomically before dispa
 Reservations remain conservative even when reported output is smaller. All attempts,
 including failed/unknown remote work, count toward the current round allowance.
 Explicit operator Resume renews the allowance using `teacher_budget_since`; automatic
-retries do not. Input-character, response-byte, per-author timeout and stage-deadline
+retries and automatic continuations do not reset that timestamp. Before dispatch,
+the scheduler checks that the remaining same-round allowance can fund all unfinished
+jobs, avoiding partial spending on a package that cannot finish. Input-character,
+response-byte, per-author timeout and stage-deadline
 bounds also apply. These are usage limits, not a monetary price guarantee. Missing
 usage is unknown, not zero cost; no exactly-once billing guarantee is made.
 
@@ -140,10 +180,11 @@ materials and teacher choices. Its read-only endpoint is
 ## Extension and validation
 
 Adapters implement async `MaterialAuthor.generate(author, request, env_file,
-max_bytes)` and return `AuthorResult`: normalized content, completion, model and usage,
+max_bytes, execution=None)` and return `AuthorResult`: normalized content, completion, model and usage,
 alongside the untouched provider envelope. The scheduler/selection code does not parse
 vendor response paths. Transports may translate the common chat request to their own
-protocol. Keep network code
+protocol. `execution` carries the owning store/call ID, configured CLI and job directory;
+process transports require it, while HTTP transports ignore it. Keep network code
 inside providers, dispatch inside worker stages, ML imports outside the API, and
 credentials outside persisted artifacts. Tests may inject an HTTP mock transport;
 there are no fake live providers.
@@ -158,6 +199,9 @@ Official protocol references: [DeepSeek first call](https://api-docs.deepseek.co
 [concurrency and waiting](https://api-docs.deepseek.com/quick_start/rate_limit/),
 [thinking controls](https://api-docs.deepseek.com/guides/thinking_mode/),
 and [HTTPX async client](https://www.python-httpx.org/async/).
+Claude references: [CLI flags](https://code.claude.com/docs/en/cli-reference),
+[environment controls](https://code.claude.com/docs/en/env-vars),
+and [model configuration](https://code.claude.com/docs/en/model-config).
 
 
 ## Required production workflow (2026-09-18)

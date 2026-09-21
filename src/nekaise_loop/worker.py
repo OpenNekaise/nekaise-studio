@@ -37,6 +37,8 @@ def _run_worker(settings):
         closing = [False]
         signal.signal(signal.SIGTERM, lambda *_: closing.__setitem__(0, True))
         signal.signal(signal.SIGINT, lambda *_: closing.__setitem__(0, True))
+        from .material_jobs import recover_author_processes
+        recover_author_processes(store)
         for stage in store.query("SELECT * FROM stage_runs WHERE status='running'"):
             if stage["process_pid"]:
                 stop_owned(stage["process_pid"], stage["process_start"])

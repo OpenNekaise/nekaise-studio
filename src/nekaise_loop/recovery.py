@@ -324,7 +324,7 @@ def _apply(service, recovery_id):
         if current["status"] not in {"recovering", "waiting"} or service.store.operator_cancelled(campaign["id"], db=db):
             return
         db.execute("UPDATE recoveries SET status='resolved',updated_at=? WHERE id=?", (now(), recovery_id))
-        db.execute("UPDATE campaigns SET status='queued',error=NULL,teacher_budget_since=?,updated_at=? WHERE id=?", (now(), now(), campaign["id"]))
+        db.execute("UPDATE campaigns SET status='queued',error=NULL,updated_at=? WHERE id=?", (now(), campaign["id"]))
         db.execute("INSERT INTO actions(campaign_id,kind,created_at,actor,reason) VALUES(?,'resume',?,'orchestrator',?)", (campaign["id"], now(), decision["reason"]))
         service.store.event(campaign["id"], row["round_id"], "recovery_applied", "Orchestrator decision applied; training resume queued", {"recovery_id": recovery_id, "action": decision["action"]}, db=db)
         service.store.event(campaign["id"], row["round_id"], "recovery", "Orchestrator queued stage retry", {"recovery_id": recovery_id}, db=db)

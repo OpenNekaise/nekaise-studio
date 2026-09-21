@@ -83,7 +83,7 @@ class Service:
                     db.execute("UPDATE recoveries SET status='cancelled',updated_at=? WHERE campaign_id=? AND status='running'", (now(), campaign_id))
                 if actor == "operator":
                     db.execute("UPDATE campaigns SET operator_hold=NULL WHERE id=?", (campaign_id,))
-                if kind != "review":
+                if kind != "review" and actor == "operator":
                     db.execute("UPDATE campaigns SET teacher_budget_since=? WHERE id=?", (now(), campaign_id))
                 status = "recovering" if kind == "review" else "queued"
             else:
@@ -220,7 +220,8 @@ class Service:
                 raise Conflict("An explicit operator hold remains in effect")
             if db.execute("SELECT id FROM campaigns WHERE id!=? AND status IN ('running','queued','pausing','stopping','waiting','recovering')", (campaign_id,)).fetchone():
                 raise Conflict("Another campaign is already active")
-            db.execute("INSERT INTO campaigns(id,name,status,config,created_at,updated_at,parent_campaign_id,context_artifact,implementation_hash,teacher_budget_since) VALUES(?,?,?,?,?,?,?,?,?,?)", (child_id, parent["name"][:75] + " · continued", "queued" if start else "ready", encode(config.model_dump()), now(), now(), campaign_id, context_key, source_fingerprint(), now() if start else None))
+            budget_since = now() if start and actor == "operator" else parent.get("teacher_budget_since") or parent["created_at"]
+            db.execute("INSERT INTO campaigns(id,name,status,config,created_at,updated_at,parent_campaign_id,context_artifact,implementation_hash,teacher_budget_since) VALUES(?,?,?,?,?,?,?,?,?,?)", (child_id, parent["name"][:75] + " · continued", "queued" if start else "ready", encode(config.model_dump()), now(), now(), campaign_id, context_key, source_fingerprint(), budget_since))
             self.store.event(child_id, None, "campaign", "Continuation created", {"parent_campaign_id": campaign_id, "inherit_optimizer": config.inherit_optimizer}, db=db)
             if restore_round is not None:
                 self.store.event(child_id, None, "checkpoint_restoration", "Original Base selected; prior checkpoint and teaching lineage preserved", restoration, db=db)

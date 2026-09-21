@@ -42,3 +42,21 @@ def test_model_transport_decodes_events_and_rejects_invalid_protocol(tmp_path):
     with pytest.raises(json.JSONDecodeError):
         runner.run([sys.executable, "-c", "print('LOOP invalid-json')"],
                    cwd=tmp_path, log=tmp_path/"bad-model.log", timeout=10, on_message=messages.append)
+
+
+def test_identity_write_failure_stops_new_child(tmp_path, monkeypatch):
+    import nekaise_loop.processes as module
+    original = module.subprocess.Popen
+    children = []
+    def tracked(*args, **kwargs):
+        child = original(*args, **kwargs)
+        children.append(child)
+        return child
+    class BrokenStore:
+        def execute(self, *args):
+            raise RuntimeError("identity persistence unavailable")
+    monkeypatch.setattr(module.subprocess, "Popen", tracked)
+    with pytest.raises(RuntimeError, match="identity persistence"):
+        ProcessRunner(BrokenStore(), 1).run([sys.executable, "-c", "import time;time.sleep(30)"],
+            cwd=tmp_path, log=tmp_path/"failed-owner.log", timeout=10)
+    assert len(children) == 1 and children[0].poll() is not None

@@ -513,6 +513,10 @@ services and simultaneous rollout/learning are not part of this implementation.
 `author_config.py` validates non-secret, campaign-snapshotted registry and resource limits.
 `providers/material.py` contains the async MaterialAuthor protocol and compatible HTTP
 transport; local serving endpoints use that same transport without server management.
+`providers/claude_material.py` adds a tool-free Claude Code author with streamed
+request bounds, separate cache-aware usage and worker-owned process identities.
+Concurrent cancellation joins each runner before releasing worker ownership; startup
+reconciles recorded author children. Unknown usage retains its output reservation.
 `material_jobs.py` owns worker-scoped bounded dispatch, durable call reservations and
 completed-job reuse. The workspace worker lock, not job TTLs, owns requests.
 `materials.py` prepares teacher delegation and exact final selection. The expand and

@@ -27,7 +27,7 @@ class AuthorResult:
 
 
 class MaterialAuthor(Protocol):
-    async def generate(self, author: AuthorSpec, request: dict, *, env_file, max_bytes: int) -> AuthorResult: ...
+    async def generate(self, author: AuthorSpec, request: dict, *, env_file, max_bytes: int, execution=None) -> AuthorResult: ...
 
 
 class AuthorHTTPError(RuntimeError):
@@ -46,7 +46,7 @@ class OpenAIChatAuthor:
     def __init__(self, client: httpx.AsyncClient):
         self.client = client
 
-    async def generate(self, author, request, *, env_file, max_bytes):
+    async def generate(self, author, request, *, env_file, max_bytes, execution=None):
         key = credential(author.api_key_env, env_file)
         if author.api_key_env and not key:
             raise RuntimeError(f"Material author {author.id}: credential {author.api_key_env} is not configured")
@@ -91,4 +91,6 @@ class OpenAIChatAuthor:
             raise RuntimeError(f"Material author {author.id}: {type(exc).__name__}; remote charge may be unknown") from None
 
 
-AUTHOR_TRANSPORTS = {"openai_chat": OpenAIChatAuthor}
+from .claude_material import ClaudeCodeAuthor
+
+AUTHOR_TRANSPORTS = {"openai_chat": OpenAIChatAuthor, "claude_code": ClaudeCodeAuthor}

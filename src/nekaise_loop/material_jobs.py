@@ -10,7 +10,7 @@ import httpx
 from .artifacts import digest
 from .failures import TeacherUnavailable
 from .material_types import CandidateBatch
-from .processes import Cancelled
+from .processes import Cancelled, stop_owned
 from .providers.material import AUTHOR_TRANSPORTS
 from .storage import encode, now
 
@@ -31,9 +31,26 @@ def initialize_jobs(store):
             stage_id INTEGER NOT NULL REFERENCES stage_runs(id), status TEXT NOT NULL,
             reserved_tokens INTEGER NOT NULL, input_chars INTEGER NOT NULL,
             artifact TEXT, usage TEXT NOT NULL DEFAULT '{}', error TEXT,
-            created_at TEXT NOT NULL, finished_at TEXT
+            created_at TEXT NOT NULL, finished_at TEXT, process_pid INTEGER, process_start TEXT
         );
         """)
+        db.execute("BEGIN IMMEDIATE")
+        columns = {r["name"] for r in db.execute("PRAGMA table_info(material_calls)")}
+        for name, kind in (("process_pid", "INTEGER"), ("process_start", "TEXT")):
+            if name not in columns:
+                db.execute(f"ALTER TABLE material_calls ADD COLUMN {name} {kind}")
+
+
+def recover_author_processes(store):
+    """Only the workspace worker reconciles children left by its predecessor."""
+    if not store.one("SELECT name FROM sqlite_master WHERE type='table' AND name='material_calls'"):
+        return
+    initialize_jobs(store)
+    for call in store.query("SELECT id,job_id,process_pid,process_start FROM material_calls WHERE process_pid IS NOT NULL"):
+        stop_owned(call["process_pid"], call["process_start"])
+        with store.connect(immediate=True) as db:
+            db.execute("UPDATE material_calls SET status=CASE WHEN status='running' THEN 'uncertain' ELSE status END,process_pid=NULL,process_start=NULL,finished_at=COALESCE(finished_at,?) WHERE id=?", (now(), call["id"]))
+            db.execute("UPDATE material_jobs SET status='uncertain',error='Worker exited during author execution; usage may be unknown',updated_at=? WHERE id=? AND status='running'", (now(), call["job_id"]))
 
 
 def request_body(author, spec, schema):
@@ -46,9 +63,13 @@ def request_body(author, spec, schema):
         "Never emit teacher or seed_feedback keys in candidate rows; put the answer in training_response for chat_response or training_text for text modes. "
         "Do not insert model-specific role markers or a thinking prefill: the student tokenizer will serialize accepted content."
     )
+    payload = {"task": spec, "output_schema": schema}
+    if author.transport == "claude_code":
+        payload["execution_limits"] = {"max_response_output_tokens": spec["job"]["max_output_tokens"] // 2,
+            "max_model_requests": 1, "instruction": "Return complete schema-valid JSON within the response cap; no continuation is available."}
     body = {**author.options, "model": author.model,
         "messages": [{"role": "system", "content": instruction},
-                     {"role": "user", "content": json.dumps({"task": spec, "output_schema": schema}, ensure_ascii=False)}],
+                     {"role": "user", "content": json.dumps(payload, ensure_ascii=False)}],
         "max_tokens": spec["job"]["max_output_tokens"], "stream": False}
     if author.json_mode:
         body["response_format"] = {"type": "json_object"}
@@ -87,6 +108,8 @@ async def _execute(ctx, specs, pool, client_factory):
         size = len(json.dumps(body, ensure_ascii=False))
         if size > pool.max_input_chars_per_call or body["max_tokens"] > author.max_output_tokens:
             raise ValueError(f"Material job {spec['job']['id']} exceeds its request execution limits")
+        if author.transport == "claude_code" and body["max_tokens"] < 256:
+            raise ValueError("Claude Code jobs need at least 256 reserved output tokens")
         payload = {"version": 1, "round_id": ctx.round["id"], "author": author.model_dump(), "spec": spec, "request": body}
         key = artifacts.put(payload)
         requests.append((key, author, payload, size))
@@ -106,6 +129,10 @@ async def _execute(ctx, specs, pool, client_factory):
         else:
             pending.append(item)
     since = store.campaign(ctx.campaign["id"]).get("teacher_budget_since") or ctx.campaign["created_at"]
+    used = store.one("SELECT COUNT(*) AS n,COALESCE(SUM(c.reserved_tokens),0) AS tokens FROM material_calls c JOIN material_jobs j ON j.id=c.job_id WHERE j.round_id=? AND c.created_at>=?", (ctx.round["id"], since))
+    needed = sum(item[2]["request"]["max_tokens"] for item in pending)
+    if used["n"] + len(pending) > pool.max_calls_per_round or used["tokens"] + needed > pool.max_output_tokens_per_round:
+        raise TeacherUnavailable(f"Material-author remaining allowance cannot fund all unfinished jobs: {max(0, pool.max_output_tokens_per_round-used['tokens'])} output tokens remain; {needed} required. Explicit operator Resume renews the allowance. Completed jobs remain reusable.", "budget")
     deadline = time.monotonic() + ctx.config.max_stage_seconds
     client_options = {"timeout": httpx.Timeout(65, connect=15), "follow_redirects": False, "trust_env": False,
                       "limits": httpx.Limits(max_connections=pool.concurrency, max_keepalive_connections=pool.concurrency)}
@@ -125,7 +152,9 @@ async def _execute(ctx, specs, pool, client_factory):
             ctx.event("material_author", f"Material author {author.label} started {payload['spec']['job']['id']}", {"job_id": key, "call_id": call_id})
             raw = None
             try:
-                authored = await adapters[author.transport].generate(author, payload["request"], env_file=ctx.engine.settings.root/".env", max_bytes=pool.max_response_bytes)
+                authored = await adapters[author.transport].generate(author, payload["request"], env_file=ctx.engine.settings.root/".env", max_bytes=pool.max_response_bytes,
+                    execution={"store": store, "call_id": call_id, "claude": ctx.engine.settings.claude,
+                               "directory": ctx.directory/f"author-{call_id}"})
                 raw = artifacts.put({"request_artifact": key, "response": authored.raw})
                 reported = authored.usage
                 usage = {k: v for k, v in (reported or {}).items() if k in {"prompt_tokens", "completion_tokens", "total_tokens", "prompt_cache_hit_tokens", "prompt_cache_miss_tokens"} and isinstance(v, int) and not isinstance(v, bool) and v >= 0} if isinstance(reported, dict) else {}
@@ -146,6 +175,8 @@ async def _execute(ctx, specs, pool, client_factory):
                 if getattr(exc, "evidence", None) is not None:
                     evidence = artifacts.put({"request_artifact": key, "response_error": exc.evidence})
                     store.execute("UPDATE material_calls SET artifact=? WHERE id=?", (evidence, call_id))
+                if getattr(exc, "usage", None):
+                    store.execute("UPDATE material_calls SET usage=? WHERE id=?", (encode(exc.usage), call_id))
                 state = "cancelled" if isinstance(exc, (asyncio.CancelledError, Cancelled)) else "waiting" if isinstance(exc, TeacherUnavailable) else "failed"
                 reason = str(exc) if isinstance(exc, (RuntimeError, ValueError, Cancelled)) else type(exc).__name__
                 with store.connect(immediate=True) as db:

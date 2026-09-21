@@ -142,6 +142,18 @@ class CliTeacher:
             jobs["items"]["enum"] = plan_ids
         else:
             jobs["maxItems"] = 0
+        candidate_ids = sorted(set(manifest["candidate_ids"]))
+        # A shared definition avoids repeating long identifiers. This is a local
+        # schema-size budget, never a cap on teaching material: larger manifests
+        # retain their full ID list/archive and exact host-side validation.
+        if candidate_ids and len(candidate_ids) <= 200 and sum(map(len, candidate_ids)) <= 16000:
+            schema["$defs"]["MaterialCandidateId"] = {"type": "string", "enum": candidate_ids}
+            reference = {"$ref": "#/$defs/MaterialCandidateId"}
+            schema["properties"]["accepted_ids"]["items"] = dict(reference)
+            schema["$defs"]["MaterialEdit"]["properties"]["candidate_id"] = dict(reference)
+        elif not candidate_ids:
+            schema["properties"]["accepted_ids"]["maxItems"] = 0
+            schema["properties"]["edits"]["maxItems"] = 0
         return self.request("material_select", manifest, MaterialSelection, schema=schema)
 
     def evaluate(self, curriculum, lessons):

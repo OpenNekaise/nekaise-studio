@@ -101,6 +101,7 @@ def selection_brief(ctx, manifest):
                   "preview": (r["candidate"]["training_response"] or r["candidate"]["training_text"])[:240],
                   "checks": r["checks"]} for r in manifest["candidates"]]
     return {"manifest_hash": manifest["manifest_hash"], "round_id": ctx.round["id"],
+            "candidate_ids": [r["id"] for r in manifest["candidates"]],
             "jobs": manifest["jobs"], "candidate_count": len(summaries), "candidate_preview": summaries[:40],
             "full_candidates": {"op": "material_candidates", "round_id": ctx.round["id"], "offset": 0, "limit": 20},
             "curriculum": ctx.output("select")["curriculum"],
@@ -131,7 +132,16 @@ def select_materials(ctx):
     if (len(selected) != len(choice["accepted_ids"]) or len(edits) != len(choice["edits"])
             or not selected <= by_id.keys() or not edits.keys() <= by_id.keys()
             or selected.intersection(edits)):
-        raise ValueError("Teacher selected missing, duplicate or conflicting material IDs")
+        raise ValueError(
+            "Teacher selected missing, duplicate or conflicting material IDs; "
+            f"unknown accepted_ids: {sorted(selected - by_id.keys())}; "
+            f"unknown edits.candidate_id: {sorted(edits.keys() - by_id.keys())}; "
+            f"duplicate accepted_ids: {sorted(k for k, n in Counter(choice['accepted_ids']).items() if n > 1)}; "
+            f"duplicate edits.candidate_id: {sorted(k for k, n in Counter(e['candidate_id'] for e in choice['edits']).items() if n > 1)}; "
+            f"accepted/edited overlap: {sorted(selected.intersection(edits))}. "
+            "Copy exact original IDs from candidate_ids or the material_candidates archive; "
+            "replacement.id does not rename the original reference."
+        )
     if not set(choice["seed_exclusions"]) <= {r["id"] for r in lessons}:
         raise ValueError("Teacher excluded an unknown seed")
     selected.update(r["id"] for r in by_id.values() if r["plan_id"] in choice["accepted_jobs"])

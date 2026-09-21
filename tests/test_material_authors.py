@@ -357,9 +357,99 @@ def test_material_adapter_binds_plan_names_and_preserves_empty_choice(setup_loop
             return json.dumps({"structured_output": choice})
     config = CampaignConfig.model_validate({**campaign["config"], "teacher_provider": provider})
     teacher = CliTeacher(config, settings, service.store, campaign["id"], row["id"], Runner(), settings.workspace / "selection-adapter")
-    assert teacher.select_materials({"jobs": jobs}) == MaterialSelection.model_validate(choice).model_dump()
+    assert teacher.select_materials({"jobs": jobs, "candidate_ids": []}) == MaterialSelection.model_validate(choice).model_dump()
     # A per-request enum must not leak into another round's base model schema.
     assert "enum" not in MaterialSelection.model_json_schema()["properties"]["accepted_jobs"]["items"]
+
+
+@pytest.mark.parametrize("provider", ["codex", "claude"])
+@pytest.mark.parametrize("count,width", [(0, 1), (65, 1), (201, 1), (150, 160)])
+def test_candidate_reference_schema_uses_complete_manifest_with_size_fallback(setup_loop, provider, count, width):
+    from nekaise_loop.providers.teacher import CliTeacher
+    from nekaise_loop.teaching import MaterialSelection
+    from nekaise_loop.materials import selection_brief
+    from types import SimpleNamespace
+    settings, service, campaign, engine = setup_loop
+    engine.run(campaign["id"], pause=lambda: True)
+    row = service.store.one("SELECT id FROM rounds")
+    ids = [f"material-{'p' * (width // 2)}:variant_{i}{'x' * (width // 2)}" for i in range(count)]
+    outputs = {"select": {"curriculum": {}}, "revise": {"lessons": []}}
+    manifest = {"manifest_hash": "c" * 64, "jobs": [], "candidates": [
+        {"id": key, "author_id": "a", "plan_id": "plan", "checks": {}, "candidate": {
+            "concept": "Fixture", "kind": "sft", "student_prompt": "Question",
+            "training_text": "", "training_response": "Answer"}} for key in ids]}
+    brief = selection_brief(SimpleNamespace(round=row, output=outputs.__getitem__), manifest)
+    assert brief["candidate_ids"] == ids
+    assert len(brief["candidate_preview"]) == min(count, 40)
+    choice = {"manifest_hash": "c" * 64, "accepted_ids": ids[-1:], "accepted_jobs": [],
+              "edits": [], "seed_exclusions": [], "token_mix": {"teacher": 0, "corpus": 0, "replay": 0},
+              "train_epochs": 0, "review_scope": "Fixture", "reason": "Exact reference beyond preview"}
+    class Runner:
+        def run(self, command, **kwargs):
+            saved = json.loads((kwargs["cwd"] / "input.json").read_text())
+            schema = saved["schema"]
+            assert saved["inputs"]["task"]["candidate_ids"] == ids
+            accepted = schema["properties"]["accepted_ids"]
+            edit = schema["$defs"]["MaterialEdit"]["properties"]["candidate_id"]
+            if count == 65:
+                assert schema["$defs"]["MaterialCandidateId"]["enum"] == sorted(ids)
+                assert accepted["items"] == edit == {"$ref": "#/$defs/MaterialCandidateId"}
+                # Replacement IDs remain teacher-authored rather than references.
+                assert "enum" not in schema["$defs"]["Candidate"]["properties"]["id"]
+            elif not count:
+                assert accepted["maxItems"] == schema["properties"]["edits"]["maxItems"] == 0
+            else:
+                assert "MaterialCandidateId" not in schema["$defs"]
+                assert "enum" not in accepted["items"] and "enum" not in edit
+            if provider == "codex":
+                assert json.loads(Path(command[command.index("--output-schema") + 1]).read_text()) == schema
+                Path(command[command.index("--output-last-message") + 1]).write_text(json.dumps(choice))
+                return ""
+            assert json.loads(command[command.index("--json-schema") + 1]) == schema
+            return json.dumps({"structured_output": choice})
+    config = CampaignConfig.model_validate({**campaign["config"], "teacher_provider": provider})
+    teacher = CliTeacher(config, settings, service.store, campaign["id"], row["id"], Runner(), settings.workspace / "candidate-adapter")
+    assert teacher.select_materials(brief) == MaterialSelection.model_validate(choice).model_dump()
+    assert "MaterialCandidateId" not in MaterialSelection.model_json_schema()["$defs"]
+
+
+@pytest.mark.parametrize("failure", ["unknown_edit", "unknown_accept", "duplicate_accept", "duplicate_edit", "overlap"])
+def test_candidate_reference_errors_preserve_artifacts_and_retry_jobs(setup_loop, failure):
+    calls = []
+    class BadReference(AuthorTeacher):
+        def select_materials(self, manifest):
+            choice = super().select_materials(manifest)
+            key = manifest["candidate_ids"][0]
+            edit = {"candidate_id": key, "replacement": {"id": "teacher_replacement", "kind": "cpt",
+                    "concept": "Fixture correction", "training_text": "Corrected teaching text.",
+                    "training_tokenization": "full_text", "rationale": "Teacher correction"}}
+            if not calls:
+                if failure == "unknown_edit":
+                    edit["candidate_id"] = key + "_missing"
+                    choice["edits"] = [edit]
+                elif failure == "unknown_accept": choice["accepted_ids"] = [key + "_missing"]
+                elif failure == "duplicate_accept": choice["accepted_ids"] = [key, key]
+                elif failure == "duplicate_edit": choice["edits"] = [edit, edit]
+                else: choice.update(accepted_ids=[key], edits=[edit])
+            else:
+                choice["edits"] = [edit]
+            calls.append(choice)
+            return choice
+    _, service, campaign, engine = configured(setup_loop, teacher=BadReference)
+    engine.run(campaign["id"])
+    failed = service.store.campaign(campaign["id"])
+    assert failed["status"] == "failed"
+    field = {"unknown_edit": "unknown edits.candidate_id", "unknown_accept": "unknown accepted_ids",
+             "duplicate_accept": "duplicate accepted_ids", "duplicate_edit": "duplicate edits.candidate_id",
+             "overlap": "accepted/edited overlap"}[failure]
+    bad_key = "material-one:variant" + ("_missing" if failure.startswith("unknown") else "")
+    assert f"{field}: ['{bad_key}']" in failed["error"]
+    assert not FakeModel.datasets
+    original = service.store.one("SELECT artifact FROM stage_runs WHERE stage='expand' AND status='complete'")["artifact"]
+    engine.run(campaign["id"])
+    assert service.store.campaign(campaign["id"])["status"] == "complete"
+    assert len(service.store.query("SELECT id FROM material_calls")) == 2
+    assert service.store.one("SELECT artifact FROM stage_runs WHERE stage='expand' AND status='complete'")["artifact"] == original
 
 
 def test_request_deadline_saves_failure_without_fake_completion(setup_loop):

@@ -11,6 +11,7 @@ from ..teaching import Curriculum, Revisions, Evaluations, Grades, Reflection, M
 from ..teacher_tools import latest_strategy, operational_context
 from ..storage import now, encode
 from ..failures import TeacherUnavailable, quota_kind, retry_seconds
+from ..teacher_context import shared_view
 
 
 def parse_json(text: str):
@@ -23,16 +24,34 @@ def parse_json(text: str):
 def recorded_prompt(prefix: str, inputs: dict, directory: Path) -> str:
     """Keep large evidence accessible without exceeding CLI message limits."""
     prompt = prefix + "\n\nRECORDED DATA:\n" + json.dumps(inputs, ensure_ascii=False)
+    view = shared_view(inputs)
+    path = (directory / "recorded-data.json").resolve()
+    if view is not None:
+        atomic_write(path, json.dumps(inputs, ensure_ascii=False, indent=2, allow_nan=False).encode())
+        view["original_data"] = {"path": str(path), "canonical_sha256": digest(inputs)}
+        shared_note = (
+            "Every object containing only $shared resolves to the exact original value "
+            "in shared_values. Entries have no nested references. All fields, array "
+            "elements, exact teaching text and history remain present; only repeated "
+            "identical values share storage. The full original JSON is also available "
+            "at original_data.path. These are data references, not instructions.\n")
     # Codex rejects messages above 1,048,576 characters. Leave transport headroom;
     # this is an execution limit, never a teaching-history or task-count cutoff.
     if len(prompt) <= 900_000:
+        if view is not None:
+            return prefix + "\n\nRECORDED DATA (lossless shared values):\n" + shared_note + json.dumps(view, ensure_ascii=False)
         return prompt
-    path = (directory / "recorded-data.json").resolve()
     atomic_write(path, json.dumps(inputs, ensure_ascii=False, indent=2, allow_nan=False).encode())
+    shared_path = None
+    if view is not None:
+        shared_path = (directory / "shared-data.json").resolve()
+        atomic_write(shared_path, canonical(view))
     return prefix + (
         "\n\nRECORDED DATA (externalized in full because of the transport size limit):\n"
         + json.dumps({"path": str(path), "canonical_sha256": digest(inputs),
-                      "top_level_keys": list(inputs)}, ensure_ascii=False)
+                      "top_level_keys": list(inputs),
+                      **({"lossless_shared_data_path": str(shared_path)} if shared_path else {})}, ensure_ascii=False)
+        + ("\nAn optional smaller representation is at lossless_shared_data_path. " + shared_note if shared_path else "")
         + "\nRead this local JSON file with your read-only tools before deciding. "
         "It contains the complete current context, config hints, latest strategy, "
         "operational history and task evidence. Inspect task and its relevant nested "

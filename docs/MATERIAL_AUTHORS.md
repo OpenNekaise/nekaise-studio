@@ -171,6 +171,13 @@ The read-only archive exposes `material_candidates` with round, offset/limit and
 optional candidate ID. All content and provider response artifacts remain accessible.
 The teacher request contains a bounded preview, not a teaching-history cutoff. Large
 teacher contexts use the existing complete externalized recorded-data file.
+Repeated JSON evidence of at least 2,048 characters may share one exact value in the
+rendered Teacher request. A `$shared` reference resolves in one lookup; shared entries
+contain the original value, not a summary. Original `input.json` inputs and complete
+`recorded-data.json` remain available, including every candidate, source and token ID.
+Literal marker collisions retain the ordinary representation. For already externalized
+requests, an optional `shared-data.json` provides the same lossless view. This encoding
+threshold does not limit history, curriculum, candidate counts or review scope.
 
 The Report work panel separates author API usage/reservations from prepared targets
 by origin and actual optimizer metrics. The iteration page shows paged authored

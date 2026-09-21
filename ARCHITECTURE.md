@@ -517,6 +517,12 @@ transport; local serving endpoints use that same transport without server manage
 request bounds, separate cache-aware usage and worker-owned process identities.
 Concurrent cancellation joins each runner before releasing worker ownership; startup
 reconciles recorded author children. Unknown usage retains its output reservation.
+`teacher_context.py` renders repeated large, identical evidence values once in a
+shallow shared-value table. Every original field and record remains recoverable;
+complete original request data is saved separately. This reduces repeated source
+context as author batches grow, without selecting the Teacher's inspection scope.
+The existing large-request externalization boundary is unchanged; those requests
+also expose an optional smaller lossless file instead of becoming large inline prompts.
 `material_jobs.py` owns worker-scoped bounded dispatch, durable call reservations and
 completed-job reuse. The workspace worker lock, not job TTLs, owns requests.
 `materials.py` prepares teacher delegation and exact final selection. The expand and

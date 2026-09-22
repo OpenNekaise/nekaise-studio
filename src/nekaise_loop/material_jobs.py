@@ -90,9 +90,11 @@ class CandidateValidationError(ValueError):
 
 def candidates(result, spec):
     try:
-        if not result.complete or not isinstance(result.content, str):
+        if not isinstance(result.content, str):
             raise ValueError("Author response was incomplete or did not contain final content")
         batch = CandidateBatch.model_validate_json(result.content)
+        if not result.complete:
+            raise ValueError("Author response was incomplete")
         source_keys = set(spec["sources"])
         seed_ids = set(spec["job"]["seed_ids"])
         for row in batch.rows:

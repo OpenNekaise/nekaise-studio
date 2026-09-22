@@ -58,6 +58,19 @@ result = {'type':'result','subtype':'success','is_error':False,'num_turns':2,
         script += "result['modelUsage']['claude-sonnet-5'] = result['modelUsage'].pop('claude-opus-5')\n"
     elif fault == "turn_limit":
         script += "result.update(is_error=True, subtype='error_max_turns')\n"
+    elif fault in {"rejected_schema", "rejected_valid"}:
+        if fault == "rejected_schema":
+            script += "if task['job']['id'] == 'one' and 'retry_validation' not in payload: row['training_response_note'] = 'PRIVATE_REJECTED_VALUE'\n"
+        # Reject one job only: a cancelled sibling has no rejected response to
+        # diagnose, so its first completed attempt must not require retry paths.
+        script += """if task['job']['id'] == 'one' and 'retry_validation' not in payload:
+    print(json.dumps({'type':'assistant','parent_tool_use_id':None,'message':{'content':[
+        {'type':'tool_use','name':'StructuredOutput','input':{'rows':[row]}}]}}),flush=True)
+    result.pop('structured_output')
+    result.update(is_error=True, subtype='error_max_structured_output_retries')
+elif 'retry_validation' in payload:
+    assert payload['retry_validation'] == [{'path':['rows',0,'training_response_note'],'type':'extra_forbidden'}]
+"""
     elif fault == "missing_usage":
         script += "result.pop('modelUsage')\n"
     elif fault == "output_overrun":
@@ -130,6 +143,37 @@ def test_cli_missing_usage_stays_unknown(setup_loop, tmp_path):
     engine.run(campaign["id"])
     work = service.snapshot(campaign["id"])["round"]["learning_work"]["material_author_work"]
     assert work["calls_without_usage"] == 2
+
+
+@pytest.mark.parametrize("fault", ["rejected_schema", "rejected_valid"])
+def test_cli_rejected_tool_input_is_diagnostic_only_and_retry_gets_safe_paths(setup_loop, tmp_path, fault):
+    _, service, campaign, engine = setup_cli(setup_loop, tmp_path, fault=fault)
+    engine.run(campaign["id"])
+    assert not service.store.query("SELECT * FROM stage_runs WHERE stage='train'")
+    failed = service.store.query("SELECT * FROM material_calls WHERE status='failed'")
+    assert failed
+    expected = ([{"path": ["rows", 0, "training_response_note"], "type": "extra_forbidden"}]
+                if fault == "rejected_schema" else [{"path": [], "type": "completion_or_provenance"}])
+    for call in failed:
+        evidence = service.artifacts.get(call["artifact"])
+        assert evidence["validation_errors"] == expected
+        assert evidence["response"]["rejected_structured_output"]["rows"]
+        assert "PRIVATE_REJECTED_VALUE" not in call["error"]
+    if fault == "rejected_schema":
+        engine.run(campaign["id"])
+        assert service.store.campaign(campaign["id"])["status"] == "complete"
+        calls = service.store.query("SELECT * FROM material_calls WHERE status='complete'")
+        assert len(calls) == 2
+        retried = []
+        for call in calls:
+            evidence = service.artifacts.get(call["artifact"])
+            request = service.artifacts.get(evidence["request_artifact"])["request"]
+            payload = json.loads(request["messages"][1]["content"])
+            assert "PRIVATE_REJECTED_VALUE" not in json.dumps(payload)
+            if "retry_validation" in payload:
+                assert payload["retry_validation"] == expected
+                retried.append(payload["task"]["job"]["id"])
+        assert retried == ["one"]
 
 
 @pytest.mark.parametrize("fault", ["hang", "oversize", "truncated", "continuation"])

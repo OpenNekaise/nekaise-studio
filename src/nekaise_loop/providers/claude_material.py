@@ -50,9 +50,9 @@ class ClaudeCodeAuthor:
         else:
             env.pop("MAX_THINKING_TOKENS", None)
         cancelled = threading.Event()
-        envelope, starts = None, 0
+        envelope, starts, rejected_output = None, 0, None
         def observe(line):
-            nonlocal envelope, starts
+            nonlocal envelope, starts, rejected_output
             try:
                 event = json.loads(line)
             except ValueError:
@@ -61,6 +61,13 @@ class ClaudeCodeAuthor:
                 return
             if event.get("type") == "result":
                 envelope = event
+            if event.get("type") == "assistant" and event.get("parent_tool_use_id") is None:
+                message = event.get("message")
+                blocks = message.get("content") if isinstance(message, dict) else None
+                for block in blocks if isinstance(blocks, list) else []:
+                    if (isinstance(block, dict) and block.get("type") == "tool_use"
+                            and block.get("name") == "StructuredOutput" and isinstance(block.get("input"), dict)):
+                        rejected_output = block["input"]
             part = event.get("event", {}) if event.get("type") == "stream_event" else {}
             if part.get("type") == "message_start":
                 starts += 1
@@ -103,7 +110,13 @@ class ClaudeCodeAuthor:
                                         kind, retry_seconds(error), raw)
                 waiting.usage = normalized
                 raise waiting
-            return AuthorResult(None, False, author.model, normalized, raw)
+            # Preserve rejected tool input solely for local structural diagnostics.
+            # It is never a successful completion, even if our schema accepts it.
+            content = None
+            if envelope.get("subtype") == "error_max_structured_output_retries" and rejected_output is not None:
+                raw["rejected_structured_output"] = rejected_output
+                content = json.dumps(rejected_output, ensure_ascii=False)
+            return AuthorResult(content, False, author.model, normalized, raw)
         models = envelope.get("modelUsage") or {}
         if models and set(models) != {author.model}:
             failure = AuthorHTTPError(f"Material author {author.id}: Claude Code used an unexpected model", raw)

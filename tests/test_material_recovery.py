@@ -79,6 +79,11 @@ def test_orchestrator_funds_retry_once_and_training_consumes_valid_expansion(int
     assert json.loads(exact["request"]["messages"][1]["content"]) == requests[2]
     assert service.store.one("SELECT SUM(reserved_tokens) AS n FROM material_calls")["n"] == 2048
     assert len(service.snapshot(campaign["id"])["round"]["materials"]) == 3
+    work = service.snapshot(campaign["id"])["round"]["learning_work"]
+    retried_job = next(job for job in work["author_yield"]["by_job"] if job["plan_id"] == "two")
+    assert retried_job["call_id"] == calls[2]["id"]
+    assert retried_job["reserved_output_tokens"] == 512
+    assert work["material_author_work"]["reserved_output_tokens_all_attempts"] == 2048
 
 
 def test_unfunded_internal_budget_wakes_orchestrator_and_does_not_dispatch(interrupted_material):

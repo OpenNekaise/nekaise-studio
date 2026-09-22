@@ -539,6 +539,10 @@ from current candidate counts. Exact content variants are not semantic coverage;
 prepared occurrences are not actual optimizer exposure. This helps the Teacher size
 larger varied jobs within existing response and round limits without prescribing
 authors, examples, repetition, acceptance or a minimum dose.
+The per-job sizing projection retains job/result identities, expected and produced
+counts, successful-call reservations and whole-response output cost. It exposes
+variation hidden by author-wide averages without inspecting teaching correctness
+or treating short student answers as the entire provider response cost.
 `material_jobs.py` owns worker-scoped bounded dispatch, durable call reservations and
 completed-job reuse. The workspace worker lock, not job TTLs, owns requests.
 `materials.py` prepares teacher delegation and exact final selection. The expand and

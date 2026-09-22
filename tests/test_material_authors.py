@@ -125,9 +125,42 @@ def test_author_sizing_keeps_missing_output_usage_distinct_from_zero(setup_loop,
         result = service.artifacts.get(job["artifact"])
         result["usage"] = missing_usage
         service.store.execute("UPDATE material_jobs SET artifact=? WHERE id=?", (service.artifacts.put(result), job["id"]))
-    sizing = author_yield(service.store, service.artifacts, rid, {})["by_author"]["a"]
+    evidence = author_yield(service.store, service.artifacts, rid, {})
+    sizing = evidence["by_author"]["a"]
     assert sizing["produced_candidates"] == 2 and sizing["jobs_without_output_usage"] == 2
     assert sizing["reported_output_tokens"] is None and sizing["reported_output_tokens_per_candidate"] is None
+    assert all(job["reported_output_tokens"] is None and job["reported_output_tokens_per_candidate"] is None
+               for job in evidence["by_job"])
+
+
+def test_author_sizing_exposes_job_variation_and_empty_batch_cost(setup_loop):
+    class SizingTeacher(AuthorTeacher):
+        jobs = [("one", "a"), ("two", "a"), ("empty", "a")]
+
+    def varied_response(request):
+        envelope = response(request).json()
+        plan_id = json.loads(json.loads(request.content)["messages"][1]["content"])["task"]["job"]["id"]
+        envelope["usage"] = {"prompt_tokens": 100, "completion_tokens": {"one": 20, "two": 90, "empty": 7}[plan_id]}
+        if plan_id == "empty":
+            envelope["choices"][0]["message"]["content"] = '{"rows": []}'
+        return httpx.Response(200, json=envelope)
+
+    _, service, campaign, engine = configured(setup_loop, varied_response, teacher=SizingTeacher)
+    engine.run(campaign["id"])
+    detail = service.snapshot(campaign["id"])["round"]
+    evidence = detail["learning_work"]["author_yield"]
+    jobs = {job["plan_id"]: job for job in evidence["by_job"]}
+    assert evidence["by_author"]["a"]["reported_output_tokens_per_candidate"] == 58.5
+    assert jobs["one"]["reported_output_tokens_per_candidate"] == 20
+    assert jobs["two"]["reported_output_tokens_per_candidate"] == 90
+    assert jobs["empty"]["reported_output_tokens"] == 7
+    assert jobs["empty"]["reported_output_tokens_per_candidate"] is None
+    for plan_id, job in jobs.items():
+        result = service.artifacts.get(job["result_artifact"])
+        assert result["job_id"] == job["job_id"] and result["call_id"] == job["call_id"]
+        assert job["author_id"] == "a" and job["expected_items"] == 2
+        assert job["produced_candidates"] == (0 if plan_id == "empty" else 1)
+        assert job["reserved_output_tokens"] == 512
 
 
 @pytest.mark.parametrize("passes", [0, 2])

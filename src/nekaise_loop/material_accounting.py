@@ -13,8 +13,10 @@ def author_yield(store, artifacts, round_id, frozen):
     """
     if not store.one("SELECT name FROM sqlite_master WHERE type='table' AND name='material_jobs'"):
         return None
-    groups = {}
-    for job in store.query("SELECT author_id,artifact FROM material_jobs WHERE round_id=? AND status='complete' ORDER BY id", (round_id,)):
+    groups, jobs = {}, []
+    reservations = {call["id"]: call["reserved_tokens"] for call in store.query(
+        "SELECT c.id,c.reserved_tokens FROM material_calls c JOIN material_jobs j ON j.id=c.job_id WHERE j.round_id=?", (round_id,))}
+    for job in store.query("SELECT id,plan_id,author_id,artifact FROM material_jobs WHERE round_id=? AND status='complete' ORDER BY id", (round_id,)):
         result = artifacts.get(job["artifact"])
         group = groups.setdefault(job["author_id"], {"completed_jobs": 0, "empty_completed_jobs": 0, "produced_candidates": 0,
             "jobs_with_output_usage": 0, "jobs_without_output_usage": 0,
@@ -32,6 +34,13 @@ def author_yield(store, artifacts, round_id, frozen):
             group["max_reported_output_tokens_per_job"] = max(group["max_reported_output_tokens_per_job"] or 0, output)
         else:
             group["jobs_without_output_usage"] += 1
+            output = None
+        jobs.append({"job_id": job["id"], "plan_id": job["plan_id"], "author_id": job["author_id"],
+            "result_artifact": job["artifact"], "call_id": result.get("call_id"),
+            "expected_items": result.get("expected_items"), "produced_candidates": count,
+            "reserved_output_tokens": reservations.get(result.get("call_id")),
+            "reported_output_tokens": output,
+            "reported_output_tokens_per_candidate": output/count if output is not None and count else None})
     rows = {r["id"]: r for r in frozen.get("rows", []) if r.get("material_origin") and r.get("stream") in {"cpt", "sft"}}
     targets = Counter()
     for sample in frozen.get("samples", []):
@@ -47,8 +56,8 @@ def author_yield(store, artifacts, round_id, frozen):
             reported_output_tokens_per_candidate=group["reported_output_tokens"]/group["candidates_with_output_usage"] if group["candidates_with_output_usage"] else None)
         if not group["jobs_with_output_usage"]:
             group["reported_output_tokens"] = None
-    return {"round_id": round_id, "by_author": groups,
-            "basis": "Completed-job output/candidate sizing includes empty completed job overhead; prepared selected target occurrences are per pass. Failed/retried call cost is in material_author_work. Missing usage is not zero; exact content variants are not semantic coverage. Provider tokens are not student-tokenizer targets; preparation is not actual consumption."}
+    return {"round_id": round_id, "by_author": groups, "by_job": jobs,
+            "basis": "Completed-job output/candidate sizing includes empty completed job overhead; by_job reservations belong only to the successful call, not all attempts. Job costs cover the whole response, including prompts, metadata and reasoning; an author average does not bound a different job. Prepared selected target occurrences are per pass. Failed/retried call cost is in material_author_work. Missing usage is not zero; exact content variants are not semantic coverage. Provider tokens are not student-tokenizer targets; preparation is not actual consumption."}
 
 def job_work(store, round_id):
     if not store.one("SELECT name FROM sqlite_master WHERE type='table' AND name='material_jobs'"):

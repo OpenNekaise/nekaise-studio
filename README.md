@@ -114,3 +114,18 @@ remains intact. The default `required_v1` policy supersedes earlier optional-del
 legacy artifacts stay readable. Studio displays measured training tokens / primary Teacher
 tokens, with per-round observations and a smoothed trend. The same usage feedback reaches
 curriculum and reflection. See [the contract](docs/COAPT.md#training-production-efficiency).
+
+### Chat with the student
+
+Open **Model** to talk to the latest completed student checkpoint. Replies stream into
+the page; follow-up messages use the newest completed version and show its iteration
+and snapshot identity. **Stop reply** cancels just the chat; **New chat** clears its
+context. Conversations stay in page memory and never become training material.
+
+Chat runs in a separate FP32 CPU process with four threads, leaving GPU capacity for
+training. This server's CPU and memory can support the current 1B student. Each turn
+loads a verified snapshot, so the first text takes longer than subsequent tokens.
+Only one chat request runs at a time. The native conversation limit is 2,048 prompt
+tokens and 256 output tokens; a long conversation needs a new chat. Raw-text Base runs
+are not exposed as chat models. Deployment or checkpoint maintenance can briefly make
+chat unavailable; training continues independently. See the [runtime contract](ARCHITECTURE.md#interactive-model-tab).

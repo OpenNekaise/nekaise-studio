@@ -1,10 +1,11 @@
-import { escapeHTML as e, time, modelLabel, readAPIResponse } from "./lib.js?v=45d8cb9d849a";
-import { overview, iterationView, historyView, reportsView, emptyStudio, badge, recoveryNotice, studioScope, studioNavigation } from "./views.js?v=45d8cb9d849a";
-import { elapsedLabel } from "./telemetry.js?v=45d8cb9d849a";
+import { createModelChat } from "./model-chat.js?v=615dc8e42cb2";
+import { escapeHTML as e, time, modelLabel, readAPIResponse } from "./lib.js?v=615dc8e42cb2";
+import { overview, iterationView, historyView, reportsView, emptyStudio, badge, recoveryNotice, studioScope, studioNavigation } from "./views.js?v=615dc8e42cb2";
+import { elapsedLabel } from "./telemetry.js?v=615dc8e42cb2";
 
-import { createAssessmentHistory } from "./teacher-assessment.js?v=45d8cb9d849a";
-import { createBenchmarkBrowser } from "./benchmark-browser.js?v=45d8cb9d849a";
-import { createExperimentBrowser } from "./experiment-browser.js?v=45d8cb9d849a";
+import { createAssessmentHistory } from "./teacher-assessment.js?v=615dc8e42cb2";
+import { createBenchmarkBrowser } from "./benchmark-browser.js?v=615dc8e42cb2";
+import { createExperimentBrowser } from "./experiment-browser.js?v=615dc8e42cb2";
 
 const $ = id => document.getElementById(id);
 const state = {
@@ -18,6 +19,7 @@ const state = {
   studioSection: "overview", historyQuery: "", historyFilter: "all",
 };
 let timer, clockTimer, toastTimer;
+const modelChat = createModelChat(api);
 const loadAssessmentHistory = createAssessmentHistory(api);
 const benchmarkBrowser = createBenchmarkBrowser(api, () => render(true));
 const experimentBrowser = createExperimentBrowser(api, () => render());
@@ -54,7 +56,7 @@ function renderHeader() {
     button.classList.toggle("active", active);
     if (active) button.setAttribute("aria-current", "page"); else button.removeAttribute("aria-current");
   });
-  $("run-toolbar").hidden = ["history", "reports"].includes(state.view) || !state.campaigns.length;
+  $("run-toolbar").hidden = ["history", "reports", "model"].includes(state.view) || !state.campaigns.length;
   $("run-selection").innerHTML = state.campaigns.length ? `<label for="campaign-picker">Run</label><select id="campaign-picker" aria-label="Select run">${state.campaigns.filter(row => row.retention !== "archive" || row.id === state.campaignId).map(row => `<option value="${e(row.id)}" ${row.id === state.campaignId ? "selected" : ""}>${e(row.display_name || row.name)}</option>`).join("")}</select>` : "";
   let actions = c ? badge(c.status) : "";
   if (c?.status === "ready") actions += '<button class="button primary" data-action="start">Start run</button>';
@@ -72,6 +74,14 @@ function currentCampaign() {
 }
 function render(force = false) {
   renderHeader();
+  if (state.view === "model") {
+    modelChat.mount($("content"));
+    $("updated-label").textContent = "Latest completed student · Interactive chat";
+    state.contentScope = "model";
+    state.signature = "";
+    return;
+  }
+  modelChat.unmount();
   const s = state.data;
   const signature = JSON.stringify([s, state.iterations, state.snapshots, state.campaigns, state.view, state.studioSection, state.historyQuery, state.historyFilter, state.selectedRound, state.lessonId, state.diff, state.expandedActivity, state.reports, state.reportDetail, state.reportId, state.reportBefore, state.telemetry, state.benchmark, state.teacherAssessment, benchmarkBrowser.state, experimentBrowser.state]);
   if (!force && (signature === state.signature || window.getSelection()?.toString())) return;
@@ -152,6 +162,9 @@ async function refresh(force = false) {
     if (selected?.id === state.campaignId && !campaigns.some(c => c.id === selected.id)) campaigns.push(selected);
     state.campaigns = campaigns;
     if (!campaigns.some(c => c.id === state.campaignId)) state.campaignId = currentCampaign()?.id || "";
+    if (state.view === "model") {
+      render(); await modelChat.refresh(); connected(true); showError(""); return;
+    }
     if (state.view === "history") {
       connected(true); showError(""); render(force);
       return;
@@ -201,7 +214,7 @@ async function changeCampaign(id) {
   await refresh(true);
 }
 async function navigate(view) {
-  if (!["overview", "history", "reports"].includes(view)) return;
+  if (!["overview", "history", "reports", "model"].includes(view)) return;
   if (view === "overview" && state.view === "reports" && state.reports?.current?.campaign?.id) {
     state.campaignId = state.reports.current.campaign.id;
     state.data = state.snapshots[state.campaignId] || null;
@@ -409,7 +422,7 @@ document.addEventListener("visibilitychange", () => { if (!document.hidden) refr
 await refresh();
 timer = setInterval(() => { if (!document.hidden) refresh(); }, 2000);
 clockTimer = setInterval(() => { if (!document.hidden) updateDuration(); }, 1000);
-window.addEventListener("pagehide", () => { clearInterval(timer); clearInterval(clockTimer); });
+window.addEventListener("pagehide", () => { clearInterval(timer); clearInterval(clockTimer); modelChat.unmount(); });
 
 if (document.modelContext?.registerTool) {
   const lifecycle = new AbortController();

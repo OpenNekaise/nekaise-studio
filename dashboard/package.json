@@ -3,7 +3,7 @@
   "type": "module",
   "scripts": {
     "test": "node --test tests/*.test.js",
-    "check": "node --check dist/app.js && node --check dist/views.js && node --check dist/lib.js",
+    "check": "node --check dist/app.js && node --check dist/views.js && node --check dist/lib.js && node --check dist/model-chat.js",
     "release": "node scripts/stamp-assets.mjs"
   }
 }

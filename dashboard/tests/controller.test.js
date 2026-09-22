@@ -9,6 +9,8 @@ test("iteration navigation, previous runs and stale requests keep the correct ru
   class Element {
     constructor(id) { this.id = id; this.innerHTML = ""; this.textContent = ""; this.hidden = false; this.dataset = {}; this.classList = { toggle() {}, contains() { return false; } }; }
     querySelectorAll() { return []; }
+    querySelector(selector) { return get(selector === "[type=submit]" ? "chat-send" : selector.replace("#", "")); }
+    removeEventListener(type) { listeners.delete(`${this.id}:${type}`); }
     addEventListener(type, handler) { listeners.set(`${this.id}:${type}`, handler); }
     setAttribute() {}
     removeAttribute() {}
@@ -27,6 +29,7 @@ test("iteration navigation, previous runs and stale requests keep the correct ru
   replace("setInterval", () => 0);
   replace("fetch", async (path, options) => {
     requests.push({ path, method: options?.method || "GET" });
+    if (path === "/api/model") return response({ available: true, model: { id: "snapshot123", run_name: "Current student", round_number: 2 } });
     if (path === "/api/campaigns") return response([campaign("a"), campaign("b")]);
     if (path === "/api/experiments?limit=20") return response({ items: [], total: 0, next_before: null });
     if (failUsage && /\/(telemetry|benchmark)$/.test(path)) throw new Error("Measurement service unavailable");
@@ -51,6 +54,13 @@ test("iteration navigation, previous runs and stale requests keep the correct ru
     assert.match(get("content").innerHTML, /data-round="a1"/);
     assert.equal(get("run-toolbar").hidden, false);
     assert.ok(!requests.some(r => r.path.startsWith("/api/reports")));
+    const beforeModel = requests.length;
+    await click({ view: "model" });
+    assert.match(get("content").innerHTML, /Message the model/);
+    assert.equal(get("run-toolbar").hidden, true);
+    assert.deepEqual(requests.slice(beforeModel).map(r => r.path), ["/api/campaigns", "/api/model"]);
+    await click({ view: "overview" });
+    assert.match(get("content").innerHTML, /Teacher assessment/);
     const homeRequests = requests.length;
     await click({ view: "reports" });
     assert.match(get("content").innerHTML, /Current execution/);

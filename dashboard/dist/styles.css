@@ -567,3 +567,22 @@ del { background: #f4e0d5; text-decoration-color: #ac7c65; }
   .experiment-plan-grid { grid-template-columns: 1fr; }
   .experiment-body { padding: 0 18px 18px; }
 }
+
+/* Interactive student model */
+.model-page { max-width: 960px; margin: 0 auto; }
+.model-info { display: flex; flex-wrap: wrap; gap: 8px 20px; padding: 14px 0; border-bottom: 1px solid var(--line); font-size: 13px; }
+.model-note { font-size: 12px; margin: 12px 0 20px; }
+.model-messages { min-height: 260px; max-height: 52vh; overflow-y: auto; padding: 8px 0; }
+.model-empty { padding: 90px 20px; text-align: center; color: var(--muted); }
+.model-message { padding: 18px 22px; border: 1px solid var(--line); border-radius: 12px; margin: 0 0 14px; background: var(--surface); }
+.model-message.user { margin-left: 12%; background: var(--pine-light); }
+.model-message.assistant { margin-right: 6%; }
+.model-message-heading { font-size: 12px; font-weight: 600; margin-bottom: 8px; }
+.model-message-heading .quiet { font-weight: 400; }
+.model-message-text { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 15px; line-height: 1.7; }
+.model-composer { margin-top: 16px; }
+.model-composer textarea { display: block; width: 100%; resize: vertical; min-height: 90px; max-height: 280px; padding: 14px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); color: var(--ink); font: inherit; }
+.model-composer-actions { display: flex; align-items: center; justify-content: flex-end; gap: 10px; margin-top: 10px; }
+.model-composer-actions > span { margin-right: auto; font-size: 12px; }
+#model-progress { min-height: 22px; font-size: 12px; }
+@media (max-width: 640px) { .model-message.user { margin-left: 6%; } .model-message.assistant { margin-right: 0; } .model-composer-actions > span { max-width: 150px; } }

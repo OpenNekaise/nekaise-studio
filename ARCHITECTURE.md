@@ -601,3 +601,42 @@ by one original round allowance. Reservations and reported usage stay distinct. 
 material-budget incidents wake the orchestrator; provider quota waits are unchanged.
 Diagnostic retry requests preserve the original job key and record exact per-attempt
 request artifacts. See the material-author contract for authority and failure limits.
+
+## Interactive Model tab
+
+`model_chat.py` exposes a read-only snapshot resolver and a request-owned CPU chat
+worker; `workers/chat.py` is the isolated ML entrypoint. The HTTP process imports no
+ML libraries. The training worker retains exclusive ownership of training and GPU
+model processes. Chat owns only its own subprocess group, never training commands.
+
+`GET /api/model` follows the current campaign's ancestor chain to the newest completed
+round. Unstarted drafts and unfinished round outputs are excluded. A missing latest
+checkpoint fails explicitly; there is no silent fallback to an older model. Each
+`POST /api/model/chat` resolves that snapshot again, verifies its immutable manifest
+and inference files, and labels its streamed reply with the exact snapshot identity.
+The native tokenizer chat template receives alternating user/assistant messages with
+thinking disabled. Models configured for raw continuation have no chat interface here.
+
+The default runtime is FP32 CPU, four intra-op threads, one inter-op thread, nice 10
+and idle IO priority. CUDA is hidden before ML imports and all tensors remain on CPU.
+The browser streams NDJSON, supports cancellation, preserves draft input across status
+polls, and displays a reply-length stop. Conversations exist in page memory only;
+prompts, replies and usage do not enter teaching records, reports, teacher tools,
+checkpoint decisions or independent benchmarks. A refreshed page starts a new chat.
+
+One workspace file lock permits one chat request at a time across API processes. A
+second request returns a busy event. Limits are 31 alternating messages, 4,000 characters
+per message, 12,000 characters total, 2,048 native prompt tokens, 256 new tokens and a
+180-second request deadline. Oversized context fails before weight loading; it is never
+silently truncated. Incomplete replies and their prompts are excluded from later context.
+The owned child is killed and reaped on disconnect, timeout or cancellation; Linux
+parent-death signaling and a child alarm also bound a crashed server's orphan lifetime.
+
+Chat acquires shared source and checkpoint-reader locks without waiting, resolves and
+loads under those locks, materializes the CPU tensors, then releases both before
+generation. Repair/retention holding an exclusive lock yields a clear temporary-busy
+message. The source lock prevents cleanup starting concurrently with model loading.
+Checkpoint files are read-only and no optimizer state is loaded. Each request exits
+and releases its memory; there is no GPU residency, background model server or training
+pause for ordinary chat. CPU, RAM bandwidth and checkpoint reads remain shared machine
+resources, so this is GPU isolation rather than a claim of zero overall contention.

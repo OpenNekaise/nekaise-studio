@@ -3,15 +3,31 @@ from __future__ import annotations
 
 from typing import Literal
 from urllib.parse import urlparse
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, aclosing
+
+import anyio
+import asyncio
 
 from fastapi import FastAPI, Request, Query, HTTPException
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, ConfigDict, Field
 
 from .config import CampaignConfig, Settings
 from .service import Service, Conflict
+from .model_chat import ChatRequest, status as model_status, stream_chat
+
+
+class ChatStreamResponse(StreamingResponse):
+    deadline_seconds = 185
+
+    async def __call__(self, scope, receive, send):
+        try:
+            await asyncio.wait_for(super().__call__(scope, receive, send), self.deadline_seconds)
+        finally:
+            # ASGI 2.4 disconnects can occur in send(), outside the iterator.
+            with anyio.CancelScope(shield=True):
+                await self.body_iterator.aclose()
 
 
 class CreateCampaign(BaseModel):
@@ -66,6 +82,20 @@ def create_app(settings: Settings | None = None, *, allowed_hosts: tuple[str, ..
     @app.get("/api/health")
     def health():
         return {"status": "ok", "version": "0.1.0"}
+
+    @app.get("/api/model")
+    def model():
+        return JSONResponse(model_status(service), headers={"Cache-Control": "no-store"})
+
+    @app.post("/api/model/chat")
+    async def model_chat(body: ChatRequest):
+        import json
+        async def events():
+            async with aclosing(stream_chat(service, body)) as stream:
+                async for event in stream:
+                    yield json.dumps(event, ensure_ascii=False) + "\n"
+        return ChatStreamResponse(events(), media_type="application/x-ndjson",
+            headers={"Cache-Control": "no-store", "X-Accel-Buffering": "no"})
 
     @app.get("/api/system")
     def system():

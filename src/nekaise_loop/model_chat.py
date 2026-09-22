@@ -134,7 +134,8 @@ async def stream_chat(service, body):
                 fcntl.flock(source_lock, fcntl.LOCK_SH | fcntl.LOCK_NB)
                 fcntl.flock(checkpoint_lock, fcntl.LOCK_SH | fcntl.LOCK_NB)
                 metadata, result = latest_snapshot(service)
-                env = {**os.environ, 'CUDA_VISIBLE_DEVICES': '', 'OMP_NUM_THREADS': '4',
+                env = {**os.environ, 'PYTHONPATH': str(service.settings.root/'src'),
+                       'CUDA_VISIBLE_DEVICES': '', 'OMP_NUM_THREADS': '4',
                        'MKL_NUM_THREADS': '4', 'TOKENIZERS_PARALLELISM': 'false',
                        'HF_HUB_OFFLINE': '1', 'TRANSFORMERS_OFFLINE': '1',
                        'NEKAISE_CHAT_PARENT_PID': str(os.getpid())}

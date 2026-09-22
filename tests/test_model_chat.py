@@ -57,6 +57,7 @@ def mock_worker(monkeypatch, tmp_path, mode='success'):
     script.write_text('''import os,sys,json,time,fcntl
 p=json.loads(sys.stdin.readline())
 assert os.environ['CUDA_VISIBLE_DEVICES']==''
+assert os.path.isfile(os.path.join(os.environ['PYTHONPATH'],'nekaise_loop/workers/chat.py'))
 assert os.environ['OMP_NUM_THREADS']=='4'
 assert os.environ['HF_HUB_OFFLINE']=='1'
 print(json.dumps({'type':'ready','pid':os.getpid()}),flush=True)

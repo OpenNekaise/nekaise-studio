@@ -40,6 +40,7 @@ def expansion_receipt(ctx, curriculum, frozen):
     if not manifest["jobs"] or not candidates or not selected_ids or not targets:
         raise ValueError("Positive training requires completed expansion and teacher-selected expanded training targets; revise the package or explicitly choose train_epochs=0")
     return {"policy": "required_v1", "round_id": ctx.round["id"],
+            "review_policy": ctx.config.material_review_policy,
             "manifest_hash": manifest["manifest_hash"], "job_ids": [j["job_id"] for j in manifest["jobs"]],
             "produced_candidates": len(candidates), "selected_candidates": len(selected_ids),
             "prepared_expanded_targets_per_pass": targets}
@@ -114,7 +115,17 @@ def select_materials(ctx):
     lessons = ctx.output("revise")["lessons"]
     if not curriculum.get("expansion_jobs"):
         return {"curriculum": curriculum, "lessons": lessons, "selection": None, "materials": []}
-    choice = MaterialSelection.model_validate(ctx.teacher.select_materials(selection_brief(ctx, manifest))).model_dump()
+    trusted = ctx.config.material_review_policy == "trusted_author_v1"
+    if trusted:
+        decision = {"manifest_hash": manifest["manifest_hash"], "accepted_ids": [],
+                    "accepted_jobs": sorted(j["plan_id"] for j in manifest["jobs"]),
+                    "edits": [], "seed_exclusions": [], "token_mix": curriculum["token_mix"],
+                    "train_epochs": curriculum["train_epochs"],
+                    "review_scope": "Teacher preauthorized these author jobs in its curriculum under operator trusted_author_v1. Generated content was not individually reviewed.",
+                    "reason": "Apply the teacher's complete author batches and planned recipe under operator trust; no post-generation content review or pruning."}
+    else:
+        decision = ctx.teacher.select_materials(selection_brief(ctx, manifest))
+    choice = MaterialSelection.model_validate(decision).model_dump()
     if choice["manifest_hash"] != manifest["manifest_hash"]:
         raise ValueError("Teacher material choice does not match the frozen candidate manifest")
     by_id = {r["id"]: r for r in manifest["candidates"]}
@@ -164,7 +175,9 @@ def select_materials(ctx):
             "sources": sources, "document": document, "errors": [], "evidence": [],
             "use_for_training": key in selected, "reason": choice["reason"],
             "material_origin": {"type": "auxiliary_synthetic", "author_id": original["author_id"], "model": original["model"],
+                "review_policy": ctx.config.material_review_policy,
                 "job_id": original["job_id"], "candidate_id": original["candidate"]["id"], "response_artifact": original["response_artifact"],
+                "plan_id": original["plan_id"],
                 "seed_artifact": original["seed_artifact"], "seed_ids": item["seed_ids"], "teacher_edited": key in edits,
                 "manifest_hash": manifest["manifest_hash"], "review_scope": choice["review_scope"]}})
     for row in lessons:
@@ -172,8 +185,10 @@ def select_materials(ctx):
             row.update(use_for_training=False, reason=choice["reason"])
     curriculum.update(token_mix=choice["token_mix"], train_epochs=choice["train_epochs"])
     ctx.project("material", material_rows)
-    ctx.event("material_selection", "Teacher selected the final material package", {"candidates": len(material_rows), "selected": len(selected), "review_scope": choice["review_scope"]})
-    return {"curriculum": curriculum, "lessons": lessons + material_rows, "selection": choice, "materials": material_rows}
+    ctx.event("material_selection", "Teacher-preauthorized author batches applied without content review" if trusted else "Teacher selected the final material package",
+              {"candidates": len(material_rows), "selected": len(selected), "review_scope": choice["review_scope"], "review_policy": ctx.config.material_review_policy})
+    return {"curriculum": curriculum, "lessons": lessons + material_rows, "selection": choice, "materials": material_rows,
+            "review_policy": ctx.config.material_review_policy}
 
 
 def source_accounting(frozen):

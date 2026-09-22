@@ -32,12 +32,15 @@ def recorded_prompt(prefix: str, inputs: dict, directory: Path, *, purpose=None)
                 "evidence_references": data is not inputs,
                 "evidence": shared_view(data) or data}
         note = (
-            "This view includes every record and field. When evidence_references=true, $evidence objects point to exact original values: "
+            "This view includes every record directly or through an exact reference. When evidence_references=true, $evidence objects point to exact original values: "
             "pass their op and pointer to the archive tool. Strings support start/length and arrays offset/limit; "
             "follow next_start/next_offset to the end. Objects support fields=[exact field names]. "
             "A reference is not its contents: retrieve source text when needed for grounding. "
-            "Revise/evaluate source spans, exact teaching text, student answers, judgments and all diagnostics "
-            "remain inline; only duplicate document text and raw token arrays use references there. "
+            "Primary seed/source evidence, student answers, judgments and diagnostic outcomes remain inline. "
+            "In evaluate/reflect, unobserved synthetic rows marked material_origin.review_policy=trusted_author_v1 "
+            "are whole-row references with coverage containing exact prompts, concepts, target character counts and provenance. "
+            "Their complete text/sources remain retrievable for optional teaching use, not a required content audit. "
+            "Observed answers and diagnostic failures are never replaced by this coverage view. Raw token arrays are retrievable. "
             "If evidence.format is shared_values_v1, each $shared resolves in one lookup in shared_values, "
             "whose entries may contain $evidence references. The complete original JSON is at original_data.path. "
             "When evidence_references=false, any $evidence key is literal data. "

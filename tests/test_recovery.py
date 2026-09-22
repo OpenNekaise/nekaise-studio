@@ -39,6 +39,22 @@ def test_infinite_loop_stops_only_when_requested(setup_loop):
     assert len(service.snapshot(campaign["id"])["rounds"]) == 3
 
 
+def test_recorded_continuation_applies_operator_author_trust_without_resetting_adam(setup_loop):
+    settings, service, campaign = new_campaign(setup_loop, rounds=1)
+    Engine(settings, FakeTeacher, FakeModel).run(campaign["id"])
+    recovery_id = service.store.recover(campaign["id"], "status_review", "Fixture operator selected author trust")
+    handle_recovery(settings, recovery_id, agent=lambda *args: decision("continue", [
+        {"field": "material_review_policy", "value": '"trusted_author_v1"'}]))
+    apply_recovery(settings, recovery_id)
+    row = service.store.one("SELECT continuation_id FROM recoveries WHERE id=?", (recovery_id,))
+    child = service.store.campaign(row["continuation_id"])
+    assert child["config"]["material_review_policy"] == "trusted_author_v1"
+    assert child["config"]["inherit_optimizer"] is True
+    assert child["teacher_budget_since"] == (campaign["teacher_budget_since"] or campaign["created_at"])
+    historical = {k:v for k,v in campaign["config"].items() if k != "material_review_policy"}
+    assert CampaignConfig.model_validate(historical).material_review_policy == "teacher_review_v1"
+
+
 def test_quota_wait_resume_reuses_completed_stages_and_backs_off(setup_loop):
     settings, service, campaign = new_campaign(setup_loop, rounds=1, teacher_retry_seconds=30)
     class QuotaTeacher(FakeTeacher):

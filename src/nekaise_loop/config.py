@@ -33,6 +33,7 @@ class CampaignConfig(BaseModel):
     teacher_provider: Literal["claude", "codex"] = "codex"
     teacher_model: str = Field(default="gpt-5.6-terra", min_length=1, max_length=150)
     expansion_policy: Literal["required_v1", "legacy_optional"] = Field(default="required_v1", description="Operator requirement: positive training must consume teacher-selected expanded material. legacy_optional preserves explicitly selected historical/test behavior.")
+    material_review_policy: Literal["teacher_review_v1", "trusted_author_v1"] = Field(default="teacher_review_v1", description="Operator workflow: trusted_author_v1 preauthorizes complete author batches through the teacher curriculum, without a post-generation Teacher review call. Default preserves historical review behavior.")
     material_authors: AuthorPool = Field(default_factory=AuthorPool, description="Frozen author registry and execution allowances; teacher chooses authors and expansion content")
     corpus_path: str = "../nekaise-corpus"
     focus: str = Field(default="building energy heat transfer", min_length=1, max_length=240)

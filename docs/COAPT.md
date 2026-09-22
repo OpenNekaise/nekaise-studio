@@ -290,9 +290,14 @@ The teacher still receives actual observations and decides what they establish.
 
 ## Delegated material authors
 
-The operator requires expansion through registered **Material Authors** in every positive-training round (authorized 2026-09-18; `expansion_policy=required_v1`). Authors follow the teacher's plan, corrected seeds and selected source snapshots. They may be remote APIs or locally served models. Author concurrency and request/output limits are execution budgets, not curriculum quotas. The teacher chooses authors/jobs and their content. Positive training must consume teacher-selected or edited expanded material; `train_epochs=0` diagnostics may omit expansion. Reject unsuitable candidates and explicitly preserve weights when all are rejected. Author failures retain ordinary waiting/recovery; the host never silently changes a recipe to a diagnostic. This operator requirement supersedes older optional-delegation guidance.
+The operator requires expansion through registered **Material Authors** in every positive-training round (authorized 2026-09-18; `expansion_policy=required_v1`). Authors follow the teacher's plan, corrected seeds and selected source snapshots. They may be remote APIs or locally served models. Author concurrency and request/output limits are execution budgets, not curriculum quotas. The teacher chooses authors/jobs and their content. Positive training must consume teacher-selected, edited or preauthorized expanded material; `train_epochs=0` diagnostics may omit expansion. Author failures retain ordinary waiting/recovery; the host never silently changes a recipe to a diagnostic. This operator requirement supersedes older optional-delegation guidance.
 
-After seed revision, the worker persists independent author jobs and their candidate artifacts. The teacher inspects the complete accessible candidate set using the paged material_candidates archive, chooses its own review scope, and selects exact immutable IDs/batches or supplies edits. Unselected candidates remain preserved. The teacher also chooses the final recipe shares/passes. No author, mechanical check, benchmark or score adds a second semantic teaching gate.
+After seed revision, the worker persists independent author jobs and candidate artifacts. The operator-selected `material_review_policy` controls how the teacher authorizes them:
+
+- `trusted_author_v1` implements the 2026-09-22 decision to completely trust generated teaching content. Curriculum jobs approve complete structurally valid batches in advance at the planned mix/passes. The material_select stage records exact accepted job IDs, manifest identity and explicit preauthorization without a Teacher call, content review, pruning or edits. Primary seeds retain their revision decisions. Online evaluation and reflection assess the student using coverage and observed answers, without re-auditing generated teaching text. Exact material remains available for teaching use. The teacher chooses subsequent tasks, authors and dose; zero-pass diagnostics remain possible.
+- `teacher_review_v1` preserves the historical workflow and is the compatibility default when the field is absent. A Teacher call chooses review scope, exact IDs/batches, edits, omissions and final shares/passes. Rejecting every candidate requires explicitly choosing zero passes.
+
+Trust does not weaken completion/schema/provenance/budget checks or label synthetic material as observed student work. A positive-training package with no expanded targets still fails for orchestrator recovery. Requested jobs execute even when the planned passes are zero. Exact duplicate candidates are not silently removed; prepared occurrences, exact content variants and actual exposure stay distinct. Changing the operator's trust policy requires a new operator instruction, not an automatic review or score gate.
 
 Auxiliary synthetic material records provider/model, source/seed/job provenance and teacher selection. A variant without a student attempt is explicitly unobserved, never an empty student answer or an invented correction. Accepted variants join the existing teacher material stream with CPT/SFT labels and origin metadata. The student tokenizer applies its own native serialization. API reasoning fields are not copied into training. All selected material is visible to online assessment, reflection and later replay.
 
@@ -310,7 +315,7 @@ round usage; reflection gets a provisional snapshot excluding its own call. Miss
 usage produces no complete ratio; `reported_ratio` is explicitly partial. A zero or unknown
 denominator has no ratio.
 
-Use informative seeds, substantial useful delegated variation, and teacher review/selection.
+Use informative seeds, substantial useful delegated variation, and the configured teacher authorization workflow.
 Read efficiency alongside prepared targets per pass, passes, source allocation and observed
 learning. Repetition raises exposure without distinct coverage; do not pad text, repeat solely
 for the metric or remove necessary assessment. No efficiency threshold or independent

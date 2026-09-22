@@ -519,7 +519,7 @@ Concurrent cancellation joins each runner before releasing worker ownership; sta
 reconciles recorded author children. Unknown usage retains its output reservation.
 `teacher_context.py` renders repeated identical evidence values in a shallow shared
 table and supplies exact references for bulky source copies and raw token arrays.
-Revise/evaluate retain source spans inline; reflection and candidate inspection can
+Primary revise/evaluate evidence retains source spans inline; reflection and candidate inspection can
 retrieve source text when needed. Exact student/teaching text, observations, failures,
 strategy, operator requests and every record remain present. Every original request
 is saved in `recorded-data.json`, with its content hash in the prompt and call record.
@@ -545,6 +545,18 @@ completed-job reuse. The workspace worker lock, not job TTLs, owns requests.
 material_select stages run after seed revision. Under required_v1, positive training requires
 expanded targets in the frozen dataset; only diagnostics can omit jobs.
 The latter is a primary-teacher decision, not a second teaching gate.
+
+`material_review_policy=trusted_author_v1` applies the operator's complete trust in
+generated teaching content. Curriculum jobs preauthorize all structurally valid batches
+at their planned mix/passes; material_select persists the ordinary selection shape with
+an explicit policy and review scope, but makes no Teacher call. Origin and expansion
+receipts carry the same policy. Historical missing policy fields retain teacher_review_v1.
+Unobserved trusted synthetic rows become exact whole-row references with coverage
+(prompts/concepts/provenance and target character counts) in evaluate/reflect. Primary seed evidence and actual student
+answers/assessment remain eager. Views follow immutable row policy, including mixed
+history, rather than relabelling older material from the active config. Evaluation tests
+the student and does not recreate a content review. Empty required expansion still fails;
+neither trust nor recovery silently changes the recipe or discards duplicate candidates.
 
 Accepted synthetic rows enter the existing freeze/training contract, retain their origin
 and have no fabricated student observation. Assessment, reflection and replay see the

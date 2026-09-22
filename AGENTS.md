@@ -123,3 +123,18 @@ continuation to evade it. Real source repairs use verified continuations and com
 Waiting must name the external change or bounded diagnostic cooldown and the concrete next
 action. An unchanged internal allowance cannot be repaired by elapsed time or repeated waiting.
 Explicit operator pause/stop and provider availability waits retain precedence.
+
+## Trusted author material (authorized 2026-09-22)
+
+The operator selected `material_review_policy=trusted_author_v1` for ongoing training:
+the teacher completely trusts generated teaching content. Curriculum expansion jobs
+preauthorize complete structurally valid batches at the teacher's planned mix and passes.
+Do not run a separate Teacher selection call, prune content, or recreate individual
+candidate review during evaluation/reflection. Assess the student's actual behavior.
+Keep exact author material, provenance and full history accessible for teaching use;
+record preauthorization honestly, never as individual content review. Execution checks,
+budgets, required expansion and ordinary failure recovery remain. Empty required targets
+are an operational failure, not permission to silently change the recipe to zero passes.
+The teacher retains curriculum, source, author, task, dose and online assessment choices.
+The historical `teacher_review_v1` path stays readable; recovery must preserve the selected
+trust policy unless the operator explicitly changes it.

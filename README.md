@@ -89,7 +89,7 @@ each side's interface recorded. See [student serialization](docs/COAPT.md#studen
 
 The primary teacher can delegate plan/seed expansion to configurable **Material Authors**.
 Remote APIs and compatible locally served models share a bounded async scheduler with
-per-author and shared-resource limits. The teacher selects exact candidates before
+per-author and shared-resource limits. The teacher selects exact candidates or preauthorizes complete author batches before
 freezing; provenance, retry usage and unobserved synthetic examples remain explicit.
 Configure the registry in `workspace/material-authors.json` and credentials in the ignored
 root `.env`. See [Material Authors](docs/MATERIAL_AUTHORS.md) for setup, budgets, local
@@ -98,6 +98,12 @@ Claude Code can also provide expanded material through `transport=claude_code` u
 existing CLI authentication and a pinned Opus model. Its owned processes and author
 usage remain separate from primary Teacher calls; Teacher selection still controls
 the training package.
+
+The ongoing run uses the operator's `trusted_author_v1` policy: generated teaching
+content is fully trusted, with no separate Teacher selection call or later batch audit.
+Curriculum jobs authorize the complete material at the teacher's planned mix and passes;
+online assessment still measures the student. Structural execution checks and provenance
+remain. Historical `teacher_review_v1` campaigns retain their recorded review behavior.
 
 
 ### Required expansion and efficiency (2026-09-18)

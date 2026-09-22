@@ -81,7 +81,7 @@ def round_work(store, artifacts, round_id):
         {**config, "train_epochs": selected.get("train_epochs", config["train_epochs"])})) if frozen else None
     return {**row, "expansion_policy": config.get("expansion_policy", "legacy_optional"), "stage_seconds": wall, "finished_stage_seconds": sum(wall.values()),
             "timing_complete": not missing,
-            "teacher_stage_seconds": sum(wall.get(s, 0) for s in ("select", "revise", "evaluate", "grade", "adapt")) + (wall.get("material_select", 0) if outputs.get("material_select", {}).get("selection") is not None else 0),
+            "teacher_stage_seconds": sum(wall.get(s, 0) for s in ("select", "revise", "evaluate", "grade", "adapt")) + (wall.get("material_select", 0) if outputs.get("material_select", {}).get("selection") is not None and outputs["material_select"].get("review_policy") != "trusted_author_v1" else 0),
             "unfinished_stage_timings": missing,
             "measured_work_all_attempts": {k: sum(a[k] for a in attempts.values()) for k in ("updates", "tokens", "elapsed_seconds")},
             "retained_training": {"trained": not diagnostic if trained else None,

@@ -157,6 +157,35 @@ def test_grounding_keeps_document_text_when_no_identical_inline_source_exists(pu
     assert view == data
 
 
+@pytest.mark.parametrize("purpose", ["evaluate", "reflect"])
+def test_trusted_synthetic_view_references_targets_but_preserves_observed_student_evidence(purpose):
+    source = {"text": "Fixture source "*200}
+    text = "Exact authored target "*100
+    seed = {"id": "seed", "student_prompt": "Exact observed task", "student": "Actual fixture answer", "teacher": text,
+            "training_response": text, "sources": [source], "document": source}
+    trusted = {**seed, "id": "trusted", "student": None, "student_observation": "not_requested",
+               "material_origin": {"type": "auxiliary_synthetic", "review_policy": "trusted_author_v1", "plan_id": "job"}}
+    legacy = {**trusted, "id": "legacy", "material_origin": {"type": "auxiliary_synthetic"}}
+    data = {"task": {"lessons": [seed, trusted, legacy], "assessment": {"student": text, "grade": {"score": 0}}}}
+    view = evidence_view(data, purpose, {"op": "request_data"})
+    rows = view["task"]["lessons"]
+    assert rows[0]["teacher"] == rows[2]["teacher"] == text
+    ref = rows[1][EVIDENCE_KEY]
+    assert resolve_pointer(data, ref["pointer"]) == trusted
+    assert ref["canonical_sha256"] == digest(trusted)
+    assert ref["coverage"]["student_prompt"] == trusted["student_prompt"]
+    assert ref["coverage"]["student"] is None and ref["coverage"]["material_origin"] == trusted["material_origin"]
+    assert ref["coverage"]["training_response_chars"] == len(text)
+    assert view["task"]["assessment"] == data["task"]["assessment"]
+    if purpose == "evaluate":
+        assert rows[0]["sources"] == rows[2]["sources"] == [source]
+    trusted["student"] = ""  # Even an actually observed empty answer remains eager.
+    assert EVIDENCE_KEY not in evidence_view(trusted, purpose, {"op": "request_data"})
+    trusted["student"] = None
+    trusted["errors"] = ["Fixture runtime failure"]
+    assert evidence_view(trusted, purpose, {"op": "request_data"})["errors"] == trusted["errors"]
+
+
 def test_pointer_pages_preserve_escaped_names_types_and_the_final_element():
     data = {"a/b~": {"text": "教学α"*9000, "values": [None, False, 1, 1.0, "last"]}}
     pointer = "/a~1b~0/text"

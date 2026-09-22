@@ -82,10 +82,30 @@ def evidence_view(data, purpose, locator, *, pointer=""):
         # Identical values can use the first exact location. Path differences must
         # not prevent sharing the same source/metadata across many lesson rows.
         return references.setdefault(key, {EVIDENCE_KEY: {**locator, "pointer": path, "canonical_sha256": key,
-                              "type": "string" if isinstance(value, str) else "array", "total": len(value)}})
+                              "type": "string" if isinstance(value, str) else "object" if isinstance(value, dict) else "array", "total": len(value)}})
 
     def render(value, path, *, source=False):
         if isinstance(value, dict):
+            origin = value.get("material_origin")
+            trusted = (purpose in {"evaluate", "reflect"} and isinstance(origin, dict)
+                       and origin.get("review_policy") == "trusted_author_v1"
+                       and origin.get("type") == "auxiliary_synthetic"
+                       and value.get("student") is None and value.get("student_observation") == "not_requested"
+                       and not any(value.get(k) for k in ("generation", "comparison", "grade", "errors", "error", "generation_audit")))
+            if trusted:
+                # A complete unobserved trusted row is retrievable in one lookup.
+                # Coverage guides student assessment without replaying its textbook.
+                ref = reference(value, path)
+                ref[EVIDENCE_KEY]["coverage"] = {
+                    **{k: value[k] for k in ("id", "kind", "concept", "student_prompt", "student_format", "training_tokenization",
+                                             "use_for_training", "student", "student_observation") if k in value},
+                    "material_origin": origin,
+                    "training_text_chars": len(value.get("training_text", "")),
+                    "training_response_chars": len(value.get("training_response", "")),
+                    "sources": [{k: s[k] for k in ("id", "title", "source_sha256", "span_start", "span_length") if k in s}
+                                for s in value.get("sources", [])],
+                }
+                return ref
             result = {}
             for key, child in value.items():
                 child_path = path + "/" + key.replace("~", "~0").replace("/", "~1")

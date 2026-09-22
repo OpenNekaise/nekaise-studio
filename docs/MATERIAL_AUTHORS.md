@@ -4,6 +4,16 @@ Material Authors expand the primary teacher's plan and corrected seed material.
 They do not own teaching, assessment or recovery decisions. This is part of CoAPT
 Mid-training, using the existing CPT/SFT material recipes and trainer.
 
+The operator's ongoing-training decision is `material_review_policy=trusted_author_v1`:
+teacher curriculum jobs authorize complete generated batches at the planned mix/passes.
+There is no post-generation Teacher selection call or individual content review, including
+in later evaluation/reflection. Structural/schema/provenance checks remain; exact duplicate
+content is not silently removed. Artifacts explicitly distinguish this preauthorization
+from individual inspection, and synthetic material never becomes a student observation.
+The teacher still chooses sources, jobs, seed corrections, dose and online student assessment.
+The compatibility default `teacher_review_v1` retains the older workflow described below;
+historical artifacts and full exact author text remain readable under either policy.
+
 ## Configuration
 
 The local registry is `workspace/material-authors.json`. New campaigns snapshot it

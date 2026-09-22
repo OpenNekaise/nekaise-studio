@@ -47,9 +47,9 @@ class AuthorTeacher(FakeTeacher):
         return super().evaluate(curriculum, lessons)
 
 
-def configured(setup_loop, handler=response, *, teacher=AuthorTeacher, pool=None):
+def configured(setup_loop, handler=response, *, teacher=AuthorTeacher, pool=None, review_policy="teacher_review_v1"):
     settings, service, original, _ = setup_loop
-    config = CampaignConfig.model_validate({**original["config"], "rounds": 1, "expansion_policy": "required_v1", "material_authors": (pool or AuthorPool(authors=[author()])).model_dump()})
+    config = CampaignConfig.model_validate({**original["config"], "rounds": 1, "expansion_policy": "required_v1", "material_review_policy": review_policy, "material_authors": (pool or AuthorPool(authors=[author()])).model_dump()})
     campaign = service.create("Material integration", config)
     factory = lambda **kwargs: httpx.AsyncClient(transport=httpx.MockTransport(handler), **kwargs)
     engine = Engine(settings, teacher, FakeModel, material_client_factory=factory)
@@ -128,6 +128,80 @@ def test_author_sizing_keeps_missing_output_usage_distinct_from_zero(setup_loop,
     sizing = author_yield(service.store, service.artifacts, rid, {})["by_author"]["a"]
     assert sizing["produced_candidates"] == 2 and sizing["jobs_without_output_usage"] == 2
     assert sizing["reported_output_tokens"] is None and sizing["reported_output_tokens_per_candidate"] is None
+
+
+@pytest.mark.parametrize("passes", [0, 2])
+def test_trusted_jobs_preauthorize_all_content_without_a_selection_call(setup_loop, passes):
+    class TrustedTeacher(AuthorTeacher):
+        def curriculum(self, brief):
+            plan = super().curriculum(brief)
+            plan.update(train_epochs=passes, token_mix={"teacher": 1, "corpus": 0, "replay": 0})
+            return plan
+
+        def select_materials(self, manifest):
+            raise AssertionError("Trusted author batches must not invoke a Teacher reviewer")
+
+        def reflect(self, observations):
+            assert observations["curriculum"]["train_epochs"] == passes
+            return super().reflect(observations)
+
+    def incorrect_fixture(req):
+        envelope = response(req).json()
+        batch = json.loads(envelope["choices"][0]["message"]["content"])
+        batch["rows"][0]["training_text"] = "Deliberately incorrect test fixture: 2+2=5. Not a live teaching result."
+        envelope["choices"][0]["message"]["content"] = json.dumps(batch)
+        return httpx.Response(200, json=envelope)
+
+    _, service, campaign, engine = configured(setup_loop, incorrect_fixture, teacher=TrustedTeacher, review_policy="trusted_author_v1")
+    engine.run(campaign["id"])
+    assert service.store.campaign(campaign["id"])["status"] == "complete"
+    detail = service.snapshot(campaign["id"])["round"]
+    assert len(detail["materials"]) == 2 and all(r["use_for_training"] for r in detail["materials"])
+    assert all("2+2=5" in r["training_text"] for r in detail["materials"])  # No hidden semantic gate or dedup.
+    assert all(r["material_origin"]["review_policy"] == "trusted_author_v1" for r in detail["materials"])
+    selected = service.artifacts.get(service.store.one("SELECT artifact FROM stage_runs WHERE round_id=? AND stage='material_select'", (detail["id"],))["artifact"])
+    assert selected["selection"]["accepted_jobs"] == ["one", "two"]
+    assert selected["selection"]["train_epochs"] == passes
+    assert selected["selection"]["token_mix"] == {"teacher": 1, "corpus": 0, "replay": 0}
+    assert "not individually reviewed" in selected["selection"]["review_scope"]
+    assert selected["selection"]["edits"] == selected["selection"]["seed_exclusions"] == []
+    work = detail["learning_work"]
+    assert work["teacher_stage_seconds"] == pytest.approx(sum(work["stage_seconds"][s] for s in ("select", "revise", "evaluate", "grade", "adapt")))
+    assert work["material_author_work"]["calls"] == 2  # Requested diagnostic jobs still execute.
+    if passes:
+        assert work["material_expansion"]["review_policy"] == "trusted_author_v1"
+        assert work["material_expansion"]["selected_candidates"] == 2
+        assert work["material_expansion"]["prepared_expanded_targets_per_pass"] > 0
+    else:
+        assert work["retained_training"]["trained"] is False
+
+
+def test_trusted_empty_batch_fails_required_targets_without_silent_recipe_change(setup_loop):
+    def empty_batch(req):
+        envelope = response(req).json()
+        envelope["choices"][0]["message"]["content"] = '{"rows":[]}'
+        return httpx.Response(200, json=envelope)
+    _, service, campaign, engine = configured(setup_loop, empty_batch, review_policy="trusted_author_v1")
+    engine.run(campaign["id"])
+    assert service.store.campaign(campaign["id"])["status"] == "failed"
+    row = service.store.one("SELECT id FROM rounds WHERE campaign_id=?", (campaign["id"],))
+    selected = service.artifacts.get(service.store.one("SELECT artifact FROM stage_runs WHERE round_id=? AND stage='material_select'", (row["id"],))["artifact"])
+    assert selected["curriculum"]["train_epochs"] > 0
+    assert not service.store.query("SELECT id FROM stage_runs WHERE round_id=? AND stage='train'", (row["id"],))
+
+
+def test_trusted_author_still_rejects_invalid_source_provenance(setup_loop):
+    def invalid_source(req):
+        envelope = response(req).json()
+        batch = json.loads(envelope["choices"][0]["message"]["content"])
+        batch["rows"][0]["source_keys"] = ["not-provided"]
+        envelope["choices"][0]["message"]["content"] = json.dumps(batch)
+        return httpx.Response(200, json=envelope)
+    _, service, campaign, engine = configured(setup_loop, invalid_source, review_policy="trusted_author_v1")
+    engine.run(campaign["id"])
+    assert service.store.campaign(campaign["id"])["status"] == "failed"
+    assert service.store.one("SELECT COUNT(*) AS n FROM material_jobs WHERE status='failed'")["n"] > 0
+    assert not service.store.query("SELECT id FROM stage_runs WHERE stage='material_select'")
 
 
 def test_completed_jobs_reused_after_partial_failure(setup_loop):

@@ -561,3 +561,15 @@ separate conclusions and per-question evidence; iteration detail also shows its
 card. Historical absence and incomplete evidence remain explicit. No independent
 benchmark data enters these readers or Teacher tools. Matched-start A/B execution
 and policy replay remain future work. See [the contract](docs/TEACHING_EXPERIMENTS.md).
+
+
+### Autonomous material failure recovery
+
+`material_allowance.py` projects the existing author reservation ledger and validates
+explicit orchestrator grants. `material_allowances` journals one grant per recovery,
+atomically with retry resolution and the queued resume action. Grants fund only the
+current unfinished batch shortfall; cumulative supplementary calls/tokens are bounded
+by one original round allowance. Reservations and reported usage stay distinct. Internal
+material-budget incidents wake the orchestrator; provider quota waits are unchanged.
+Diagnostic retry requests preserve the original job key and record exact per-attempt
+request artifacts. See the material-author contract for authority and failure limits.

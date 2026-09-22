@@ -88,6 +88,13 @@ class Store:
                     recovery_id INTEGER PRIMARY KEY REFERENCES recoveries(id), completed_rounds INTEGER NOT NULL,
                     next_review_round INTEGER NOT NULL, result TEXT NOT NULL, applied_at TEXT NOT NULL
                 );
+                CREATE TABLE IF NOT EXISTS material_allowances (
+                    recovery_id INTEGER PRIMARY KEY REFERENCES recoveries(id),
+                    campaign_id TEXT NOT NULL REFERENCES campaigns(id), round_id TEXT NOT NULL REFERENCES rounds(id),
+                    budget_since TEXT NOT NULL, additional_calls INTEGER NOT NULL CHECK(additional_calls>=0),
+                    additional_output_tokens INTEGER NOT NULL CHECK(additional_output_tokens>=0),
+                    decision TEXT NOT NULL, created_at TEXT NOT NULL
+                );
             """)
             # executescript ends the preceding transaction. Keep every v4
             # column/backfill/version change in one crash-safe transaction.

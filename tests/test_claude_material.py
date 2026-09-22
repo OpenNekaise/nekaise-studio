@@ -108,11 +108,21 @@ def test_cli_failure_preserves_evidence_usage_and_blocks_training(setup_loop, tm
     assert not service.store.query("SELECT * FROM stage_runs WHERE stage='train'")
     calls = service.store.query("SELECT * FROM material_calls WHERE artifact IS NOT NULL")
     assert calls
+    reported = []
     for call in calls:
         assert call["process_pid"] is None
-        assert service.artifacts.get(call["artifact"])
+        evidence = service.artifacts.get(call["artifact"])
+        assert evidence
+        if call["status"] == "cancelled" and not json.loads(call["usage"]):
+            assert evidence["response"] is None
+            assert service.artifacts.get(evidence["request_artifact"])["request"]
+            assert call["reserved_tokens"] > 0
+            continue  # The request receipt is evidence; it is not reported usage.
         if fault != "json":
             assert json.loads(call["usage"])["prompt_tokens"] == 60
+            reported.append(call["id"])
+    if fault != "json":
+        assert reported
 
 
 def test_cli_missing_usage_stays_unknown(setup_loop, tmp_path):

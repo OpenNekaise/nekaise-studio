@@ -107,3 +107,19 @@ measured training exposure and expose trained targets / primary Teacher input+ou
 feedback and Studio. Author usage is separate. Missing usage is not zero, repeated exposure
 is not distinct coverage, and efficiency is not learning or an acceptance threshold. Keep
 independent benchmark results outside all teaching feedback.
+
+## Autonomous material recovery (authorized 2026-09-22)
+
+The orchestrator must resolve Material Author failures and resume training without requiring
+the user to click Resume. Internal author reservation exhaustion is an operational incident,
+not a provider quota reset. Inspect the saved failure and repair it or provide concrete retry
+diagnostics. An unchanged-stage retry may explicitly grant `material_allowance` for exactly
+the unfinished batch's shortfall. Grants are journaled with the recovery and retain all prior
+reservations, including unknown usage. Supplemental calls and output reservations in one round
+and budget epoch are cumulatively bounded by one original round allowance; no implicit renewal,
+teacher-budget reset, model substitution or expansion bypass is authorized. When this envelope
+is exhausted, investigate and repair the persistent defect; do not manufacture a no-op
+continuation to evade it. Real source repairs use verified continuations and compatible Adam.
+Waiting must name the external change or bounded diagnostic cooldown and the concrete next
+action. An unchanged internal allowance cannot be repaired by elapsed time or repeated waiting.
+Explicit operator pause/stop and provider availability waits retain precedence.

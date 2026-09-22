@@ -192,7 +192,7 @@ class Engine:
                 previous = self.store.one("SELECT COUNT(*) AS n FROM recoveries x JOIN stage_runs s ON s.id=x.stage_id WHERE x.campaign_id=? AND x.kind=? AND s.round_id=(SELECT round_id FROM stage_runs ORDER BY id DESC LIMIT 1) AND s.stage=(SELECT stage FROM stage_runs ORDER BY id DESC LIMIT 1)", (campaign_id, exc.kind))["n"]
                 base_delay = 60 if exc.kind == "rate_limit" else config.teacher_retry_seconds
                 delay = exc.retry_seconds or min(21600, base_delay * 2**min(previous, 10))
-                retry_at = None if exc.kind == "budget" else (datetime.now(timezone.utc)+timedelta(seconds=delay)).isoformat(timespec="milliseconds")
+                retry_at = None if exc.kind in {"budget", "material_budget"} else (datetime.now(timezone.utc)+timedelta(seconds=delay)).isoformat(timespec="milliseconds")
                 if config.auto_recover:
                     self.store.recover(campaign_id, exc.kind, exc, retry_at=retry_at)
                 else:

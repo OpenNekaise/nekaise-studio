@@ -222,3 +222,28 @@ passes. API errors retain waiting/recovery behavior; the host invents no replace
 Primary-teacher efficiency is measured trained targets / primary Teacher input+output;
 author usage stays separate. [The handbook](COAPT.md#training-production-efficiency) defines
 missing data, partial rounds, repetition and chart semantics.
+
+
+### Orchestrator recovery allowances
+
+Internal material reservation exhaustion wakes the orchestrator (`material_budget`); it is
+not a provider availability wait. After inspecting the failed call, the orchestrator may
+return an explicit `material_allowance` with an unchanged-stage retry. The grant names
+the current round and budget epoch, expected call/reservation totals, the exact additional
+call/token shortfalls, and a reason. The host checks the current ledger and quiescent
+expansion, then atomically journals the grant and queues retry. Reapplying a resolved
+decision cannot grant twice. User holds, stale epochs/totals, unrelated rounds and
+continuations reject grants. All failed/cancelled reservations and unknown usage remain
+counted; `teacher_budget_since` is unchanged. Ordinary retries grant nothing implicitly.
+
+Cumulative supplementary calls/tokens per round and epoch cannot exceed the original
+round allowance. Exhausting that envelope requires investigation and a supported repair,
+not endless unchanged retries or a no-op continuation. Source repairs still require a
+fresh continuation with verified checkpoint and optimizer compatibility; no old-round
+grant transfers to it. External provider quota still waits for availability.
+
+Schema failures save bounded paths and error types without rejected values, custom
+validator messages or source text. The next attempt on the same job receives those
+diagnostics; its exact request has a separate immutable artifact, while the job identity
+and completed-job reuse remain stable. Candidate validation and teacher selection remain
+mandatory. Unknown historical diagnostics may be absent and are never invented.

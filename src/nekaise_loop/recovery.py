@@ -22,6 +22,7 @@ from .storage import now, encode
 from .history import RunRetention, LogRemoval, inventory, apply_history
 from .checkpoint_retention import CheckpointRetention
 from .reports import agent_context
+from .material_allowance import MaterialAllowance, allowance_status, apply_allowance
 
 
 def restore_failed_source(settings, directory):
@@ -63,6 +64,7 @@ class RecoveryDecision(BaseModel):
     run_retention: list[RunRetention] = Field(max_length=200)
     log_removals: list[LogRemoval] = Field(max_length=200)
     checkpoint_retention: list[CheckpointRetention] = Field(default_factory=list, max_length=200)
+    material_allowance: MaterialAllowance | None = None
     history_review_after_rounds: int = Field(ge=1, le=1000)
 
 
@@ -129,6 +131,10 @@ def run_agent(settings, row, campaign, directory, runner):
     context["incident_stage"] = Service(settings).store.one(
         "SELECT id,round_id,stage,attempt,status,error FROM stage_runs WHERE id=?",
         (row.get("stage_id"),))
+    context["material_allowance"] = allowance_status(Service(settings).store, Service(settings).artifacts, campaign["id"])
+    context["previous_waits"] = Service(settings).store.one(
+        "SELECT COUNT(*) AS count FROM events WHERE campaign_id=? AND kind='recovery_wait' AND json_extract(data,'$.recovery_id')=?",
+        (campaign["id"], row["id"]))["count"]
     inventory_path = directory/"history-inventory.json"
     atomic_write(inventory_path, canonical(inventory(Service(settings))))
     context["history_inventory"] = str(inventory_path)
@@ -304,6 +310,11 @@ def _apply(service, recovery_id):
         service.store.execute("UPDATE recoveries SET status='cancelled',updated_at=? WHERE id=?", (now(), recovery_id))
         return
     decision = json.loads(row["decision"])
+    campaign = service.store.campaign(row["campaign_id"])
+    grant = decision.get("material_allowance")
+    if grant and (decision["action"] != "retry" or decision["config_updates"]
+                  or campaign.get("implementation_hash") != source_fingerprint()):
+        raise ValueError("Material allowance requires retry of the unchanged expansion; a continuation receives its own round allowance")
     if "run_retention" in decision:
         apply_history(service, recovery_id, decision)
     if decision["action"] in {"wait", "pause"}:
@@ -312,7 +323,6 @@ def _apply(service, recovery_id):
         defer(service, row, decision["reason"], decision["retry_seconds"], decision=decision)
         return
     updates = {item["field"]: json.loads(item["value"]) for item in decision["config_updates"]}
-    campaign = service.store.campaign(row["campaign_id"])
     if updates or decision["action"] == "continue" or campaign.get("implementation_hash") != source_fingerprint():
         service.continue_campaign(campaign["id"], updates, decision["reason"], start=True, actor="orchestrator", recovery_id=recovery_id)
         return
@@ -323,6 +333,8 @@ def _apply(service, recovery_id):
         current = db.execute("SELECT status FROM campaigns WHERE id=?", (campaign["id"],)).fetchone()
         if current["status"] not in {"recovering", "waiting"} or service.store.operator_cancelled(campaign["id"], db=db):
             return
+        if grant:
+            apply_allowance(service, row, grant, db)
         db.execute("UPDATE recoveries SET status='resolved',updated_at=? WHERE id=?", (now(), recovery_id))
         db.execute("UPDATE campaigns SET status='queued',error=NULL,updated_at=? WHERE id=?", (now(), campaign["id"]))
         db.execute("INSERT INTO actions(campaign_id,kind,created_at,actor,reason) VALUES(?,'resume',?,'orchestrator',?)", (campaign["id"], now(), decision["reason"]))

@@ -1,7 +1,7 @@
 """Explicit orchestrator decisions about checkpoint bytes, with immutable receipts.
 
 Metadata and training artifacts remain authoritative after bytes have been retired.
-The source lock excludes training; the retention lock also excludes external readers.
+The source lock excludes training; retiring bytes also excludes external readers.
 """
 from __future__ import annotations
 
@@ -49,10 +49,14 @@ def receipt(root, manifest=None):
 
 
 @contextmanager
-def retention_lock(workspace):
-    with (workspace/'checkpoint-retention.lock').open('a+') as f:
-        fcntl.flock(f, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        yield
+def retention_lock(workspace, *, exclusive=True):
+    # Serialize receipt writers even when their byte-access lock can be shared
+    # with inference readers. The source lock remains the outer execution guard.
+    with (workspace/'checkpoint-retention-writer.lock').open('a+') as writer:
+        fcntl.flock(writer, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        with (workspace/'checkpoint-retention.lock').open('a+') as f:
+            fcntl.flock(f, (fcntl.LOCK_EX if exclusive else fcntl.LOCK_SH) | fcntl.LOCK_NB)
+            yield
 
 
 def checkpoint_path(workspace, relative):
@@ -139,7 +143,10 @@ def apply(service, recovery_id, decisions):
     choices = [CheckpointRetention.model_validate(x) for x in decisions]
     if len({x.path for x in choices}) != len(choices):
         raise ValueError('Duplicate checkpoint retention decisions')
-    with retention_lock(workspace):
+    # The caller's exclusive source lock serializes Studio metadata writers.
+    # Keeping bytes only replaces atomic receipts and can coexist with inference
+    # readers. Any potentially destructive batch still excludes every reader.
+    with retention_lock(workspace, exclusive=any(x.disposition != 'keep' for x in choices)):
         current = {x['path']: x for x in inventory(service)['checkpoints']}
         plans = []
         for choice in choices:

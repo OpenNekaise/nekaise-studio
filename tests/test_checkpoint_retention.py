@@ -46,6 +46,35 @@ def test_optimizer_retirement_preserves_inference_and_rejects_resume(checkpoints
     assert apply(service, recovery, [choose(first,'weights')]) == result
 
 
+def test_keep_only_recovery_applies_during_independent_checkpoint_read(checkpoints):
+    import fcntl
+    from nekaise_loop.history import apply_history
+    from nekaise_loop.ownership import source_lock
+    settings, service, campaign, _, artifacts, recovery = checkpoints
+    items = inventory(service)['checkpoints']
+    decision = {'run_retention': [], 'log_removals': [],
+                'checkpoint_retention': [choose(items[-1], 'keep')], 'history_review_after_rounds': 1}
+    originals = {str(Path(a['checkpoint'])/name): (Path(a['checkpoint'])/name).read_bytes()
+                 for a in artifacts for name in [*a['manifest']['files'], 'checkpoint.json']}
+    with (settings.workspace/'checkpoint-retention-writer.lock').open('a+') as other_writer:
+        fcntl.flock(other_writer, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        with pytest.raises(BlockingIOError):
+            apply(service, recovery, decision['checkpoint_retention'])
+    with (settings.workspace/'checkpoint-retention.lock').open('a+') as reader:
+        fcntl.flock(reader, fcntl.LOCK_SH | fcntl.LOCK_NB)
+        with source_lock(exclusive=True):
+            result = apply_history(service, recovery, decision)
+            assert result == apply_history(service, recovery, decision)
+            assert service.store.one('SELECT result FROM history_reviews WHERE recovery_id=?', (recovery,))
+            for choices in ([choose(items[0], 'weights')],
+                            [choose(items[-1], 'keep'), choose(items[0], 'summary')]):
+                with pytest.raises(BlockingIOError):
+                    apply(service, recovery + 1, choices)
+    assert all(Path(path).read_bytes() == content for path, content in originals.items())
+    assert not (Path(artifacts[0]['checkpoint'])/'.retention').exists()
+    assert json.loads((Path(artifacts[-1]['checkpoint'])/'.retention').read_text())['status'] == 'complete'
+
+
 def test_summary_preserves_metadata_but_cannot_infer(checkpoints):
     _, service, _, _, artifacts, recovery = checkpoints
     first = inventory(service)['checkpoints'][0]

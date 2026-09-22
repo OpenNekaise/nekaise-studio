@@ -120,7 +120,10 @@ class CodexCodeAuthor:
             await asyncio.gather(task, return_exceptions=True)
             raise
         usage = reported_usage(completed) if completed else {}
-        if runner.returncode or completed is None or turns != 1 or any(e.get("type") in {"turn.failed", "error"} for e in events):
+        errors = any(e.get("type") in {"turn.failed", "error"} or
+                     (e.get("type") in {"item.started", "item.updated", "item.completed"}
+                      and (e.get("item") or {}).get("type") == "error") for e in events)
+        if runner.returncode or completed is None or turns != 1 or errors:
             kind = quota_kind(output)
             if kind:
                 error = AuthorWaiting(f"Material author {author.id}: Codex {kind}; {output[-1000:]}",

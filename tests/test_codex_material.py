@@ -48,6 +48,8 @@ usage={'input_tokens':100,'cached_input_tokens':60,'output_tokens':40,'reasoning
         script += "usage={}\n"
     elif fault == "schema":
         script += "row['extra_private']='do not echo'\n"
+    elif fault == "error_item":
+        script += "print(json.dumps({'type':'item.completed','item':{'type':'error','message':'stream disconnected'}}),flush=True)\n"
     script += "print(json.dumps({'type':'item.completed','item':{'type':'agent_message','text':json.dumps({'rows':[row]})}}),flush=True)\n"
     if fault != "no_completion":
         script += "print(json.dumps({'type':'turn.completed','usage':usage}),flush=True)\n"
@@ -77,7 +79,7 @@ def test_codex_trusted_material_usage_and_budget_contract(setup_loop, tmp_path):
     assert catalog(pool,tmp_path/'.env')[0]['max_response_output_tokens'] is None
 
 
-@pytest.mark.parametrize('fault',['quota','no_completion','schema','overrun','tool','second_turn','hang','oversize'])
+@pytest.mark.parametrize('fault',['quota','no_completion','schema','overrun','tool','second_turn','hang','oversize','error_item'])
 def test_codex_failures_preserve_reservations_and_join_children(setup_loop,tmp_path,fault):
     _,service,campaign,engine=setup_codex(setup_loop,tmp_path,fault,timeout=1)
     started=time.monotonic()

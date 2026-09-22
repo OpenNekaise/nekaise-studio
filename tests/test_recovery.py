@@ -55,6 +55,47 @@ def test_recorded_continuation_applies_operator_author_trust_without_resetting_a
     assert CampaignConfig.model_validate(historical).material_review_policy == "teacher_review_v1"
 
 
+def test_operator_model_roles_continue_atomically_without_renewing_budget(setup_loop):
+    from nekaise_loop.recovery import RecoveryDecision
+
+    settings, service, campaign = new_campaign(
+        setup_loop, rounds=1, teacher_provider="codex", teacher_model="gpt-5.6-terra",
+        material_review_policy="trusted_author_v1")
+    Engine(settings, FakeTeacher, FakeModel).run(campaign["id"])
+    parent = service.snapshot(campaign["id"])
+    recovery_id = service.store.recover(campaign["id"], "status_review", "Operator requested new model roles")
+    updates = {
+        "teacher_provider": "claude", "teacher_model": "claude-opus-5-5",
+        "material_authors": {"authors": [{"id": "gpt-terra", "label": "GPT-5.6 Terra",
+            "transport": "codex_code", "model": "gpt-5.6-terra"}],
+            "max_calls_per_round": 16, "max_output_tokens_per_round": 131072},
+        "workload_guidance": "Operator-selected model roles; teacher retains curriculum authority.",
+        "inherit_optimizer": True,
+    }
+    proposed = RecoveryDecision.model_validate(decision("continue", [
+        {"field": key, "value": json.dumps(value)} for key, value in updates.items()])).model_dump()
+    handle_recovery(settings, recovery_id, agent=lambda *args: proposed)
+    apply_recovery(settings, recovery_id)
+    apply_recovery(settings, recovery_id)
+    children = service.store.query("SELECT id FROM campaigns WHERE parent_campaign_id=?", (campaign["id"],))
+    assert len(children) == 1
+    child = service.store.campaign(children[0]["id"])
+    for key in ("teacher_provider", "teacher_model", "workload_guidance", "inherit_optimizer"):
+        assert child["config"][key] == updates[key]
+    assert [a["id"] for a in child["config"]["material_authors"]["authors"]] == ["gpt-terra"]
+    assert child["config"]["material_authors"]["max_output_tokens_per_round"] == 131072
+    assert child["config"]["material_review_policy"] == "trusted_author_v1"
+    assert child["config"]["expansion_policy"] == campaign["config"]["expansion_policy"]
+    assert child["config"]["orchestrator_model"] == campaign["config"]["orchestrator_model"]
+    assert child["config"]["orchestrator_provider"] == campaign["config"]["orchestrator_provider"]
+    assert child["config"]["student_model"] == parent["round"]["checkpoint"]
+    assert child["teacher_budget_since"] == (campaign["teacher_budget_since"] or campaign["created_at"])
+    assert service.store.campaign(campaign["id"])["config"] == campaign["config"]
+    assert service.artifacts.get(child["context_artifact"])["parent_campaign_id"] == campaign["id"]
+    assert service.store.query("SELECT kind,actor FROM actions WHERE campaign_id=?", (child["id"],)) == [
+        {"kind": "start", "actor": "orchestrator"}]
+
+
 def test_quota_wait_resume_reuses_completed_stages_and_backs_off(setup_loop):
     settings, service, campaign = new_campaign(setup_loop, rounds=1, teacher_retry_seconds=30)
     class QuotaTeacher(FakeTeacher):

@@ -50,7 +50,7 @@ def restore_failed_source(settings, directory):
 
 class ConfigChange(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    field: Literal["focus", "source_prefix", "lessons_per_round", "passage_chars", "max_seq_len", "learning_rate", "tokens_per_update", "train_epochs", "train_steps", "max_stage_seconds", "inherit_optimizer", "restore_base_from_round", "generation_batch_size", "generation_batch_tokens", "workload_guidance", "material_authors", "material_review_policy"]
+    field: Literal["focus", "source_prefix", "lessons_per_round", "passage_chars", "max_seq_len", "learning_rate", "tokens_per_update", "train_epochs", "train_steps", "max_stage_seconds", "inherit_optimizer", "restore_base_from_round", "generation_batch_size", "generation_batch_tokens", "workload_guidance", "material_authors", "material_review_policy", "teacher_provider", "teacher_model"]
     value: str = Field(description="JSON-encoded value for this field")
 
 

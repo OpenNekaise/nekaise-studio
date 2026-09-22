@@ -1,10 +1,11 @@
 import copy
 import json
 import random
+import pytest
 
 from nekaise_loop.artifacts import canonical, digest
 from nekaise_loop.providers.teacher import recorded_prompt
-from nekaise_loop.teacher_context import MIN_SHARED_CHARS, shared_view
+from nekaise_loop.teacher_context import MIN_SHARED_CHARS, EVIDENCE_KEY, evidence_page, evidence_view, resolve_pointer, shared_view
 
 
 def expand(view):
@@ -87,3 +88,91 @@ def test_original_large_context_stays_externalized_with_optional_lossless_view(t
     view = json.loads((tmp_path / "shared-data.json").read_text())
     assert canonical(expand(view)) == canonical(data)
     assert "lossless_shared_data_path" in prompt
+
+
+@pytest.mark.parametrize("purpose", ["curriculum", "revise", "material_select", "evaluate", "grade", "reflect"])
+def test_teaching_view_roundtrips_all_evidence_and_keeps_judgments_and_failures(purpose, tmp_path):
+    source = {"id": "fixture", "text": "Synthetic source, not student evidence. " * 100}
+    lesson = {"id": "seed", "document": source, "sources": [source], "student_prompt": "Exact user question",
+        "student": "", "raw_text": "Exact raw answer", "training_response": "Exact training answer",
+        "generated_token_ids": list(range(400)), "generation_audit": {"mismatches": [{"position": 3}], "finite_logits": False},
+        "comparison": {"generation": {"text": "Previous exact answer"}}, "stop_reason": "max_new_tokens"}
+    data = {"operations": {"operator_hold": "pause", "requests": ["oldest request", "newest request"]},
+        "task": {"lessons": [lesson, {**lesson, "id": "last-lesson"}],
+                 "usage": {"missing": 2}, "failures": [{"error": "partial author failure"}]}}
+    before = canonical(data)
+    view = evidence_view(data, purpose, {"op": "request_data"})
+    def resolve(value):
+        if isinstance(value, dict):
+            if set(value) == {EVIDENCE_KEY}:
+                ref = value[EVIDENCE_KEY]
+                original = resolve_pointer(data, ref["pointer"])
+                assert digest(original) == ref["canonical_sha256"]
+                return original
+            return {k: resolve(v) for k,v in value.items()}
+        return [resolve(v) for v in value] if isinstance(value, list) else value
+    assert canonical(resolve(view)) == before == canonical(data)
+    for original, visible in zip(data["task"]["lessons"], view["task"]["lessons"]):
+        for key in ("student_prompt", "student", "raw_text", "training_response", "generation_audit", "comparison", "stop_reason"):
+            assert visible[key] == original[key]
+        if purpose in {"revise", "evaluate", "grade"}:
+            assert visible["sources"][0]["text"] == source["text"]
+    assert view["operations"] == data["operations"]
+    assert view["task"]["failures"] == data["task"]["failures"]
+    prompt = recorded_prompt("prefix", data, tmp_path, purpose=purpose)
+    rendered = json.loads(prompt[prompt.index('{"format":'):])
+    evidence = rendered["evidence"]
+    if evidence.get("format") == "shared_values_v1":
+        evidence = expand(evidence)
+    assert canonical(resolve(evidence)) == before
+    assert canonical(json.loads((tmp_path/"recorded-data.json").read_text())) == before
+
+
+def test_reference_collisions_preserve_literal_values_and_identical_values_share_locations():
+    data = {"task": {"lessons": [{"sources": [{"text": "x"*1000}]}]*2}}
+    view = evidence_view(data, "reflect", {"op": "request_data"})
+    assert view["task"]["lessons"][0]["sources"] == view["task"]["lessons"][1]["sources"]
+    data["literal"] = {EVIDENCE_KEY: {"pointer": "this is literal data"}}
+    assert evidence_view(data, "reflect", {"op": "request_data"}) == data
+
+
+def test_reference_metadata_can_be_passed_as_a_query_without_overriding_page_limits(tmp_path):
+    data = {"task": {"lessons": [{"sources": [{"text": "文"*25000}]}]}}
+    view = evidence_view(data, "reflect", {"op": "request_data"})
+    ref = view["task"]["lessons"][0]["sources"][0]["text"][EVIDENCE_KEY]
+    page = evidence_page(data, ref)
+    assert page["total"] == 25000 and page["next_start"] == 4000 and len(page["value"]) == 4000
+    data["literal"] = {EVIDENCE_KEY: "literal"}
+    prompt = recorded_prompt("prefix", data, tmp_path, purpose="reflect")
+    rendered = json.loads(prompt[prompt.index('{"format":'):])
+    assert rendered["evidence_references"] is False
+
+
+@pytest.mark.parametrize("purpose", ["revise", "evaluate"])
+def test_grounding_keeps_document_text_when_no_identical_inline_source_exists(purpose):
+    text = "Only grounding passage " * 100
+    data = {"task": {"lessons": [{"document": {"text": text}, "sources": None},
+                                 {"document": {"text": text}, "sources": [{"text": text+"different span"}]}]}}
+    view = evidence_view(data, purpose, {"op": "request_data"})
+    assert view == data
+
+
+def test_pointer_pages_preserve_escaped_names_types_and_the_final_element():
+    data = {"a/b~": {"text": "教学α"*9000, "values": [None, False, 1, 1.0, "last"]}}
+    pointer = "/a~1b~0/text"
+    text, start = "", 0
+    while start is not None:
+        page = evidence_page(data, {"pointer": pointer, "start": start, "length": 20000})
+        assert page["canonical_sha256"] == digest(data["a/b~"]["text"])
+        text += page["value"]
+        start = page["next_start"]
+    assert text == data["a/b~"]["text"]
+    assert evidence_page(data, {"pointer": "/a~1b~0/values", "offset": 4, "limit": 1})["value"] == ["last"]
+    assert evidence_page(data, {"pointer": "/a~1b~0", "fields": ["values"]})["value"] == {"values": data["a/b~"]["values"]}
+    for invalid in ["x", "/bad~2escape", "/a~1b~0/values/-1", "/a~1b~0/values/01", "/absent", "/a~1b~0/values/99"]:
+        with pytest.raises(ValueError):
+            resolve_pointer(data, invalid)
+    with pytest.raises(ValueError):
+        evidence_page(data, {"pointer": pointer, "length": 20001})
+    with pytest.raises(ValueError, match="fields are absent"):
+        evidence_page(data, {"pointer": "", "fields": ["absent"]})

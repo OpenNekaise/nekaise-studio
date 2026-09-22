@@ -103,7 +103,7 @@ def selection_brief(ctx, manifest):
     return {"manifest_hash": manifest["manifest_hash"], "round_id": ctx.round["id"],
             "candidate_ids": [r["id"] for r in manifest["candidates"]],
             "jobs": manifest["jobs"], "candidate_count": len(summaries), "candidate_preview": summaries[:40],
-            "full_candidates": {"op": "material_candidates", "round_id": ctx.round["id"], "offset": 0, "limit": 20},
+            "full_candidates": {"op": "material_candidates", "round_id": ctx.round["id"], "view": "teaching", "offset": 0, "limit": 20},
             "curriculum": ctx.output("select")["curriculum"],
             "seed_choices": [{"id": r["id"], "use_for_training": r["use_for_training"], "reason": r["reason"]} for r in ctx.output("revise")["lessons"]]}
 

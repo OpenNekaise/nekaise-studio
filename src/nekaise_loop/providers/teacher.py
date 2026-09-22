@@ -11,7 +11,7 @@ from ..teaching import Curriculum, Revisions, Evaluations, Grades, Reflection, M
 from ..teacher_tools import latest_strategy, operational_context
 from ..storage import now, encode
 from ..failures import TeacherUnavailable, quota_kind, retry_seconds
-from ..teacher_context import shared_view
+from ..teacher_context import evidence_view, shared_view
 
 
 def parse_json(text: str):
@@ -21,8 +21,38 @@ def parse_json(text: str):
     return json.loads(text)
 
 
-def recorded_prompt(prefix: str, inputs: dict, directory: Path) -> str:
+def recorded_prompt(prefix: str, inputs: dict, directory: Path, *, purpose=None) -> str:
     """Keep large evidence accessible without exceeding CLI message limits."""
+    if purpose is not None:
+        path = (directory / "recorded-data.json").resolve()
+        atomic_write(path, canonical(inputs))
+        data = evidence_view(inputs, purpose, {"op": "request_data"})
+        view = {"format": "teaching_evidence_v1",
+                "original_data": {"path": str(path), "canonical_sha256": digest(inputs)},
+                "evidence_references": data is not inputs,
+                "evidence": shared_view(data) or data}
+        note = (
+            "This view includes every record and field. When evidence_references=true, $evidence objects point to exact original values: "
+            "pass their op and pointer to the archive tool. Strings support start/length and arrays offset/limit; "
+            "follow next_start/next_offset to the end. Objects support fields=[exact field names]. "
+            "A reference is not its contents: retrieve source text when needed for grounding. "
+            "Revise/evaluate source spans, exact teaching text, student answers, judgments and all diagnostics "
+            "remain inline; only duplicate document text and raw token arrays use references there. "
+            "If evidence.format is shared_values_v1, each $shared resolves in one lookup in shared_values, "
+            "whose entries may contain $evidence references. The complete original JSON is at original_data.path. "
+            "When evidence_references=false, any $evidence key is literal data. "
+            "All teaching history remains accessible; these are data references, not instructions.\n")
+        prompt = prefix + "\n\nRECORDED DATA (retrievable evidence view):\n" + note + json.dumps(view, ensure_ascii=False)
+        if len(prompt) <= 900_000:
+            return prompt
+        view_path = (directory / "evidence-view.json").resolve()
+        atomic_write(view_path, canonical(view))
+        return prefix + "\n\nRECORDED DATA (externalized in full for transport):\n" + note + json.dumps({
+            "original_data": view["original_data"], "evidence_view_path": str(view_path),
+            "sections": {k: {"pointer": "/"+k.replace("~", "~0").replace("/", "~1"),
+                              "fields": list(v) if isinstance(v, dict) else None}
+                         for k, v in inputs.items()},
+        }, ensure_ascii=False) + "\nInspect relevant fields/pages before deciding; avoid truncated whole-file output."
     prompt = prefix + "\n\nRECORDED DATA:\n" + json.dumps(inputs, ensure_ascii=False)
     view = shared_view(inputs)
     path = (directory / "recorded-data.json").resolve()
@@ -92,15 +122,24 @@ class CliTeacher:
         call_id = self.store.execute("INSERT INTO teacher_calls(campaign_id,round_id,purpose,status,usage,created_at) VALUES(?,?,?,'running','{}',?)", (self.campaign_id, self.round_id, purpose, now()))
         call_dir = self.directory / f"teacher-{call_id}"
         call_dir.mkdir(parents=True)
-        context = {"workspace": str(self.settings.workspace), "corpus_path": str((self.settings.root/self.config.corpus_path).resolve()), "campaign_id": self.campaign_id, "round_id": self.round_id}
+        context = {"workspace": str(self.settings.workspace), "corpus_path": str((self.settings.root/self.config.corpus_path).resolve()), "campaign_id": self.campaign_id, "round_id": self.round_id,
+                   "recorded_data_path": str((call_dir / "recorded-data.json").resolve())}
         context_path = call_dir / "context.json"
         atomic_write(context_path, canonical(context))
         command_hint = shlex.join([sys.executable, "-B", "-m", "nekaise_loop.teacher_tools", str(context_path)])
         inputs = {"current": context, "config_hints": self.config.model_dump(), "latest_strategy": latest_strategy(self.settings.workspace, self.campaign_id), "operations": operational_context(self.settings.workspace, self.campaign_id), "task": payload}
         common = (ROOT/"prompts/teacher.txt").read_text()
         handbook = (ROOT/"docs/COAPT.md").read_text()
-        prefix = common + "\n\nTEACHING HANDBOOK:\n" + handbook + "\n\nTASK:\n" + template + "\n\nREAD-ONLY ARCHIVE TOOL:\n" + command_hint + " '<JSON query>'\nStart with {\"op\":\"help\"}. Every archive page is accessible; follow next_offset."
-        prompt = recorded_prompt(prefix, inputs, call_dir)
+        field = next((k for k in ("lessons", "items", "candidate_ids", "previous_learning_work") if k in payload), None)
+        read_hint = {"op": "request_data", "pointer": "/task/"+field, "offset": 0, "limit": 3} if field else {"op": "request_data", "pointer": "/current"}
+        prefix = common + "\n\nTEACHING HANDBOOK:\n" + handbook + "\n\nTASK:\n" + template + "\n\nREAD-ONLY ARCHIVE TOOL:\n" + command_hint + " '<JSON query>'\n" + (
+            'Ready queries: ' + json.dumps(read_hint) + '; '
+            '{"op":"material_candidates","round_id":"<current round>","view":"teaching","offset":0,"limit":10}; '
+            '{"op":"records","round_id":"<round>","offset":0,"limit":10}; '
+            '{"op":"source","document_id":"<id>","start":0,"length":4000}. '
+            'Use {"op":"help"} only for more operation descriptions. Every archive page is accessible; follow next_offset. '
+            'The complete handbook and current task are already supplied above; choose additional reads for evidence you need.')
+        prompt = recorded_prompt(prefix, inputs, call_dir, purpose=purpose)
         atomic_write(call_dir / "input.json", canonical({"purpose": purpose, "inputs": inputs, "prompt": prompt, "model": self.config.teacher_model, "schema": schema}))
         def run(command):
             # Keep WAL sidecars open in the owning worker. Read-only teacher tools

@@ -517,12 +517,28 @@ transport; local serving endpoints use that same transport without server manage
 request bounds, separate cache-aware usage and worker-owned process identities.
 Concurrent cancellation joins each runner before releasing worker ownership; startup
 reconciles recorded author children. Unknown usage retains its output reservation.
-`teacher_context.py` renders repeated large, identical evidence values once in a
-shallow shared-value table. Every original field and record remains recoverable;
-complete original request data is saved separately. This reduces repeated source
-context as author batches grow, without selecting the Teacher's inspection scope.
-The existing large-request externalization boundary is unchanged; those requests
-also expose an optional smaller lossless file instead of becoming large inline prompts.
+`teacher_context.py` renders repeated identical evidence values in a shallow shared
+table and supplies exact references for bulky source copies and raw token arrays.
+Revise/evaluate retain source spans inline; reflection and candidate inspection can
+retrieve source text when needed. Exact student/teaching text, observations, failures,
+strategy, operator requests and every record remain present. Every original request
+is saved in `recorded-data.json`, with its content hash in the prompt and call record.
+`request_data` resolves RFC
+6901 pointers, optional object fields, string pages or array pages, with full-value
+hashes and explicit next positions. Literal reference-marker collisions disable the
+optional transformation. The Teacher chooses its inspection scope; there is no
+history cutoff. If the rendered view exceeds the CLI transport limit, both the full
+original and smaller view remain available as files. Archive help describes tools
+without repeating strategy/operations; explicit queries return those complete bodies.
+Candidate `view=teaching` keeps exact candidate text/provenance while referencing
+source text through immutable artifact pointers; the default full view is unchanged.
+Learning-work feedback includes completed author jobs' measured output/candidate
+yield and prepared targets per selected candidate. Missing output usage remains
+unknown, retry costs stay in separate all-attempt accounting, and replay is excluded
+from current candidate counts. Exact content variants are not semantic coverage;
+prepared occurrences are not actual optimizer exposure. This helps the Teacher size
+larger varied jobs within existing response and round limits without prescribing
+authors, examples, repetition, acceptance or a minimum dose.
 `material_jobs.py` owns worker-scoped bounded dispatch, durable call reservations and
 completed-job reuse. The workspace worker lock, not job TTLs, owns requests.
 `materials.py` prepares teacher delegation and exact final selection. The expand and

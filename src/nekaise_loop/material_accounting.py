@@ -1,5 +1,54 @@
 """Read-only material API usage accounting, independent of provider execution."""
 import json
+from collections import Counter
+from .artifacts import digest
+
+
+def author_yield(store, artifacts, round_id, frozen):
+    """Observed sizing evidence for teacher planning, never a required dose.
+
+    Successful job yield and all-attempt cost have different denominators. Only
+    jobs with reported completion usage contribute to the output/candidate ratio.
+    Prepared targets may contain repeated occurrences and are not optimizer work.
+    """
+    if not store.one("SELECT name FROM sqlite_master WHERE type='table' AND name='material_jobs'"):
+        return None
+    groups = {}
+    for job in store.query("SELECT author_id,artifact FROM material_jobs WHERE round_id=? AND status='complete' ORDER BY id", (round_id,)):
+        result = artifacts.get(job["artifact"])
+        group = groups.setdefault(job["author_id"], {"completed_jobs": 0, "empty_completed_jobs": 0, "produced_candidates": 0,
+            "jobs_with_output_usage": 0, "jobs_without_output_usage": 0,
+            "reported_output_tokens": 0, "candidates_with_output_usage": 0,
+            "max_reported_output_tokens_per_job": None})
+        count = len(result["rows"])
+        group["completed_jobs"] += 1
+        group["empty_completed_jobs"] += count == 0
+        group["produced_candidates"] += count
+        output = (result.get("usage") or {}).get("completion_tokens")
+        if isinstance(output, int) and not isinstance(output, bool) and output >= 0:
+            group["jobs_with_output_usage"] += 1
+            group["reported_output_tokens"] += output
+            group["candidates_with_output_usage"] += count
+            group["max_reported_output_tokens_per_job"] = max(group["max_reported_output_tokens_per_job"] or 0, output)
+        else:
+            group["jobs_without_output_usage"] += 1
+    rows = {r["id"]: r for r in frozen.get("rows", []) if r.get("material_origin") and r.get("stream") in {"cpt", "sft"}}
+    targets = Counter()
+    for sample in frozen.get("samples", []):
+        row = rows.get(sample["row_id"])
+        if row and sample["stream"] == "teacher":
+            targets[row["material_origin"]["author_id"]] += len(sample["input_ids"])-1
+    for author, group in groups.items():
+        selected = [r for r in rows.values() if r["material_origin"]["author_id"] == author]
+        group.update(selected_candidates=len(selected),
+            selected_exact_content_variants=len({digest({k: r.get(k) for k in ("text", "training_prompt", "training_response", "training_tokenization")}) for r in selected}),
+            prepared_targets_per_pass=targets[author],
+            prepared_targets_per_selected_candidate=targets[author]/len(selected) if selected else None,
+            reported_output_tokens_per_candidate=group["reported_output_tokens"]/group["candidates_with_output_usage"] if group["candidates_with_output_usage"] else None)
+        if not group["jobs_with_output_usage"]:
+            group["reported_output_tokens"] = None
+    return {"round_id": round_id, "by_author": groups,
+            "basis": "Completed-job output/candidate sizing includes empty completed job overhead; prepared selected target occurrences are per pass. Failed/retried call cost is in material_author_work. Missing usage is not zero; exact content variants are not semantic coverage. Provider tokens are not student-tokenizer targets; preparation is not actual consumption."}
 
 def job_work(store, round_id):
     if not store.one("SELECT name FROM sqlite_master WHERE type='table' AND name='material_jobs'"):

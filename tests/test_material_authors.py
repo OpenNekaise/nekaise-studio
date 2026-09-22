@@ -82,6 +82,52 @@ def test_complete_package_preserves_teacher_choice_and_no_fake_attempts(setup_lo
     # observed shortfall, never silently topped up or treated as learning failure.
     assert AuthorTeacher.selection_seen["jobs"][0]["expected_items"] == 2
     assert AuthorTeacher.selection_seen["jobs"][0]["candidate_count"] == 1
+    sizing = detail["learning_work"]["author_yield"]["by_author"]["a"]
+    assert sizing["produced_candidates"] == 2 and sizing["selected_candidates"] == 2
+    assert sizing["selected_exact_content_variants"] == 1
+    assert sizing["reported_output_tokens_per_candidate"] == 30
+    assert sizing["prepared_targets_per_pass"] == detail["learning_work"]["material_sources"]["targets_by_origin"]["a"]
+
+
+def test_candidate_teaching_pages_retrieve_exact_source_without_repeating_it(setup_loop):
+    from nekaise_loop.teacher_context import EVIDENCE_KEY
+    settings, service, campaign, engine = configured(setup_loop)
+    engine.run(campaign["id"])
+    rid = service.store.one("SELECT id FROM rounds WHERE campaign_id=?", (campaign["id"],))["id"]
+    context = {"workspace": str(settings.workspace), "campaign_id": campaign["id"]}
+    full = query(context, {"op": "material_candidates", "round_id": rid})
+    # Exercise a large exact source even when this corpus fixture is short.
+    stage = service.store.one("SELECT id,artifact FROM stage_runs WHERE round_id=? AND stage='expand' AND status='complete' ORDER BY id DESC LIMIT 1", (rid,))
+    manifest = service.artifacts.get(stage["artifact"])
+    for row in manifest["candidates"]:
+        for source in row["sources"].values():
+            source["text"] = "Synthetic fixture source " * 100
+    key = service.artifacts.put(manifest)
+    service.store.execute("UPDATE stage_runs SET artifact=? WHERE id=?", (key, stage["id"]))
+    last = manifest["candidates"][-1]
+    compact = query(context, {"op": "material_candidates", "round_id": rid, "candidate_id": last["id"], "view": "teaching", "limit": 1})
+    row = compact["rows"][0]
+    assert row["candidate"] == full["rows"][-1]["candidate"]
+    for source_key, source in row["sources"].items():
+        ref = source["text"][EVIDENCE_KEY]
+        assert ref["pointer"].startswith("/candidates/1/")
+        assert query(context, ref)["value"] == last["sources"][source_key]["text"]
+    assert compact["next_offset"] is None
+
+
+@pytest.mark.parametrize("missing_usage", [{"prompt_tokens": 7}, None])
+def test_author_sizing_keeps_missing_output_usage_distinct_from_zero(setup_loop, missing_usage):
+    from nekaise_loop.material_accounting import author_yield
+    _, service, campaign, engine = configured(setup_loop)
+    engine.run(campaign["id"])
+    rid = service.store.one("SELECT id FROM rounds WHERE campaign_id=?", (campaign["id"],))["id"]
+    for job in service.store.query("SELECT id,artifact FROM material_jobs WHERE round_id=?", (rid,)):
+        result = service.artifacts.get(job["artifact"])
+        result["usage"] = missing_usage
+        service.store.execute("UPDATE material_jobs SET artifact=? WHERE id=?", (service.artifacts.put(result), job["id"]))
+    sizing = author_yield(service.store, service.artifacts, rid, {})["by_author"]["a"]
+    assert sizing["produced_candidates"] == 2 and sizing["jobs_without_output_usage"] == 2
+    assert sizing["reported_output_tokens"] is None and sizing["reported_output_tokens_per_candidate"] is None
 
 
 def test_completed_jobs_reused_after_partial_failure(setup_loop):

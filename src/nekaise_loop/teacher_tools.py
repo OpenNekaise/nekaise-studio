@@ -14,6 +14,7 @@ import sys
 from .artifacts import Artifacts
 from .config import ROOT
 from .corpus import search_sources, read_source
+from .teacher_context import EVIDENCE_KEY, contains_key, evidence_page, evidence_view
 
 
 @contextmanager
@@ -154,6 +155,9 @@ def query(context, request):
     workspace = Path(context["workspace"])
     if op == "help":
         return {"operations": {
+            "request_data": "Exact current request evidence: RFC 6901 pointer; optional fields for objects, offset/limit for arrays, start/length for strings; follow next_offset/next_start",
+            "latest_strategy": "Complete latest teaching strategy in the current lineage",
+            "operations": "Complete applied operations context and all ancestor operator review requests",
             "campaigns": "All campaigns, config and lineage; offset/limit",
             "rounds": "All rounds; optional campaign_id; offset/limit",
             "records": "Lessons/evaluations/gaps; optional round_id, campaign_id, kind, query; offset/limit",
@@ -167,30 +171,50 @@ def query(context, request):
             "experiments": "All recorded teaching experiments, including interrupted/archived runs; optional campaign_id, strategy_version, limit/before; follow next_before",
             "experiment": "Pre-training plan, immutable strategy, later Teacher judgment and actual teaching evidence: round_id; null if no plan was recorded",
             "strategy": "Read an immutable teaching strategy definition: version (full content hash)",
-            "artifact": "Read immutable JSON: hash",
-            "material_candidates": "Read all exact material-author candidates: round_id, offset/limit, optional candidate_id; full sources and provenance included",
+            "artifact": "Read immutable JSON: hash; optional pointer and fields or page parameters as in request_data",
+            "material_candidates": "Read all exact material-author candidates: round_id, offset/limit, optional candidate_id; view=teaching references source text while retaining exact candidates and provenance; default is full",
             "author_jobs": "All material-author jobs including partial failures; optional round_id, author_id; offset/limit; saved input/result artifact hashes",
             "author_calls": "Material-author attempts, reservations, reported usage and response artifact hashes; optional round_id; offset/limit",
             "lesson": "Read a historical teacher lesson: round_id, lesson_id",
             "sources": "Search the entire corpus: query, optional prefix, offset/limit (prefix hint is not a restriction)",
             "source": "Read verified source: document_id, start (default 0), length (0=all)"
-        }, "current_campaign_id": context["campaign_id"], "workspace": str(workspace), "corpus_path": context["corpus_path"], "latest_strategy": latest_strategy(workspace, context["campaign_id"]), "operational_context": operational_context(workspace, context["campaign_id"])}
+        }, "current_campaign_id": context["campaign_id"], "workspace": str(workspace), "corpus_path": context["corpus_path"],
+            "latest_strategy_ref": {"op": "latest_strategy"}, "operations_ref": {"op": "operations"}}
+    if op == "request_data":
+        if not context.get("recorded_data_path"):
+            raise ValueError("request_data is unavailable for this historical call; inspect its saved input.json or archive artifacts")
+        path = Path(context["recorded_data_path"]).resolve()
+        if not path.is_relative_to(workspace.resolve()) or path.name != "recorded-data.json":
+            raise ValueError("Recorded request data must belong to this workspace")
+        return evidence_page(json.loads(path.read_text()), request)
+    if op == "latest_strategy":
+        return latest_strategy(workspace, context["campaign_id"])
+    if op == "operations":
+        return operational_context(workspace, context["campaign_id"])
     if op in {"reports", "report"}:
         return read_report(workspace, request)
     if op in {"experiments", "experiment", "strategy"}:
         return read_experiment(workspace, request)
     if op == "artifact":
-        return Artifacts(workspace).get(request["hash"])
+        data = Artifacts(workspace).get(request["hash"])
+        return evidence_page(data, request) if "pointer" in request else data
     if op == "material_candidates":
         with archive(workspace) as db:
             stage = db.execute("SELECT artifact FROM stage_runs WHERE round_id=? AND stage='expand' AND status='complete' ORDER BY id DESC LIMIT 1", (request["round_id"],)).fetchone()
         if not stage:
             raise ValueError("No completed material expansion for this round")
         result = Artifacts(workspace).get(stage["artifact"])
-        rows = result["candidates"]
+        rows = list(enumerate(result["candidates"]))
         if request.get("candidate_id"):
-            rows = [r for r in rows if r["id"] == request["candidate_id"]]
-        return {"manifest_hash": result["manifest_hash"], "rows": rows[offset:offset+limit],
+            rows = [(i, r) for i, r in rows if r["id"] == request["candidate_id"]]
+        if request.get("view", "full") not in {"full", "teaching"}:
+            raise ValueError("Material candidate view must be full or teaching")
+        selected = rows[offset:offset+limit]
+        references = request.get("view") == "teaching" and not any(contains_key(r, EVIDENCE_KEY) for _, r in selected)
+        page = [evidence_view(r, "material_select", {"op": "artifact", "hash": stage["artifact"]}, pointer=f"/candidates/{i}")
+                if references else r for i, r in selected]
+        return {"manifest_hash": result["manifest_hash"], "rows": page,
+                "evidence_references": references,
                 "next_offset": offset+limit if offset+limit < len(rows) else None, "total": len(rows)}
     if op == "lesson":
         return replay_lesson(workspace, request["round_id"], request["lesson_id"])

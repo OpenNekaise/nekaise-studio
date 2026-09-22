@@ -285,6 +285,29 @@ def test_archive_resolves_legacy_relative_corpus_paths_from_repository_root(setu
     assert len(query(context,{"op":"source","document_id":rows[0]["id"],"length":37})["text"]) == 37
 
 
+def test_archive_help_describes_retrievable_context_without_repeating_it(setup_loop, tmp_path):
+    settings, _, campaign, engine = setup_loop
+    engine.run(campaign["id"])
+    path = settings.workspace/"runs"/"fixture"/"recorded-data.json"
+    path.parent.mkdir(parents=True)
+    path.write_text(json.dumps({"task": {"values": ["first", "last"]}}))
+    context = {"workspace": str(settings.workspace), "corpus_path": campaign["config"]["corpus_path"],
+               "campaign_id": campaign["id"], "recorded_data_path": str(path)}
+    help_result = query(context, {"op": "help"})
+    assert "latest_strategy" not in help_result and "operational_context" not in help_result
+    assert query(context, help_result["latest_strategy_ref"]) == latest_strategy(settings.workspace, campaign["id"])
+    assert query(context, help_result["operations_ref"]) == operational_context(settings.workspace, campaign["id"])
+    page = query(context, {"op": "request_data", "pointer": "/task/values", "offset": 1, "limit": 1})
+    assert page["value"] == ["last"] and page["next_offset"] is None
+    with pytest.raises(ValueError, match="unavailable for this historical call"):
+        query({k:v for k,v in context.items() if k != "recorded_data_path"}, {"op": "request_data"})
+    outside = tmp_path/"outside"/"recorded-data.json"
+    outside.parent.mkdir(); outside.write_text('{}')
+    path.unlink(); path.symlink_to(outside)
+    with pytest.raises(ValueError, match="belong to this workspace"):
+        query(context, {"op": "request_data", "pointer": ""})
+
+
 @pytest.mark.parametrize("provider", ["codex","claude"])
 @pytest.mark.parametrize("large_field", [None, "task", "latest_strategy"])
 def test_live_adapter_supplies_handbook_archive_tools_and_strict_decisions(setup_loop, provider, large_field, monkeypatch):
@@ -322,11 +345,12 @@ def test_live_adapter_supplies_handbook_archive_tools_and_strict_decisions(setup
                 assert digest(evidence) in kwargs["stdin"]
                 assert "last record preserved" not in kwargs["stdin"]
             else:
-                assert not evidence_path.exists()
-                assert json.loads(kwargs["stdin"].split("\n\nRECORDED DATA:\n", 1)[1]) == saved["inputs"]
+                assert json.loads(evidence_path.read_text()) == saved["inputs"]
+                assert "teaching_evidence_v1" in kwargs["stdin"]
             assert (settings.workspace/"loop.sqlite3-shm").exists()
             tool_context = json.loads((kwargs["cwd"]/"context.json").read_text())
             assert query(tool_context,{"op":"campaigns"})["rows"]
+            assert query(tool_context,{"op":"request_data", "pointer":"/operations/latest_applied_review/decision"})["value"] == applied
             schema = saved["schema"]
             assert set(schema["properties"]["token_mix"]) == {"$ref"}
             mix_schema = schema["$defs"][schema["properties"]["token_mix"]["$ref"].split("/")[-1]]

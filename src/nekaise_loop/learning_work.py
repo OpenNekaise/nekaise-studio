@@ -3,7 +3,7 @@ from datetime import datetime
 import json
 from pathlib import Path
 from .work_accounting import generation_work, preparation_work
-from .material_accounting import job_work
+from .material_accounting import author_yield, job_work
 from .efficiency import round_efficiency
 
 def prepared_coverage(frozen):
@@ -97,6 +97,7 @@ def round_work(store, artifacts, round_id):
                 "mean_fill": sum(update_sizes)/(len(update_sizes)*capacity) if update_sizes else None},
             "generation_work": generation_work(generations),
             "material_author_work": job_work(store, round_id), "material_sources": frozen.get("material_sources"),
+            "author_yield": author_yield(store, artifacts, round_id, frozen),
             "material_expansion": frozen.get("material_expansion"),
             "teacher_efficiency": {**round_efficiency(store, artifacts.root.parent, round_id, sum(a["tokens"] for a in attempts.values())),
                                    "final": row["status"] == "complete"},

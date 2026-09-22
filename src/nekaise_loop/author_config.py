@@ -119,6 +119,7 @@ def load_pool(path: Path) -> AuthorPool:
 def catalog(pool: AuthorPool, env_file: Path):
     return [{"id": a.id, "label": a.label, "model": a.model, "location": a.location,
              "transport": a.transport,
+             "concurrency": a.concurrency, "resource_pool": a.resource_pool,
              "max_output_tokens": a.max_output_tokens,
              "max_response_output_tokens": a.max_output_tokens // 2 if a.transport == "claude_code" else a.max_output_tokens,
              "output_budget_basis": "Claude Code allows one streamed model response using half the reservation; half covers a possible in-flight continuation on cancellation. Visible payload shares its response with reasoning." if a.transport == "claude_code" else "Provider output includes reasoning and final content",

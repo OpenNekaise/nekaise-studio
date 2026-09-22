@@ -92,5 +92,6 @@ class OpenAIChatAuthor:
 
 
 from .claude_material import ClaudeCodeAuthor
+from .codex_material import CodexCodeAuthor
 
-AUTHOR_TRANSPORTS = {"openai_chat": OpenAIChatAuthor, "claude_code": ClaudeCodeAuthor}
+AUTHOR_TRANSPORTS = {"openai_chat": OpenAIChatAuthor, "claude_code": ClaudeCodeAuthor, "codex_code": CodexCodeAuthor}

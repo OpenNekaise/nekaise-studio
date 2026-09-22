@@ -72,6 +72,10 @@ def request_body(author, spec, schema):
     if author.transport == "claude_code":
         payload["execution_limits"] = {"max_response_output_tokens": spec["job"]["max_output_tokens"] // 2,
             "max_model_requests": 1, "instruction": "Return complete schema-valid JSON within the response cap; no continuation is available."}
+    elif author.transport == "codex_code":
+        payload["execution_limits"] = {"reserved_output_tokens": spec["job"]["max_output_tokens"],
+            "provider_output_token_cap": None,
+            "instruction": "Return one complete JSON object without tools. Keep reasoning plus final output within the reservation; over-budget reported output is rejected. No author-level retry or continuation is available."}
     body = {**author.options, "model": author.model,
         "messages": [{"role": "system", "content": instruction},
                      {"role": "user", "content": json.dumps(payload, ensure_ascii=False)}],
@@ -186,7 +190,7 @@ async def _execute(ctx, specs, pool, client_factory):
             raw = None
             try:
                 authored = await adapters[author.transport].generate(author, payload["request"], env_file=ctx.engine.settings.root/".env", max_bytes=pool.max_response_bytes,
-                    execution={"store": store, "call_id": call_id, "claude": ctx.engine.settings.claude,
+                    execution={"store": store, "call_id": call_id, "claude": ctx.engine.settings.claude, "codex": ctx.engine.settings.codex,
                                "directory": ctx.directory/f"author-{call_id}"})
                 raw = artifacts.put({"request_artifact": request_artifact, "response": authored.raw})
                 reported = authored.usage

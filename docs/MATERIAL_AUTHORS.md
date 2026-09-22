@@ -115,6 +115,56 @@ usage remains unknown. CLI `costUSD` is preserved as provider evidence, not repr
 as actual subscription spend. Teacher selection/editing and the ordinary freeze/train
 provenance checks still determine what enters training.
 
+### Codex authors
+
+The `codex_code` transport uses the worker's existing authenticated Codex CLI. The
+operator-selected role configuration on 2026-09-22 is Claude Opus 5.5
+(`teacher_provider=claude`, `teacher_model=claude-opus-5-5`) for primary teaching and
+online evaluation, and GPT-5.6 Terra for material generation. The recovery
+orchestrator remains a separate role. An example Terra entry is:
+
+```json
+{
+  "id": "gpt-terra", "label": "GPT-5.6 Terra",
+  "transport": "codex_code", "model": "gpt-5.6-terra",
+  "concurrency": 4, "resource_pool": "codex-account",
+  "max_output_tokens": 32768, "timeout_seconds": 600,
+  "options": {"effort": "low"}
+}
+```
+
+Include `"codex-account": 4` in `resource_limits`; omit endpoint/key settings.
+Each job is an ephemeral, read-only CLI process with a strict output schema,
+ignored user configuration/rules and disabled project instructions, plugins,
+hooks, shell, web, apps and delegation. Remaining tool/unsupported-item events
+abort the owned process. No author-level fallback, JSON repair or retry is added.
+Cancellation joins all owned processes and retains every reservation.
+
+The validated CLI is Codex 0.155.1. Its JSONL stream exposes completed items and
+turn usage, **not** individual model-request boundaries or live token usage. It
+does not offer a verified provider output-token cap. `max_output_tokens` is an
+up-front reservation and a reported-output acceptance ceiling for this transport;
+the catalog explicitly returns `max_response_output_tokens=null`. Actual remote
+usage may exceed reservations, including through CLI internal retries or work
+continuing after cancellation. Timeout and output-byte caps bound local execution;
+they are not hard remote token or monetary limits. Known output overruns are
+rejected and additionally charged against the remaining round allowance without
+rewriting the original reservation. Unknown usage remains unknown. Do not describe
+the reservation as a guaranteed upper bound or substitute an unverified config key.
+
+Acceptance requires exactly one observed clean turn and schema/provenance-valid
+final JSON. Input already includes cached tokens, and output already includes
+reasoning; neither is added twice. Author usage stays outside primary Teacher
+efficiency. Artifacts retain the JSONL events, executable, requested model and
+enforcement limitations. The CLI pins the requested model, but this JSONL version
+does not attest the served model ID; artifacts state that limitation explicitly.
+Revalidate the CLI contract after upgrades. Role changes and author-registry
+changes take effect through a fresh continuation, preserving compatible Adam,
+teaching history, required expansion and the existing budget epoch.
+
+References: [Codex non-interactive mode](https://learn.chatgpt.com/docs/non-interactive-mode)
+and [configuration reference](https://learn.chatgpt.com/docs/config-file/config-reference).
+
 ## Parallelism and execution accounting
 
 One workspace worker dispatches a bounded number of async requests, sharing one HTTP
@@ -129,7 +179,8 @@ package. A job output budget includes provider reasoning as well as visible cont
 Only structured teaching fields, not `reasoning_content`, become candidate text.
 
 Reserve one call and the requested maximum output tokens atomically before dispatch.
-Reservations remain conservative even when reported output is smaller. All attempts,
+Reservations are not released when reported output is smaller; known output above
+the reservation also consumes allowance. The Codex limitation above still applies. All attempts,
 including failed/unknown remote work, count toward the current round allowance.
 Explicit operator Resume renews the allowance using `teacher_budget_since`; automatic
 retries and automatic continuations do not reset that timestamp. Before dispatch,

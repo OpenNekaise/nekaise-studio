@@ -61,6 +61,15 @@ class AuthorSpec(BaseModel):
                 raise ValueError("Claude Code author thinking must be boolean")
             if self.max_output_tokens < 256:
                 raise ValueError("Claude Code needs at least 256 reserved output tokens")
+        elif self.transport == "codex_code":
+            if self.base_url or self.api_key_env:
+                raise ValueError("Codex authors use existing CLI authentication, not an endpoint or key")
+            if not self.model.startswith("gpt-"):
+                raise ValueError("Codex authors require a pinned full GPT model ID")
+            if set(self.options) - {"effort"}:
+                raise ValueError("Codex author options allow only effort")
+            if self.options.get("effort", "low") not in {"low", "medium", "high", "xhigh", "max", "ultra"}:
+                raise ValueError("Unsupported Codex author reasoning effort")
         elif not self.base_url:
             raise ValueError("HTTP material authors require an endpoint")
         return self
@@ -121,7 +130,7 @@ def catalog(pool: AuthorPool, env_file: Path):
              "transport": a.transport,
              "concurrency": a.concurrency, "resource_pool": a.resource_pool,
              "max_output_tokens": a.max_output_tokens,
-             "max_response_output_tokens": a.max_output_tokens // 2 if a.transport == "claude_code" else a.max_output_tokens,
-             "output_budget_basis": "Claude Code allows one streamed model response using half the reservation; half covers a possible in-flight continuation on cancellation. Visible payload shares its response with reasoning." if a.transport == "claude_code" else "Provider output includes reasoning and final content",
+             "max_response_output_tokens": (None if a.transport == "codex_code" else a.max_output_tokens // 2 if a.transport == "claude_code" else a.max_output_tokens),
+             "output_budget_basis": ("Codex CLI reservation and reported-usage acceptance ceiling, including reasoning; not a provider token cap. Worker timeout and response-byte limits apply; internal retries and cancelled remote usage may exceed the reservation. Keep complete final JSON comfortably within the reservation." if a.transport == "codex_code" else "Claude Code allows one streamed model response using half the reservation; half covers a possible in-flight continuation on cancellation. Visible payload shares its response with reasoning." if a.transport == "claude_code" else "Provider output includes reasoning and final content"),
              "credentials_configured": not a.api_key_env or bool(credential(a.api_key_env, env_file))}
             for a in pool.authors]

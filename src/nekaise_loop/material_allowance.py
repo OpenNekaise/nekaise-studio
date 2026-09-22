@@ -21,16 +21,19 @@ class MaterialAllowance(BaseModel):
 
 
 def allowance_totals(db, round_id, since, pool):
-    used = db.execute("""SELECT COUNT(*) AS calls,COALESCE(SUM(c.reserved_tokens),0) AS tokens
+    used = db.execute("""SELECT COUNT(*) AS calls,COALESCE(SUM(c.reserved_tokens),0) AS tokens,
+        COALESCE(SUM(CASE WHEN json_type(c.usage,'$.completion_tokens')='integer'
+            THEN MAX(0,json_extract(c.usage,'$.completion_tokens')-c.reserved_tokens) ELSE 0 END),0) AS overrun
         FROM material_calls c JOIN material_jobs j ON j.id=c.job_id
         WHERE j.round_id=? AND c.created_at>=?""", (round_id, since)).fetchone()
     grants = db.execute("""SELECT COALESCE(SUM(additional_calls),0) AS calls,
         COALESCE(SUM(additional_output_tokens),0) AS tokens FROM material_allowances
         WHERE round_id=? AND budget_since=?""", (round_id, since)).fetchone()
     return {"used_calls": used["calls"], "reserved_tokens": used["tokens"],
+            "reported_output_overrun_tokens": used["overrun"],
             "granted_calls": grants["calls"], "granted_output_tokens": grants["tokens"],
             "remaining_calls": pool.max_calls_per_round + grants["calls"] - used["calls"],
-            "remaining_output_tokens": pool.max_output_tokens_per_round + grants["tokens"] - used["tokens"]}
+            "remaining_output_tokens": pool.max_output_tokens_per_round + grants["tokens"] - used["tokens"] - used["overrun"]}
 
 
 def allowance_status(store, artifacts, campaign_id, *, db=None):

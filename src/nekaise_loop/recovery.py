@@ -212,7 +212,15 @@ def _handle(service, recovery_id, agent):
         stop_owned(row["process_pid"], row["process_start"])
     campaign = store.campaign(row["campaign_id"])
     config = CampaignConfig.model_validate(campaign["config"])
-    previous_attempts = store.one("SELECT COALESCE(SUM(x.attempts),0) AS n FROM recoveries x LEFT JOIN stage_runs s ON s.id=x.stage_id WHERE x.campaign_id=? AND x.round_id IS ? AND (s.stage IS (SELECT stage FROM stage_runs WHERE id=?))", (row["campaign_id"], row["round_id"], row["stage_id"]))["n"]
+    # A new source revision deserves investigation without inheriting an older
+    # implementation's failed burst. Keep same-source cooldowns and all history.
+    previous_attempts = store.one(
+        "SELECT COALESCE(SUM(x.attempts),0) AS n FROM recoveries x "
+        "LEFT JOIN stage_runs s ON s.id=x.stage_id "
+        "WHERE x.campaign_id=? AND x.round_id IS ? AND x.source_hash=? "
+        "AND (s.stage IS (SELECT stage FROM stage_runs WHERE id=?))",
+        (row["campaign_id"], row["round_id"], row["source_hash"], row["stage_id"]),
+    )["n"]
     if previous_attempts >= config.max_repair_attempts and row["status"] == "pending":
         defer(service, row, "Repeated recovery attempts; cooling down before the orchestrator reviews its reports again.", config.teacher_retry_seconds)
         return

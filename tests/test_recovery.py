@@ -468,6 +468,30 @@ def test_repair_burst_cools_down_then_reconsiders_and_stop_cancels_agent(setup_l
     assert service.store.campaign(campaign["id"])["status"] == "stopping"
 
 
+@pytest.mark.parametrize("changed_source", [False, True])
+def test_repair_burst_history_is_scoped_to_incident_source(setup_loop, changed_source):
+    settings, service, campaign = new_campaign(setup_loop)
+    prior = service.store.recover(campaign["id"], "failure", "prior failure")
+    service.store.execute(
+        "UPDATE recoveries SET attempts=6,status='cancelled' WHERE id=?", (prior,))
+    if changed_source:
+        service.store.execute("UPDATE recoveries SET source_hash=? WHERE id=?",
+                              ("old-source-fingerprint", prior))
+    current = service.store.recover(campaign["id"], "status_review", "review repair")
+    observed = []
+
+    def agent(settings, row, campaign, directory, runner):
+        observed.append(row["previous_attempts"])
+        return decision("continue")
+
+    handle_recovery(settings, current, agent=agent)
+    row = service.store.one("SELECT * FROM recoveries WHERE id=?", (current,))
+    assert observed == ([0] if changed_source else [])
+    assert row["status"] == ("decided" if changed_source else "waiting")
+    assert bool(row["retry_at"]) is (not changed_source)
+    assert service.store.one("SELECT attempts FROM recoveries WHERE id=?", (prior,))["attempts"] == 6
+
+
 def test_agent_pause_reschedules_then_resumes_without_operator_action(setup_loop):
     settings, service, campaign = new_campaign(setup_loop)
     recovery_id = service.store.recover(campaign["id"], "failure", "fixture transient problem")

@@ -180,7 +180,14 @@ async def _execute(ctx, specs, pool, client_factory):
             key, author, payload, size = item
             previous = store.one("SELECT artifact FROM material_calls WHERE job_id=? AND status='failed' ORDER BY id DESC LIMIT 1", (key,))
             if previous and previous["artifact"]:
-                diagnostics = artifacts.get(previous["artifact"]).get("validation_errors")
+                failure = artifacts.get(previous["artifact"])
+                diagnostics = failure.get("validation_errors")
+                if not diagnostics and failure.get("request_artifact"):
+                    # A transport failure cannot establish that earlier structural
+                    # errors were corrected. Carry the exact prior feedback forward.
+                    previous_request = artifacts.get(failure["request_artifact"])
+                    previous_content = json.loads(previous_request["request"]["messages"][1]["content"])
+                    diagnostics = previous_content.get("retry_validation")
                 if diagnostics:
                     payload = json.loads(json.dumps(payload))
                     content = json.loads(payload["request"]["messages"][1]["content"])

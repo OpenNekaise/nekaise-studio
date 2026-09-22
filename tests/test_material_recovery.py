@@ -218,3 +218,43 @@ def test_retry_request_is_preserved_even_if_transport_never_returns(interrupted_
     assert saved["response"] is None and json.loads(call["usage"]) == {}
     exact = service.artifacts.get(saved["request_artifact"])
     assert json.loads(exact["request"]["messages"][1]["content"])["retry_validation"][0]["type"] == "extra_forbidden"
+
+
+@pytest.mark.parametrize("with_evidence", [False, True])
+def test_validation_feedback_survives_intervening_transport_failure(interrupted_material, with_evidence):
+    settings, service, campaign, engine, requests, recovery = interrupted_material
+    import httpx
+    from nekaise_loop.providers.material import AuthorHTTPError
+
+    working_factory = engine.material_client_factory
+    completed = service.store.one("SELECT id,artifact FROM material_jobs WHERE status='complete'")
+    rejected_call = service.store.one("SELECT * FROM material_calls WHERE status='failed'")
+    rejected = service.artifacts.get(rejected_call["artifact"])
+    handle_recovery(settings, recovery["id"], agent=lambda *args: funded_decision(service, campaign))
+    apply_recovery(settings, recovery["id"])
+
+    def disconnected(request):
+        if with_evidence:
+            raise AuthorHTTPError("Fixture interrupted turn", {"events": []})
+        raise RuntimeError("Fixture transport vanished")
+
+    engine.material_client_factory = lambda **kwargs: httpx.AsyncClient(
+        transport=httpx.MockTransport(disconnected), **kwargs)
+    engine.run(campaign["id"])
+    failed_calls = service.store.query("SELECT * FROM material_calls ORDER BY id")
+    assert failed_calls[-1]["status"] == "failed"
+    assert json.loads(failed_calls[-1]["usage"]) == {}
+
+    next_recovery = service.store.one("SELECT * FROM recoveries ORDER BY id DESC")
+    handle_recovery(settings, next_recovery["id"], agent=lambda *args: funded_decision(service, campaign))
+    apply_recovery(settings, next_recovery["id"])
+    engine.material_client_factory = working_factory
+    engine.run(campaign["id"])
+
+    assert service.store.campaign(campaign["id"])["status"] == "complete"
+    assert requests[2]["retry_validation"] == rejected["validation_errors"]
+    assert service.store.one("SELECT id,artifact FROM material_jobs WHERE id=?", (completed["id"],)) == completed
+    assert service.store.query("SELECT * FROM material_calls ORDER BY id LIMIT 3") == failed_calls
+    assert service.artifacts.get(rejected_call["artifact"]) == rejected
+    assert service.store.one("SELECT SUM(reserved_tokens) AS n FROM material_calls")["n"] == 2560
+    assert service.store.campaign(campaign["id"])["teacher_budget_since"] == "2000-01-01"

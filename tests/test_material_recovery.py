@@ -12,19 +12,46 @@ from nekaise_loop.storage import now
 from nekaise_loop.supervisor import tick
 
 
+def test_provenance_diagnostics_are_bounded_without_echoing_citations():
+    from types import SimpleNamespace
+    from nekaise_loop.material_jobs import CandidateValidationError, candidates
+
+    row = {"id": "fixture", "kind": "sft", "concept": "fixture",
+           "student_prompt": "fixture", "training_text": "fixture",
+           "training_tokenization": "full_text", "source_keys": [],
+           "seed_ids": ["seed"], "rationale": "fixture"}
+    spec = {"sources": {}, "job": {"seed_ids": ["seed"]}}
+    result = SimpleNamespace(content=json.dumps({"rows": [row]}), complete=True)
+    assert candidates(result, spec)[0]["source_keys"] == []
+    row["source_keys"] = ["PRIVATE_REJECTED_VALUE"] * 20
+    result.content = json.dumps({"rows": [row]})
+    with pytest.raises(CandidateValidationError) as caught:
+        candidates(result, spec)
+    assert caught.value.diagnostics == [
+        {"path": ["rows", 0, "source_keys", i], "type": "unprovided_source_key"}
+        for i in range(8)]
+    assert "PRIVATE_REJECTED_VALUE" not in str(caught.value)
+
+
 @pytest.fixture
-def interrupted_material(setup_loop):
+def interrupted_material(setup_loop, request):
     class ThreeJobs(AuthorTeacher):
         jobs = [("one", "a"), ("two", "a"), ("three", "a")]
     requests = []
-    def handler(request):
-        body = json.loads(request.content)
+    fault = getattr(request, "param", "extra_field")
+    def handler(http_request):
+        body = json.loads(http_request.content)
         payload = json.loads(body["messages"][1]["content"])
         requests.append(payload)
-        result = response(request).json()
+        result = response(http_request).json()
         if payload["task"]["job"]["id"] == "two" and "retry_validation" not in payload:
             batch = json.loads(result["choices"][0]["message"]["content"])
-            batch["rows"][0]["territory"] = "PRIVATE_REJECTED_VALUE"
+            if fault == "empty_source":
+                batch["rows"][0]["source_keys"] = [""]
+            elif fault == "unknown_seed":
+                batch["rows"][0]["seed_ids"] = ["PRIVATE_REJECTED_VALUE"]
+            else:
+                batch["rows"][0]["territory"] = "PRIVATE_REJECTED_VALUE"
             result["choices"][0]["message"]["content"] = json.dumps(batch)
         import httpx
         return httpx.Response(200, json=result)
@@ -50,11 +77,19 @@ def funded_decision(service, campaign):
     return result
 
 
+@pytest.mark.parametrize("interrupted_material", ["extra_field", "empty_source", "unknown_seed"], indirect=True)
 def test_orchestrator_funds_retry_once_and_training_consumes_valid_expansion(interrupted_material):
     settings, service, campaign, engine, requests, recovery = interrupted_material
     original_calls = service.store.query("SELECT * FROM material_calls ORDER BY id")
     completed = service.store.one("SELECT id,artifact FROM material_jobs WHERE status='complete'")
-    assert "territory" in original_calls[1]["error"]
+    rejected = service.artifacts.get(original_calls[1]["artifact"])
+    invalid_row = json.loads(rejected["response"]["choices"][0]["message"]["content"])["rows"][0]
+    expected = ([{"path": ["rows", 0, "source_keys", 0], "type": "unprovided_source_key"}]
+                if invalid_row["source_keys"] == [""] else
+                [{"path": ["rows", 0, "seed_ids", 0], "type": "unprovided_seed_id"}]
+                if invalid_row["seed_ids"] == ["PRIVATE_REJECTED_VALUE"] else
+                [{"path": ["rows", 0, "territory"], "type": "extra_forbidden"}])
+    assert rejected["validation_errors"] == expected
     assert "PRIVATE_REJECTED_VALUE" not in original_calls[1]["error"]
     proposal = funded_decision(service, campaign)
     assert proposal["material_allowance"]["additional_output_tokens"] == 512
@@ -69,7 +104,7 @@ def test_orchestrator_funds_retry_once_and_training_consumes_valid_expansion(int
     engine.run(campaign["id"])
     assert service.store.campaign(campaign["id"])["status"] == "complete"
     assert [r["task"]["job"]["id"] for r in requests] == ["one", "two", "two", "three"]
-    assert requests[2]["retry_validation"] == [{"path": ["rows", 0, "territory"], "type": "extra_forbidden"}]
+    assert requests[2]["retry_validation"] == expected
     assert "PRIVATE_REJECTED_VALUE" not in json.dumps(requests[2])
     assert service.store.one("SELECT id,artifact FROM material_jobs WHERE id=?", (completed["id"],)) == completed
     calls = service.store.query("SELECT * FROM material_calls ORDER BY id")

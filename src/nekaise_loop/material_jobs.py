@@ -60,10 +60,11 @@ def request_body(author, spec, schema):
     instruction = (
         "You are a Material Author working for the primary teacher. Produce candidate teaching material, not student observations or evaluation scores. "
         "Follow the teacher's expansion instructions and corrected seed demonstrations. Use only the supplied source keys for citations; "
-        "an empty source list means authored material. Do not invent source identifiers or student attempts. "
+        "an empty source list means authored material: use source_keys=[], never an empty-string placeholder. Do not invent source identifiers or student attempts. "
         "Return one JSON object matching the supplied schema. All explanatory text intended for training belongs in the specified material fields. "
         "Candidate rows forbid every property not declared in the schema, including annotations such as territory. "
         "If retry_validation is present, it contains host validation paths and error types for your previous rejected response; correct those structural errors. "
+        "unprovided_source_key and unprovided_seed_id identify citations outside the supplied source keys or job seed_ids; use only those supplied identifiers. "
         "seed_feedback is input-only primary-teacher context keyed by seed ID, not candidate fields. "
         "Never emit teacher or seed_feedback keys in candidate rows; put the answer in training_response for chat_response or training_text for text modes. "
         "Do not insert model-specific role markers or a thinking prefill: the student tokenizer will serialize accepted content."
@@ -101,10 +102,21 @@ def candidates(result, spec):
             raise ValueError("Author response was incomplete")
         source_keys = set(spec["sources"])
         seed_ids = set(spec["job"]["seed_ids"])
-        for row in batch.rows:
-            if not set(row.source_keys) <= source_keys or not set(row.seed_ids) <= seed_ids:
-                raise ValueError("Author candidate cited an unprovided source or seed")
+        diagnostics = []
+        for index, row in enumerate(batch.rows):
+            for field, allowed, kind in (("source_keys", source_keys, "unprovided_source_key"),
+                                         ("seed_ids", seed_ids, "unprovided_seed_id")):
+                for citation_index, citation in enumerate(getattr(row, field)):
+                    if citation not in allowed:
+                        diagnostics.append({"path": ["rows", index, field, citation_index], "type": kind})
+                        if len(diagnostics) == 8:
+                            raise CandidateValidationError(diagnostics)
+        if diagnostics:
+            raise CandidateValidationError(diagnostics)
         return batch.model_dump()["rows"]
+    except CandidateValidationError:
+        # Keep bounded provenance paths, never the rejected citation values.
+        raise
     except ValidationError as exc:
         # Never echo values, validator messages/context, or arbitrary field text.
         diagnostics = [{"path": [p if isinstance(p, int) or re.fullmatch(r"[a-zA-Z_][a-zA-Z0-9_]{0,63}", str(p)) else "<field>"

@@ -9,6 +9,110 @@ from nekaise_loop.checkpoint_retention import apply, inventory, sha, storage_sta
 from nekaise_loop.storage import now
 
 
+def successor(checkpoints, **updates):
+    settings, service, campaign, engine, artifacts, recovery = checkpoints
+    child = service.continue_campaign(campaign['id'], {'rounds': 2, **updates}, start=False)
+    engine.run(child['id'])
+    return child
+
+
+def test_superseded_campaign_tip_and_origin_can_be_retired_without_losing_history(checkpoints):
+    _, service, parent, _, artifacts, recovery = checkpoints
+    child = successor(checkpoints)
+    items = inventory(service)['checkpoints']
+    old = next(x for x in items if x['path'] == Path(artifacts[-1]['checkpoint']).relative_to(service.settings.workspace).as_posix())
+    current = next(x for x in reversed(items) if x['campaign_id'] == child['id'])
+    assert old['historical_references'] and not old['protected_resumable']
+    assert current['protected_resumable']
+    manifests = [(Path(a['checkpoint'])/'checkpoint.json').read_bytes() for a in artifacts]
+    parent_config = service.store.campaign(parent['id'])['config']
+    rounds_before = service.store.query('SELECT * FROM rounds WHERE campaign_id=?', (parent['id'],))
+    apply(service, recovery + 1, [choose(old, 'summary')])
+    assert service.store.query('SELECT * FROM rounds WHERE campaign_id=?', (parent['id'],)) == rounds_before
+    assert service.store.campaign(parent['id'])['config'] == parent_config
+    assert [(Path(a['checkpoint'])/'checkpoint.json').read_bytes() for a in artifacts] == manifests
+    assert service.artifacts.get(old['artifact']) == artifacts[-1]
+    count = service.store.one('SELECT COUNT(*) AS n FROM campaigns')['n']
+    with pytest.raises(ValueError, match='intentionally retired'):
+        service.continue_campaign(parent['id'], start=False)
+    assert service.store.one('SELECT COUNT(*) AS n FROM campaigns')['n'] == count
+
+
+def test_current_paused_lineage_survives_a_new_unstarted_draft(checkpoints):
+    from nekaise_loop.config import CampaignConfig
+    from nekaise_loop.checkpoint_lineage import current_campaign_id
+    _, service, _, _, _, _ = checkpoints
+    child = successor(checkpoints)
+    service.store.set_status(child['id'], 'paused')
+    service.create('Unstarted draft', CampaignConfig.model_validate(child['config']))
+    assert current_campaign_id(service.store) == child['id']
+    items = inventory(service)['checkpoints']
+    assert next(x for x in reversed(items) if x['campaign_id'] == child['id'])['protected_resumable']
+
+
+def test_queued_draft_protection_is_recomputed_at_apply(checkpoints):
+    from nekaise_loop.config import CampaignConfig
+    _, service, _, _, artifacts, recovery = checkpoints
+    child = successor(checkpoints)
+    old = next(x for x in inventory(service)['checkpoints'] if x['round_id'] == Path(artifacts[0]['checkpoint']).parts[-3])
+    assert not old['protected_resumable']
+    draft = service.create('Queued historical input', CampaignConfig.model_validate({**child['config'], 'student_model': artifacts[0]['checkpoint']}))
+    service.action(draft['id'], 'start', spawn=False)
+    with pytest.raises(ValueError, match='needed for resumption'):
+        apply(service, recovery + 1, [choose(old, 'summary')])
+    assert (Path(artifacts[0]['checkpoint'])/'training_state.pt').exists()
+
+
+def test_chat_snapshot_and_frozen_diagnostic_remain_protected_during_unfinished_round(checkpoints):
+    from nekaise_loop.model_chat import latest_snapshot
+    _, service, _, _, artifacts, recovery = checkpoints
+    child = successor(checkpoints, student_format='chat_template')
+    current_round = service.store.one('SELECT id FROM rounds WHERE campaign_id=? ORDER BY number DESC LIMIT 1', (child['id'],))['id']
+    service.store.set_status(child['id'], 'paused')
+    service.store.execute("UPDATE rounds SET status='paused' WHERE id=?", (current_round,))
+    selected = service.store.one("SELECT id,artifact FROM stage_runs WHERE round_id=? AND stage='select'", (current_round,))
+    original = service.artifacts.get(selected['artifact'])
+    frozen = service.artifacts.put({**original, 'diagnostic_checkpoint': artifacts[0]['checkpoint']})
+    service.store.execute('UPDATE stage_runs SET artifact=? WHERE id=?', (frozen, selected['id']))
+    metadata, snapshot = latest_snapshot(service)
+    assert metadata['campaign_id'] == child['id']
+    items = inventory(service)['checkpoints']
+    chat = next(x for x in items if str(service.settings.workspace/x['path']) == snapshot['checkpoint'])
+    old = next(x for x in items if str(service.settings.workspace/x['path']) == artifacts[0]['checkpoint'])
+    assert 'Current Model chat snapshot' in chat['protected_weights']
+    assert old['protected_weights'] and not old['protected_resumable']
+    with pytest.raises(ValueError, match='needed for inference'):
+        apply(service, recovery + 1, [choose(old, 'summary')])
+    service.store.execute("UPDATE rounds SET status='complete' WHERE id=?", (current_round,))
+    assert not next(x for x in inventory(service)['checkpoints'] if x['path'] == old['path'])['protected_weights']
+
+
+def test_unsuperseded_explicit_pause_keeps_its_resume_state(checkpoints):
+    from nekaise_loop.config import CampaignConfig
+    _, service, campaign, engine, artifacts, _ = checkpoints
+    # A separate new run does not supersede an explicitly paused branch.
+    service.store.execute("UPDATE campaigns SET status='paused',operator_hold='pause' WHERE id=?", (campaign['id'],))
+    service.store.execute("UPDATE recoveries SET status='resolved' WHERE campaign_id=?", (campaign['id'],))
+    other = service.create('Separate current run', CampaignConfig.model_validate(campaign['config']))
+    engine.run(other['id'])
+    old = next(x for x in inventory(service)['checkpoints'] if str(service.settings.workspace/x['path']) == artifacts[-1]['checkpoint'])
+    assert old['protected_resumable']
+
+
+def test_v2_reader_lease_protects_only_inference_bytes(checkpoints, tmp_path):
+    settings, service, _, _, artifacts, recovery = checkpoints
+    successor(checkpoints)
+    settings.root = tmp_path/'studio'
+    leases = tmp_path/'nekaise-bench/workspace/monitor-v2/protected-checkpoints.json'
+    leases.parent.mkdir(parents=True)
+    leases.write_text(json.dumps({'paths': [artifacts[0]['checkpoint']]}))
+    old = next(x for x in inventory(service)['checkpoints'] if str(settings.workspace/x['path']) == artifacts[0]['checkpoint'])
+    assert old['protected_weights'] and not old['protected_resumable']
+    with pytest.raises(ValueError, match='needed for inference'):
+        apply(service, recovery + 1, [choose(old, 'summary')])
+    apply(service, recovery + 1, [choose(old, 'weights')])
+
+
 @pytest.fixture
 def checkpoints(setup_loop):
     settings, service, campaign, engine = setup_loop

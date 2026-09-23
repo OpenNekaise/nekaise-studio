@@ -458,6 +458,20 @@ remain corruption; inference may ignore retired optimizer bytes, full resumption
 A shared checkpoint reader lock and path-only observer leases protect independent evaluations.
 Before a round and before training, measured disk pressure yields to operational review.
 
+The operator prefers a small, justified checkpoint working set (2026-09-23). Historical
+campaign tips and configured origins remain visible as lineage references, not permanent
+resumption pins. Operational dependencies cover active campaigns, queued commands, unresolved
+recoveries, the current idle lineage and explicit paused branches without a successor.
+Their resume path is the latest trained checkpoint, or the configured input before training;
+unfinished inputs/outputs and frozen diagnostics remain protected. `checkpoint_lineage.py`
+provides the shared current-lineage and completed-snapshot lookup used by retention and
+Model chat, including the older chat snapshot while a new round is unfinished. Path-only
+leases from both observer versions protect inference. Apply recomputes this set under the
+existing execution/retention locks before accepting explicit byte-retirement decisions.
+These guards describe current dependencies; they do not automatically choose deletions by
+status, age, count or score. Retired historical resumption fails explicitly through its
+receipt instead of silently substituting another model. Original teaching records remain.
+
 ## Measured learning work and paired online assessment
 
 `learning_work.py` provides read-only round accounting to teacher planning/reflection,

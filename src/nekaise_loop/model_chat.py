@@ -13,6 +13,7 @@ import anyio
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from .artifacts import digest
+from .checkpoint_lineage import latest_completed_snapshot
 from . import ownership
 
 MAX_PROMPT_TOKENS = 2048
@@ -46,39 +47,21 @@ class ChatRequest(BaseModel):
 
 def latest_snapshot(service):
     """Follow the current lineage, ignoring drafts and unfinished round outputs."""
-    campaign = service.store.one("""SELECT id FROM campaigns
-        WHERE status IN ('running','queued','pausing','stopping','waiting','recovering')
-        ORDER BY created_at DESC LIMIT 1""")
-    if not campaign:
-        campaign = service.store.one("""SELECT c.id FROM campaigns c
-            WHERE c.status!='ready' AND (c.parent_campaign_id IS NOT NULL OR
-                EXISTS (SELECT 1 FROM rounds r WHERE r.campaign_id=c.id))
-            ORDER BY c.created_at DESC LIMIT 1""")
-    seen = set()
-    while campaign and campaign['id'] not in seen:
-        cid = campaign['id']
-        seen.add(cid)
-        row = service.store.one("""SELECT r.id,r.number,r.updated_at,s.artifact
-            FROM rounds r JOIN stage_runs s ON s.round_id=r.id
-            WHERE r.campaign_id=? AND r.status='complete' AND s.stage='train'
-                AND s.status='complete' ORDER BY r.number DESC,s.attempt DESC LIMIT 1""", (cid,))
-        config = service.store.campaign(cid)
-        if row:
-            result = service.artifacts.get(row['artifact'])
-            path = Path(result['checkpoint'])
-            # Do not quietly substitute older weights when the latest is missing.
-            if not path.is_dir() or not any(path.glob('*.safetensors')):
-                raise ValueError("The latest completed model weights are unavailable")
-            if config['config'].get('student_format', 'raw_text') != 'chat_template':
-                raise ValueError("The current model has no native chat interface")
-            identity = digest({'checkpoint': str(path), 'manifest': result['manifest']})
-            return {'id': identity, 'campaign_id': cid, 'run_name': config['name'],
-                    'round_id': row['id'], 'round_number': row['number'],
-                    'completed_at': row['updated_at'], 'device': 'cpu',
-                    'max_prompt_tokens': MAX_PROMPT_TOKENS, 'max_new_tokens': MAX_NEW_TOKENS}, result
-        parent = config.get('parent_campaign_id')
-        campaign = {'id': parent} if parent else None
-    raise ValueError("A completed chat-model iteration is not available yet")
+    saved = latest_completed_snapshot(service)
+    if saved is None:
+        raise ValueError("A completed chat-model iteration is not available yet")
+    config, row, result = saved
+    path = Path(result['checkpoint'])
+    # Do not quietly substitute older weights when the latest is missing.
+    if not path.is_dir() or not any(path.glob('*.safetensors')):
+        raise ValueError("The latest completed model weights are unavailable")
+    if config['config'].get('student_format', 'raw_text') != 'chat_template':
+        raise ValueError("The current model has no native chat interface")
+    identity = digest({'checkpoint': str(path), 'manifest': result['manifest']})
+    return {'id': identity, 'campaign_id': config['id'], 'run_name': config['name'],
+            'round_id': row['id'], 'round_number': row['number'],
+            'completed_at': row['updated_at'], 'device': 'cpu',
+            'max_prompt_tokens': MAX_PROMPT_TOKENS, 'max_new_tokens': MAX_NEW_TOKENS}, result
 
 
 def status(service):

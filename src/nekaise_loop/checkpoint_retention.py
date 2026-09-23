@@ -17,6 +17,7 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field
 
 from .artifacts import atomic_write, canonical
+from .checkpoint_lineage import current_campaign_id, latest_completed_snapshot
 from .storage import now
 
 
@@ -100,18 +101,43 @@ def inventory(service):
         records[str(path)] = {**row, 'path': relative, 'manifest_sha256': sha(manifest),
             'bytes': sum(sizes.values()), 'optimizer_bytes': sizes.get('training_state.pt', 0),
             'weight_bytes': sum(size for name, size in sizes.items() if name.endswith('.safetensors') or name.startswith('pytorch_model')),
-            'protected_resumable': [], 'protected_weights': [], 'retention': prior,
+            'protected_resumable': [], 'protected_weights': [], 'historical_references': [], 'retention': prior,
             'parent': result['manifest'].get('parent'), 'tokens': result['manifest'].get('tokens')}
     def protect(path, reason, level='protected_resumable'):
         if path in records:
             records[path][level].append(reason)
-    for cid, path in tips.items():
-        protect(path, f'Latest completed training checkpoint of {cid}')
-    campaigns = store.query('SELECT id,status,config FROM campaigns')
+    campaigns = store.query('SELECT id,status,config,parent_campaign_id,operator_hold,created_at FROM campaigns ORDER BY created_at,id')
+    # Execution dependencies are not a keep-forever rule for every historical
+    # campaign. Retirement still requires the orchestrator's explicit decision.
+    active = {'running', 'queued', 'pausing', 'stopping', 'waiting', 'recovering'}
+    operational = {c['id'] for c in campaigns if c['status'] in active}
+    operational.update(r['campaign_id'] for r in store.query(
+        'SELECT DISTINCT campaign_id FROM actions WHERE handled_at IS NULL'))
+    operational.update(r['campaign_id'] for r in store.query(
+        "SELECT DISTINCT campaign_id FROM recoveries WHERE status IN ('pending','running','waiting','decided')"))
+    superseded = {c['parent_campaign_id'] for c in campaigns if c['parent_campaign_id']}
+    operational.update(c['id'] for c in campaigns if c['operator_hold'] == 'pause' and c['id'] not in superseded)
+    by_id = {c['id']: c for c in campaigns}
+    current = by_id.get(current_campaign_id(store))
+    if current:
+        operational.add(current['id'])  # Keep the current paused/stopped run resumable too.
+    # Model chat reads the latest fully completed round in the current lineage;
+    # an unfinished round may already have a newer trained checkpoint.
+    snapshot = latest_completed_snapshot(service, current['id']) if current else None
+    if snapshot and snapshot[0]['config'].get('student_format') == 'chat_template':
+        protect(snapshot[2]['checkpoint'], 'Current Model chat snapshot', 'protected_weights')
     for c in campaigns:
         config = json.loads(c['config'])
-        protect(config.get('student_model'), f'Configured starting checkpoint of {c["id"]}')
-        if c['status'] not in {'complete', 'stopped', 'failed', 'interrupted'}:
+        # Preserve lineage references as evidence, without pretending they are
+        # current resumption dependencies after a successor has taken over.
+        for path, reason in ((tips.get(c['id']), f'Historical campaign tip {c["id"]}'),
+                             (config.get('student_model'), f'Configured origin of {c["id"]}')):
+            protect(path, reason, 'historical_references')
+        if c['id'] in operational:
+            if c['id'] in tips:
+                protect(tips[c['id']], f'Current resumption checkpoint of {c["id"]}')
+            else:
+                protect(config.get('student_model'), f'Unstarted current campaign input {c["id"]}')
             pending = store.query("SELECT id,model_before,checkpoint FROM rounds WHERE campaign_id=? AND status!='complete'", (c['id'],))
             for r in pending:
                 protect(r['model_before'], f'Unfinished round input {r["id"]}')
@@ -127,12 +153,15 @@ def inventory(service):
                         elif isinstance(value, str): protect(value, f'Frozen diagnostic in {r["id"]}', 'protected_weights')
                     references(data)
     # Operational leases contain paths only, never evaluation questions or scores.
-    leases = service.settings.root.parent/'nekaise-bench/workspace/monitor/protected-checkpoints.json'
-    if leases.exists():
-        for path in json.loads(leases.read_text()).get('paths', []):
-            protect(path, 'Pending or running independent reader', 'protected_weights')
-    latest = next((json.loads(c['config']).get('student_model') for c in reversed(campaigns)), None)
+    for monitor in ('monitor', 'monitor-v2'):
+        leases = service.settings.root.parent/f'nekaise-bench/workspace/{monitor}/protected-checkpoints.json'
+        if leases.exists():
+            for path in json.loads(leases.read_text()).get('paths', []):
+                protect(path, 'Pending or running independent reader', 'protected_weights')
+    latest = (tips.get(current['id']) or json.loads(current['config']).get('student_model')) if current else None
     return {'storage': storage_status(workspace, latest), 'checkpoints': list(records.values()),
+            'current_campaign_id': current['id'] if current else None,
+            'operational_campaign_ids': sorted(operational),
             'scope': 'keep=full state, weights=inference only, summary=records only; original manifests, datasets, lessons and lineage remain. No score-based automatic deletion.'}
 
 

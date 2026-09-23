@@ -118,15 +118,15 @@ provenance checks still determine what enters training.
 ### Codex authors
 
 The `codex_code` transport uses the worker's existing authenticated Codex CLI. The
-operator-selected role configuration on 2026-09-22 is Claude Opus 5.5
+operator-selected role configuration on 2026-09-23 is Claude Opus 5.5
 (`teacher_provider=claude`, `teacher_model=claude-opus-5-5`) for primary teaching and
-online evaluation, and GPT-5.6 Terra for material generation. The recovery
-orchestrator remains a separate role. An example Terra entry is:
+online evaluation, and GPT-6 Luna for material generation, replacing GPT-5.6 Terra.
+The recovery orchestrator remains a separate role. An example Luna entry is:
 
 ```json
 {
-  "id": "gpt-terra", "label": "GPT-5.6 Terra",
-  "transport": "codex_code", "model": "gpt-5.6-terra",
+  "id": "gpt-luna", "label": "GPT-6 Luna",
+  "transport": "codex_code", "model": "gpt-6-luna",
   "concurrency": 4, "resource_pool": "codex-account",
   "max_output_tokens": 32768, "timeout_seconds": 600,
   "options": {"effort": "low"}
@@ -134,6 +134,11 @@ orchestrator remains a separate role. An example Terra entry is:
 ```
 
 Include `"codex-account": 4` in `resource_limits`; omit endpoint/key settings.
+The [GPT-6 Luna model](https://developers.openai.com/api/docs/models/gpt-6-luna)
+supports the existing `low` reasoning effort. The switch preserves author concurrency,
+per-job and per-round allowances, teacher settings and the teacher-budget epoch;
+a fresh continuation carries compatible optimizer state and the new registry.
+Historical Terra jobs retain their original model and provenance.
 Each job is an ephemeral, read-only CLI process with a strict output schema,
 ignored user configuration/rules and disabled project instructions, plugins,
 hooks, shell, web, apps and delegation. Remaining tool/unsupported-item events

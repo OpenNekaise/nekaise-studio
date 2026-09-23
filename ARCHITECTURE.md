@@ -478,6 +478,11 @@ existing execution/retention locks before accepting explicit byte-retirement dec
 These guards describe current dependencies; they do not automatically choose deletions by
 status, age, count or score. Retired historical resumption fails explicitly through its
 receipt instead of silently substituting another model. Original teaching records remain.
+Historical absolute paths through a repository/workspace-root alias are mapped to the
+same canonical checkpoint in both inventory and all dependency lookups. Duplicate alias
+references produce one inventory entry. Symlinks below the workspace root, traversal and
+external checkpoint targets are not admitted; retirement decisions still require the
+canonical workspace-relative path and immutable manifest identity.
 
 ## Measured learning work and paired online assessment
 

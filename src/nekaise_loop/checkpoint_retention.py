@@ -69,6 +69,26 @@ def checkpoint_path(workspace, relative):
     return path
 
 
+def recorded_checkpoint_path(workspace, reference):
+    """Map a workspace-root alias without admitting symlinks inside runs.
+
+    Historical artifacts retain their original absolute spelling. Inventory and
+    every dependency lookup must use the same identity, while decisions still
+    accept only canonical relative paths through checkpoint_path.
+    """
+    if not isinstance(reference, str):
+        return None
+    path = Path(reference)
+    if not path.is_absolute() or path.name != 'checkpoint' or '..' in path.parts:
+        return None
+    if path.is_relative_to(workspace):
+        return checkpoint_path(workspace, path.relative_to(workspace))
+    for ancestor in path.parents:
+        if ancestor.resolve() == workspace:
+            return checkpoint_path(workspace, path.relative_to(ancestor))
+    return None
+
+
 def storage_status(workspace, checkpoint=None):
     free = shutil.disk_usage(workspace).free
     # Room for a full checkpoint, temporary output, and database/log operations.
@@ -86,9 +106,9 @@ def inventory(service):
     tips = {}
     for row in rows:
         result = service.artifacts.get(row['artifact'])
-        path = Path(result['checkpoint'])
-        tips[row['campaign_id']] = str(path)
-        if result.get('trained') is False or not path.is_relative_to(workspace/'runs'):
+        path = recorded_checkpoint_path(workspace, result['checkpoint'])
+        tips[row['campaign_id']] = result['checkpoint']
+        if result.get('trained') is False or path is None:
             continue
         relative = path.relative_to(workspace).as_posix()
         checkpoint_path(workspace, relative)
@@ -104,6 +124,8 @@ def inventory(service):
             'protected_resumable': [], 'protected_weights': [], 'historical_references': [], 'retention': prior,
             'parent': result['manifest'].get('parent'), 'tokens': result['manifest'].get('tokens')}
     def protect(path, reason, level='protected_resumable'):
+        path = recorded_checkpoint_path(workspace, path)
+        path = str(path) if path is not None else None
         if path in records:
             records[path][level].append(reason)
     campaigns = store.query('SELECT id,status,config,parent_campaign_id,operator_hold,created_at FROM campaigns ORDER BY created_at,id')

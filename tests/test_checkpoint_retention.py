@@ -5,7 +5,7 @@ from unittest.mock import patch
 import pytest
 
 from nekaise_loop.artifacts import verify_checkpoint
-from nekaise_loop.checkpoint_retention import apply, inventory, sha, storage_status
+from nekaise_loop.checkpoint_retention import apply, inventory, recorded_checkpoint_path, sha, storage_status
 from nekaise_loop.storage import now
 
 
@@ -134,6 +134,100 @@ def checkpoints(setup_loop):
 def choose(item, disposition):
     return {'path':item['path'], 'manifest_sha256':item['manifest_sha256'], 'disposition':disposition,
             'summary':'Retain fixture training outcome and immutable provenance.', 'reason':'Explicit fixture orchestrator retention decision.'}
+
+
+def test_workspace_alias_inventory_deduplicates_and_preserves_artifacts(checkpoints, tmp_path):
+    settings, service, _, _, artifacts, recovery = checkpoints
+    alias = tmp_path/'old-workspace'
+    alias.symlink_to(settings.workspace, target_is_directory=True)
+    rows = service.store.query("SELECT * FROM stage_runs WHERE stage='train' ORDER BY id")
+    aliases = []
+    for row, original in zip(rows, artifacts):
+        root = Path(original['checkpoint'])
+        alternate = {**original, 'checkpoint': str(alias/root.relative_to(settings.workspace))}
+        key = service.artifacts.put(alternate)
+        service.store.execute('UPDATE stage_runs SET artifact=? WHERE id=?', (key, row['id']))
+        aliases.append((key, alternate))
+    root = Path(artifacts[0]['checkpoint'])
+    # A second completed stage may refer to the same immutable checkpoint by
+    # its old spelling. It must neither hide the original nor double its bytes.
+    row = rows[0]
+    service.store.execute(
+        'INSERT INTO stage_runs(id,round_id,stage,attempt,status,input_hash,artifact,started_at) VALUES(?,?,?,?,?,?,?,?)',
+        (-1, row['round_id'], 'train', 0, 'complete', row['input_hash'], row['artifact'], now()))
+    items = inventory(service)['checkpoints']
+    assert len(items) == len(artifacts)
+    assert items[-1]['protected_resumable']
+    item = next(x for x in items if x['path'] == root.relative_to(settings.workspace).as_posix())
+    manifest = (root/'checkpoint.json').read_bytes()
+    apply(service, recovery, [choose(item, 'summary')])
+    assert all(service.artifacts.get(key) == alternate for key, alternate in aliases)
+    assert (root/'checkpoint.json').read_bytes() == manifest
+    assert not (root/'model.safetensors').exists()
+
+
+def test_alias_configured_origin_protects_paused_unstarted_branch(checkpoints, tmp_path):
+    from nekaise_loop.config import CampaignConfig
+    settings, service, campaign, _, artifacts, recovery = checkpoints
+    alias = tmp_path/'old-workspace'
+    alias.symlink_to(settings.workspace, target_is_directory=True)
+    root = Path(artifacts[0]['checkpoint'])
+    reference = str(alias/root.relative_to(settings.workspace))
+    branch = service.create('Paused alias origin', CampaignConfig.model_validate(
+        {**campaign['config'], 'student_model': reference}))
+    service.store.execute("UPDATE campaigns SET status='paused',operator_hold='pause' WHERE id=?", (branch['id'],))
+    item = next(x for x in inventory(service)['checkpoints'] if x['path'] == root.relative_to(settings.workspace).as_posix())
+    assert f'Unstarted current campaign input {branch["id"]}' in item['protected_resumable']
+    with pytest.raises(ValueError, match='needed for resumption'):
+        apply(service, recovery, [choose(item, 'summary')])
+    assert (root/'model.safetensors').exists()
+
+
+def test_alias_diagnostic_and_reader_references_protect_canonical_weights(checkpoints, tmp_path):
+    settings, service, _, _, artifacts, recovery = checkpoints
+    child = successor(checkpoints)
+    alias = tmp_path/'old-workspace'
+    alias.symlink_to(settings.workspace, target_is_directory=True)
+    root = Path(artifacts[0]['checkpoint'])
+    reference = str(alias/root.relative_to(settings.workspace))
+    latest = service.store.one('SELECT id FROM rounds WHERE campaign_id=? ORDER BY number DESC LIMIT 1', (child['id'],))['id']
+    service.store.execute("UPDATE rounds SET status='paused' WHERE id=?", (latest,))
+    selected = service.store.one("SELECT id,artifact FROM stage_runs WHERE round_id=? AND stage='select'", (latest,))
+    data = service.artifacts.get(selected['artifact'])
+    key = service.artifacts.put({**data, 'comparison': {'checkpoint': reference}})
+    service.store.execute('UPDATE stage_runs SET artifact=? WHERE id=?', (key, selected['id']))
+    settings.root = tmp_path/'studio'
+    leases = tmp_path/'nekaise-bench/workspace/monitor-v2/protected-checkpoints.json'
+    leases.parent.mkdir(parents=True)
+    leases.write_text(json.dumps({'paths': [reference]}))
+    item = next(x for x in inventory(service)['checkpoints'] if x['path'] == root.relative_to(settings.workspace).as_posix())
+    assert f'Frozen diagnostic in {latest}' in item['protected_weights']
+    assert 'Pending or running independent reader' in item['protected_weights']
+    with pytest.raises(ValueError, match='needed for inference'):
+        apply(service, recovery, [choose(item, 'summary')])
+
+
+def test_alias_mapping_rejects_internal_symlinks_traversal_and_external_targets(checkpoints, tmp_path):
+    settings, _, _, _, artifacts, _ = checkpoints
+    root = Path(artifacts[0]['checkpoint'])
+    alias = tmp_path/'old-workspace'
+    alias.symlink_to(settings.workspace, target_is_directory=True)
+    assert recorded_checkpoint_path(settings.workspace, str(alias/root.relative_to(settings.workspace))) == root
+    outside = tmp_path/'external/checkpoint'
+    outside.mkdir(parents=True)
+    assert recorded_checkpoint_path(settings.workspace, str(outside)) is None
+    direct_alias = tmp_path/'checkpoint'
+    direct_alias.symlink_to(root, target_is_directory=True)
+    assert recorded_checkpoint_path(settings.workspace, str(direct_alias)) is None
+    assert recorded_checkpoint_path(settings.workspace, str(alias/'runs/../runs/x/checkpoint')) is None
+    for name, target in [('escape', outside), ('internal-alias', root)]:
+        link = settings.workspace/'runs'/name/'checkpoint'
+        link.parent.mkdir()
+        link.symlink_to(target, target_is_directory=True)
+        with pytest.raises(ValueError, match='real checkpoint directory'):
+            recorded_checkpoint_path(settings.workspace, str(link))
+        with pytest.raises(ValueError, match='real checkpoint directory'):
+            recorded_checkpoint_path(settings.workspace, str(alias/link.relative_to(settings.workspace)))
 
 
 def test_optimizer_retirement_preserves_inference_and_rejects_resume(checkpoints):

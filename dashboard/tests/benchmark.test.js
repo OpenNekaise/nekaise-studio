@@ -18,6 +18,33 @@ test("missing eval is not zero; real zero remains a score", () => {
   assert.match(html, /Earlier weights/); assert.match(html, /Evaluating/);
   assert.ok(!html.includes("<img>"));
 });
+
+test("missing display data does not claim the baseline has never run", () => {
+  for (const status of ["not_ready", "unavailable"]) {
+    const html = benchmarkCard({ status, latest: null, points: [] });
+    assert.match(html, /No evaluation results available for this run/);
+    assert.ok(!html.includes("Waiting for baseline"));
+    assert.ok(!html.includes("No completed independent evaluation yet"));
+    assert.ok(!html.includes("Training continues while evaluation runs"));
+  }
+  assert.match(benchmarkCard({ status: "no_baseline", latest: null, points: [] }), /Waiting for baseline/);
+});
+
+test("chat-2 aggregates keep their protocol and measured subgroup denominators", () => {
+  const baseline = point(0, { protocol: "chat-2", release_name: "fixture-chat2" });
+  const latest = point(9, { protocol: "chat-2", release_name: "fixture-chat2",
+    numerical: .25, numerical_n: 20, numerical_correct: 5,
+    choice: 35 / 60, choice_n: 60, choice_correct: 35 });
+  const data = v2({ latest, points: [baseline, latest] });
+  const card = benchmarkCard(data);
+  assert.match(card, /chat-2 · fixture-chat2/);
+  assert.match(card, /Numerical 25\.0% \(5 \/ 20\)/);
+  assert.match(card, /Choice 58\.3% \(35 \/ 60\)/);
+  assert.ok(!card.includes("chat-1"));
+  const history = benchmarkHistory(data, open({ selected_model_id: latest.model_id }));
+  assert.match(history, /fixture-chat2/);
+  assert.ok(!history.includes("chat-1"));
+});
 test("chart preserves observations and adds a labeled fit only with enough distinct positions", () => {
   const chart=scoreChart([{score:.5,retained_tokens:0},{score:.4,retained_tokens:10}]);
   assert.equal((chart.match(/<circle/g)||[]).length,2);

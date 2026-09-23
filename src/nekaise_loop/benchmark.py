@@ -28,7 +28,7 @@ class Point(ProjectionModel):
     evaluated_at: str = Field(max_length=80)
     run_id: str = Field(max_length=100)
     protocol_id: str = Field(pattern=r'^[a-f0-9]{64}$')
-    protocol: Literal['chat-1', 'completion-1']
+    protocol: Literal['chat-2', 'chat-1', 'completion-1']
     release_id: str = Field(pattern=r'^[a-f0-9]{64}$')
     release_name: str = Field(max_length=100)
     n: int = Field(gt=0, le=100000)
@@ -158,6 +158,12 @@ class Projection(ProjectionModel):
     def coherent(self):
         if self.history and self.history.overview_count != len(self.points):
             raise ValueError('Overview count mismatch')
+        observations = ([self.latest] if self.latest else []) + self.points
+        if observations and any(
+                any(getattr(point, key) != getattr(observations[0], key)
+                    for key in ('root_id', 'protocol_id', 'protocol', 'release_id'))
+                for point in observations[1:]):
+            raise ValueError('Projection mixes evaluation series')
         if self.comparisons:
             for kind in ('baseline', 'milestone'):
                 pair = getattr(self.comparisons, kind)
@@ -251,6 +257,7 @@ def read_benchmark_history(campaign_id, history_id, page, directory=None):
             raise ValueError('Incomplete history page')
         points = [Point.model_validate(p).model_dump() for p in data['points']]
         if (any(any(p[k] != v for k, v in identity.items()) for p in points) or
+                len({p['protocol'] for p in points}) > 1 or
                 any(a['retained_tokens'] > b['retained_tokens'] for a, b in zip(points, points[1:]))):
             raise ValueError('History mixes evaluation series or order')
         return {'schema_version': 2, 'campaign_id': campaign_id, 'history_id': history_id,

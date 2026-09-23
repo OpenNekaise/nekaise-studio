@@ -67,3 +67,21 @@ For a custom workspace, update the supervisor unit’s `--workspace` argument an
 dashboard environment together. Foreground/custom installations without an installed
 unit use a detached supervisor; commands and recovery timers still persist in SQLite,
 but a process manager is needed to restart the supervisor after its own crash or reboot.
+
+## Independent evaluation display
+
+Studio accepts Bench's aggregate `chat-2`, `chat-1` and `completion-1` observations,
+including sealed history pages. Keep each release and protocol in its original series.
+When Bench moves to a new observer state, update the dashboard's ignored
+`workspace/dashboard.env` to its actual projection directory, for example:
+
+```dotenv
+NEKAISE_BENCH_PROJECTION_DIR=/home/zengp/Code/nekaise-bench/workspace/monitor-v2/projection
+```
+
+Restart only the dashboard after changing this setting. The legacy default remains
+`../nekaise-bench/workspace/monitor/projection` for existing installations; Studio does
+not guess a series from whichever directory has newer files. Verify the dedicated
+`/api/campaigns/{id}/benchmark` endpoint and its history endpoint after deployment.
+Missing display data does not establish that no evaluation has run. Actual measurements
+stay in Bench storage and never enter teaching, normal Report or recovery inputs.

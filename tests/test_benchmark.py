@@ -3,16 +3,18 @@ import hashlib
 import copy
 from datetime import datetime, timezone, timedelta
 
+import pytest
+
 from fastapi.testclient import TestClient
 from nekaise_loop.api import create_app
 from nekaise_loop.benchmark import read_benchmark, read_benchmark_history
 
 
-def projection(cid):
+def projection(cid, protocol='chat-1'):
     stamp=datetime.now(timezone.utc).isoformat()
     point={'model_id':'a'*64,'root_id':'b'*64,'round_id':'r1','round_number':1,'retained_tokens':10,
         'checkpoint_at':stamp,'evaluated_at':stamp,'run_id':'fixture-only','protocol_id':'c'*64,
-        'protocol':'chat-1','release_id':'d'*64,'release_name':'fixture-only','n':4,'correct':1,
+        'protocol':protocol,'release_id':'d'*64,'release_name':'fixture-only','n':4,'correct':1,
         'score':.25,'invalid':1,'budget_exhausted':1,'numerical':.5,'choice':0.,'delta':None,
         'delta_ci95':None,'clusters':None,'interval_reliable':False,'gold':'PRIVATE'}
     return {'schema_version':1,'campaign_id':cid,'generated_at':stamp,'heartbeat_at':stamp,'status':'ok',
@@ -26,10 +28,12 @@ def write_projection(root,cid,value):
     (root.parent/'heartbeat.json').write_text(json.dumps({'at':value['generated_at']}))
 
 
-def test_projection_whitelist_and_zero_is_distinct_from_missing(tmp_path):
-    root=tmp_path/'projection';value=projection('c1');write_projection(root,'c1',value)
+@pytest.mark.parametrize('protocol', ['chat-2', 'chat-1', 'completion-1'])
+def test_projection_whitelist_and_zero_is_distinct_from_missing(tmp_path, protocol):
+    root=tmp_path/'projection';value=projection('c1', protocol);write_projection(root,'c1',value)
     got=read_benchmark('c1',root)
     assert got['latest']['score']==.25 and not got['service_stale']
+    assert got['latest']['protocol'] == protocol
     assert 'PRIVATE' not in json.dumps(got)
     assert read_benchmark('absent',root)['latest'] is None
     value['latest']['score']=0.;value['latest']['correct']=0
@@ -62,7 +66,7 @@ def test_heartbeat_respects_observer_poll_interval(tmp_path):
 
 def test_projection_endpoint_never_enqueues_work_or_enters_history(setup_loop,tmp_path,monkeypatch):
     settings,service,campaign,engine=setup_loop
-    root=tmp_path/'projection';write_projection(root,campaign['id'],projection(campaign['id']))
+    root=tmp_path/'projection';write_projection(root,campaign['id'],projection(campaign['id'], 'chat-2'))
     monkeypatch.setenv('NEKAISE_BENCH_PROJECTION_DIR',str(root))
     monkeypatch.setattr('nekaise_loop.service.Service.ensure_worker',lambda *_:None)
     before={t:service.store.query(f'SELECT * FROM {t}') for t in ('events','records','metrics','actions')}
@@ -70,6 +74,7 @@ def test_projection_endpoint_never_enqueues_work_or_enters_history(setup_loop,tm
         response=client.get(f"/api/campaigns/{campaign['id']}/benchmark")
         assert response.status_code==200 and response.headers['cache-control']=='no-store'
         assert response.json()['latest']['correct']==1
+        assert response.json()['latest']['protocol']=='chat-2'
         assert 'PRIVATE' not in response.text
         snap=client.get(f"/api/campaigns/{campaign['id']}").json()
         assert 'benchmark' not in snap
@@ -85,8 +90,8 @@ def seal(root, category, data):
     return key
 
 
-def history(root, cid='c1', count=241):
-    value = projection(cid)
+def history(root, cid='c1', count=241, protocol='chat-1'):
+    value = projection(cid, protocol)
     points = []
     for i in range(count):
         points.append({**value['latest'], 'model_id': f'{i+1:064x}', 'retained_tokens': i,
@@ -102,15 +107,17 @@ def history(root, cid='c1', count=241):
     return key, manifest, points
 
 
-def test_complete_history_is_sealed_paginated_scoped_and_aggregate_only(tmp_path):
+@pytest.mark.parametrize('protocol', ['chat-2', 'chat-1', 'completion-1'])
+def test_complete_history_is_sealed_paginated_scoped_and_aggregate_only(tmp_path, protocol):
     root = tmp_path/'projection'
-    key, manifest, points = history(root)
+    key, manifest, points = history(root, protocol=protocol)
     pages = [read_benchmark_history('c1', key, i, root) for i in range(3)]
     assert [len(p['points']) for p in pages] == [100, 100, 41]
     assert [p['model_id'] for page in pages for p in page['points']] == [p['model_id'] for p in points]
     assert all('PRIVATE' not in json.dumps(p) for p in pages)
+    assert all(p['protocol'] == protocol for page in pages for p in page['points'])
     # A new observation cannot invalidate a user's pinned browsing snapshot.
-    next_key, _, _ = history(root, count=242)
+    next_key, _, _ = history(root, count=242, protocol=protocol)
     assert next_key != key
     assert read_benchmark_history('c1', key, 2, root)['count'] == 241
     for cid, requested_key, page in [('other', key, 0), ('../c1', key, 0), ('c1', '../secret', 0),
@@ -162,7 +169,7 @@ def test_v2_comparison_counts_and_private_fields_are_validated(tmp_path):
 def test_history_endpoint_does_not_mutate_training_or_enter_report(setup_loop, tmp_path, monkeypatch):
     settings, service, campaign, engine = setup_loop
     root = tmp_path/'projection'
-    key, _, _ = history(root, campaign['id'])
+    key, _, _ = history(root, campaign['id'], protocol='chat-2')
     monkeypatch.setenv('NEKAISE_BENCH_PROJECTION_DIR', str(root))
     monkeypatch.setattr('nekaise_loop.service.Service.ensure_worker', lambda *_: None)
     tables = ('events', 'records', 'metrics', 'actions', 'recoveries')
@@ -172,6 +179,36 @@ def test_history_endpoint_does_not_mutate_training_or_enter_report(setup_loop, t
         assert response.status_code == 200
         assert response.headers['cache-control'] == 'no-store'
         assert len(response.json()['points']) == 41 and 'PRIVATE' not in response.text
+        assert all(p['protocol'] == 'chat-2' for p in response.json()['points'])
         assert client.get(f"/api/campaigns/{campaign['id']}/benchmark/history", params={'history': '../x', 'page': 0}).status_code == 422
         assert 'comparisons' not in client.get('/api/reports').text
     assert before == {t: service.store.query(f'SELECT * FROM {t}') for t in tables}
+
+
+def test_unknown_protocol_is_rejected_in_projection_and_sealed_history(tmp_path):
+    root = tmp_path/'projection'
+    write_projection(root, 'c1', projection('c1', 'chat-unknown'))
+    assert read_benchmark('c1', root)['status'] == 'unavailable'
+    key, _, _ = history(root, count=2, protocol='chat-unknown')
+    assert read_benchmark_history('c1', key, 0, root)['status'] == 'unavailable'
+
+
+@pytest.mark.parametrize('field,value', [('protocol', 'chat-1'), ('protocol_id', 'f'*64),
+                                        ('release_id', 'f'*64), ('root_id', 'f'*64)])
+def test_projection_rejects_mixed_evaluation_series(tmp_path, field, value):
+    root = tmp_path/'projection'
+    data = projection('c1', 'chat-2')
+    data['points'] = [copy.deepcopy(data['latest'])]
+    data['points'][0][field] = value
+    write_projection(root, 'c1', data)
+    assert read_benchmark('c1', root)['status'] == 'unavailable'
+
+
+def test_sealed_history_rejects_mixed_protocol_names(tmp_path):
+    root = tmp_path/'projection'
+    _, manifest, points = history(root, count=2, protocol='chat-2')
+    points[1]['protocol'] = 'chat-1'
+    page = seal(root, 'pages', {'schema_version': 2, 'cohort_id': manifest['cohort_id'],
+                              'offset': 0, 'points': points})
+    key = seal(root, 'manifests', {**manifest, 'pages': [page]})
+    assert read_benchmark_history('c1', key, 0, root)['status'] == 'unavailable'

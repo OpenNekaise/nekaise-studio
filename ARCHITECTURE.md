@@ -397,6 +397,13 @@ shown explicitly; neither a failed telemetry read nor a missing benchmark hides 
 records. Lessons & assessments opens student work and teaching iterations, and Activity
 opens execution events. Explicit navigation resets page scroll; polling preserves context.
 
+The dedicated benchmark reader accepts `chat-2`, `chat-1` and `completion-1` aggregate
+observations and sealed history, preserving their protocol identities and rejecting
+mixed series. `NEKAISE_BENCH_PROJECTION_DIR` explicitly selects the deployed observer's
+projection directory; the legacy default is retained for existing installations. Missing
+display data is distinct from Bench's explicit `no_baseline` state and does not claim
+that no evaluation has run. Benchmark fields never enter Report or teaching/recovery.
+
 Teacher assessment shows the mean of actual current-answer grades after a completed
 weight update and completed grading. It excludes input-checkpoint comparison grades,
 partial grading and diagnostic rounds without weight changes. Completed grading remains

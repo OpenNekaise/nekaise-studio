@@ -94,6 +94,22 @@ optimizer states are no longer subject to a blanket keep-forever rule. Use struc
 Current resumption and active inference dependencies are protected. Low disk capacity requests
 an orchestrator review before further saves. Benchmark scores do not inform these decisions.
 
+## Aggressive checkpoint retention (authorized 2026-09-23)
+
+The operator prefers a small working set of model checkpoints and explicitly does not
+need a long history of model bytes. At retention reviews, prefer records-only history
+for superseded checkpoints unless a concrete current recovery, inference or teaching
+comparison need justifies their bytes. Preserve the current resumption state and active
+readers; retain only a small, individually justified set of fallback/comparison models.
+Historical campaign tips, old starting checkpoints and lineage references alone are not
+permanent resumption dependencies. Review obsolete optimizer states as well as weights.
+The orchestrator chooses the exact set after inspecting dependencies and useful findings;
+this preference is not an age, status, score or fixed-count deletion rule. Use explicit
+checkpoint_retention decisions and the guarded journaled executor. Keep immutable
+manifests, datasets, teaching history, metrics, lineage and deletion summaries. Apply
+this preference proactively at future reviews, rather than only freeing one save's worth
+of space when the disk is nearly full. Independent benchmark scores remain excluded.
+
 ## Required expansion and training efficiency (authorized 2026-09-18)
 
 Every positive-training round under default `expansion_policy=required_v1` must complete

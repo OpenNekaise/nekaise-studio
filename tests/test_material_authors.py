@@ -257,6 +257,85 @@ def test_completed_jobs_reused_after_partial_failure(setup_loop):
     assert job_work(service.store, rid)["calls"] == 3
 
 
+@pytest.mark.parametrize("fault", ["schema", "output_budget", "http"])
+def test_rejected_job_drains_reserved_sibling_before_retry(setup_loop, fault):
+    from nekaise_loop.providers.material import AuthorHTTPError
+
+    class ThreeJobs(AuthorTeacher):
+        jobs = [("one", "a"), ("two", "a"), ("three", "a")]
+
+    calls = []
+    async def handler(req):
+        name = json.loads(json.loads(req.content)["messages"][1]["content"])["task"]["job"]["id"]
+        calls.append(name)
+        if name == "two":
+            await asyncio.sleep(.05)  # Still reserved/in flight when one fails.
+        if name == "one" and calls.count("one") == 1:
+            if fault == "http":
+                return httpx.Response(503)
+            if fault == "output_budget":
+                exc = AuthorHTTPError("Fixture output exceeded reservation", {"events": []})
+                exc.usage = {"prompt_tokens": 100, "completion_tokens": 544}
+                raise exc
+            result = response(req).json()
+            result["choices"][0]["message"]["content"] = '{"rows":[{"invalid":true}]}'
+            return httpx.Response(200, json=result)
+        return response(req)
+
+    _, service, campaign, engine = configured(setup_loop, handler, teacher=ThreeJobs,
+        pool=AuthorPool(authors=[author()], concurrency=2))
+    engine.run(campaign["id"])
+    assert calls == ["one", "two"]  # Pending three is not dispatched after failure.
+    assert service.store.campaign(campaign["id"])["status"] == "failed"
+    jobs = {r["plan_id"]: r for r in service.store.query("SELECT * FROM material_jobs")}
+    assert {k: v["status"] for k, v in jobs.items()} == {"one": "failed", "two": "complete", "three": "pending"}
+    saved = service.store.query("SELECT * FROM material_calls ORDER BY id")
+    assert [r["status"] for r in saved] == ["failed", "complete"]
+    assert json.loads(saved[1]["usage"])["completion_tokens"] == 30
+    assert not service.store.query("SELECT id FROM stage_runs WHERE stage='material_select'")
+    engine.run(campaign["id"])
+    assert service.store.campaign(campaign["id"])["status"] == "complete"
+    assert calls == ["one", "two", "one", "three"]
+    assert service.store.one("SELECT artifact FROM material_jobs WHERE plan_id='two'")["artifact"] == jobs["two"]["artifact"]
+    assert service.store.query("SELECT * FROM material_calls ORDER BY id LIMIT 2") == saved
+
+
+@pytest.mark.parametrize("interrupt", ["operator", "quota", "deadline"])
+def test_rejected_job_drain_preserves_execution_interrupts(setup_loop, monkeypatch, interrupt):
+    from nekaise_loop import material_jobs
+
+    class ThreeJobs(AuthorTeacher):
+        jobs = [("one", "a"), ("two", "a"), ("three", "a")]
+
+    calls, closed = [], []
+    clock = [0.0]
+    monkeypatch.setattr(material_jobs, "time", type("Clock", (), {"monotonic": lambda: clock[0]}))
+    async def handler(req):
+        name = json.loads(json.loads(req.content)["messages"][1]["content"])["task"]["job"]["id"]
+        calls.append(name)
+        if name == "one":
+            return httpx.Response(503)
+        try:
+            await asyncio.sleep(.03)
+            if interrupt == "quota":
+                return httpx.Response(429, headers={"retry-after": "31"})
+            clock[0] = 100000.0
+            await asyncio.sleep(10)
+        finally:
+            closed.append(name)
+
+    _, service, campaign, engine = configured(setup_loop, handler, teacher=ThreeJobs,
+        pool=AuthorPool(authors=[author()], concurrency=2))
+    engine.run(campaign["id"], controls=lambda: interrupt == "operator" and clock[0] > 0)
+    assert calls == ["one", "two"] and closed == ["two"]
+    state = service.store.campaign(campaign["id"])
+    assert state["status"] == {"operator": "stopped", "quota": "waiting", "deadline": "failed"}[interrupt]
+    if interrupt == "deadline":
+        assert "execution deadline" in state["error"]
+    statuses = {r["plan_id"]: r["status"] for r in service.store.query("SELECT plan_id,status FROM material_jobs")}
+    assert statuses == {"one": "failed", "two": "waiting" if interrupt == "quota" else "cancelled", "three": "pending"}
+
+
 def test_author_seed_examples_separate_feedback_from_output_fields(setup_loop):
     from nekaise_loop.material_types import Candidate
     seen = []

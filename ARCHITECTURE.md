@@ -545,6 +545,12 @@ variation hidden by author-wide averages without inspecting teaching correctness
 or treating short student answers as the entire provider response cost.
 `material_jobs.py` owns worker-scoped bounded dispatch, durable call reservations and
 completed-job reuse. The workspace worker lock, not job TTLs, owns requests.
+When a candidate or provider response is rejected, dispatch stops and already-running
+sibling calls finish within the existing stage deadline. Their completed artifacts and
+usage survive the failed stage; pending jobs await recovery. Operator cancellation,
+provider availability waits and execution deadlines still interrupt outstanding calls.
+Budget retry instructions respect any explicit Teacher permission to return fewer rows;
+the host never reduces material or relaxes acceptance limits itself.
 `materials.py` prepares teacher delegation and exact final selection. The expand and
 material_select stages run after seed revision. Under required_v1, positive training requires
 expanded targets in the frozen dataset; only diagnostics can omit jobs.

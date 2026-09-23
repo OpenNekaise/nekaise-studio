@@ -14,7 +14,7 @@ from .failures import TeacherUnavailable
 from .material_types import CandidateBatch
 from .material_allowance import allowance_totals
 from .processes import Cancelled, stop_owned
-from .providers.material import AUTHOR_TRANSPORTS
+from .providers.material import AUTHOR_TRANSPORTS, AuthorHTTPError
 from .storage import encode, now
 
 
@@ -66,7 +66,8 @@ def request_body(author, spec, schema):
         "If retry_validation is present, it contains host validation paths and error types for your previous rejected response; correct those structural errors. "
         "If retry_budget is present, the previous response exceeded its output reservation. Its reported output includes reasoning and the entire JSON, "
         "including prompts and metadata, not just training answers. Keep JSON formatting and incidental metadata concise within the unchanged reservation; "
-        "preserve the teacher's requested rows, content and schema fields. "
+        "Preserve the teacher's content and schema fields; follow any explicit teacher permission to return fewer rows to fit the budget. "
+        "Without that permission, do not reduce the requested material. "
         "unprovided_source_key and unprovided_seed_id identify citations outside the supplied source keys or job seed_ids; use only those supplied identifiers. "
         "seed_feedback is input-only primary-teacher context keyed by seed ID, not candidate fields. "
         "Never emit teacher or seed_feedback keys in candidate rows; put the answer in training_response for chat_response or training_text for text modes. "
@@ -259,13 +260,14 @@ async def _execute(ctx, specs, pool, client_factory):
                 raise
 
         active, author_counts, resource_counts = {}, {}, {}
+        failure = None
         try:
-            while pending or active:
+            while active or (pending and failure is None):
                 if ctx.cancelled():
                     raise Cancelled("Material generation stopped by operator")
                 if time.monotonic() >= deadline:
                     raise RuntimeError("Material generation stage exceeded its execution deadline")
-                for item in pending[:]:
+                for item in pending[:] if failure is None else []:
                     if len(active) >= pool.concurrency:
                         break
                     a = item[1]
@@ -283,7 +285,17 @@ async def _execute(ctx, specs, pool, client_factory):
                     item = active.pop(task)
                     author_counts[item[1].id] -= 1
                     resource_counts[item[1].resource_pool] -= 1
-                    completed[item[0]] = task.result()
+                    try:
+                        completed[item[0]] = task.result()
+                    except (CandidateValidationError, AuthorHTTPError) as exc:
+                        # A rejected response must not cancel already-reserved
+                        # siblings and turn their work into unknown usage. Stop
+                        # dispatching new work and drain only in-flight calls.
+                        # Operator cancellation, availability waits and the stage
+                        # deadline still interrupt this bounded drain immediately.
+                        failure = failure or exc
+            if failure is not None:
+                raise failure
         finally:
             for task in active:
                 task.cancel()

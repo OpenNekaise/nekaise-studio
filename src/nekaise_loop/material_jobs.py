@@ -64,6 +64,9 @@ def request_body(author, spec, schema):
         "Return one JSON object matching the supplied schema. All explanatory text intended for training belongs in the specified material fields. "
         "Candidate rows forbid every property not declared in the schema, including annotations such as territory. "
         "If retry_validation is present, it contains host validation paths and error types for your previous rejected response; correct those structural errors. "
+        "If retry_budget is present, the previous response exceeded its output reservation. Its reported output includes reasoning and the entire JSON, "
+        "including prompts and metadata, not just training answers. Keep JSON formatting and incidental metadata concise within the unchanged reservation; "
+        "preserve the teacher's requested rows, content and schema fields. "
         "unprovided_source_key and unprovided_seed_id identify citations outside the supplied source keys or job seed_ids; use only those supplied identifiers. "
         "seed_feedback is input-only primary-teacher context keyed by seed ID, not candidate fields. "
         "Never emit teacher or seed_feedback keys in candidate rows; put the answer in training_response for chat_response or training_text for text modes. "
@@ -178,20 +181,32 @@ async def _execute(ctx, specs, pool, client_factory):
 
         async def dispatch(item):
             key, author, payload, size = item
-            previous = store.one("SELECT artifact FROM material_calls WHERE job_id=? AND status='failed' ORDER BY id DESC LIMIT 1", (key,))
+            previous = store.one("SELECT artifact,usage,reserved_tokens FROM material_calls WHERE job_id=? AND status='failed' ORDER BY id DESC LIMIT 1", (key,))
             if previous and previous["artifact"]:
                 failure = artifacts.get(previous["artifact"])
                 diagnostics = failure.get("validation_errors")
-                if not diagnostics and failure.get("request_artifact"):
+                previous_content = {}
+                if failure.get("request_artifact"):
                     # A transport failure cannot establish that earlier structural
-                    # errors were corrected. Carry the exact prior feedback forward.
+                    # or budget errors were corrected. Carry prior feedback forward.
                     previous_request = artifacts.get(failure["request_artifact"])
                     previous_content = json.loads(previous_request["request"]["messages"][1]["content"])
-                    diagnostics = previous_content.get("retry_validation")
-                if diagnostics:
+                    diagnostics = diagnostics or previous_content.get("retry_validation")
+                budget = previous_content.get("retry_budget")
+                usage = json.loads(previous["usage"])
+                reported = usage.get("completion_tokens") if isinstance(usage, dict) else None
+                reserved = previous["reserved_tokens"]
+                if type(reported) is int and reported > reserved:
+                    budget = {"reserved_output_tokens": reserved,
+                              "reported_output_tokens": reported,
+                              "overrun_tokens": reported - reserved}
+                if diagnostics or budget:
                     payload = json.loads(json.dumps(payload))
                     content = json.loads(payload["request"]["messages"][1]["content"])
-                    content["retry_validation"] = diagnostics
+                    if diagnostics:
+                        content["retry_validation"] = diagnostics
+                    if budget:
+                        content["retry_budget"] = budget
                     payload["request"]["messages"][1]["content"] = json.dumps(content, ensure_ascii=False)
                     size = len(json.dumps(payload["request"], ensure_ascii=False))
                     if size > pool.max_input_chars_per_call:

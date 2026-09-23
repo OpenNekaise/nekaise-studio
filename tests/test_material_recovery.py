@@ -44,7 +44,12 @@ def interrupted_material(setup_loop, request):
         payload = json.loads(body["messages"][1]["content"])
         requests.append(payload)
         result = response(http_request).json()
-        if payload["task"]["job"]["id"] == "two" and "retry_validation" not in payload:
+        if fault == "output_budget" and payload["task"]["job"]["id"] == "two" and "retry_budget" not in payload:
+            from nekaise_loop.providers.material import AuthorHTTPError
+            error = AuthorHTTPError("Fixture output exceeded reservation", {"events": []})
+            error.usage = {"prompt_tokens": 100, "completion_tokens": 544, "total_tokens": 644}
+            raise error
+        if fault != "output_budget" and payload["task"]["job"]["id"] == "two" and "retry_validation" not in payload:
             batch = json.loads(result["choices"][0]["message"]["content"])
             if fault == "empty_source":
                 batch["rows"][0]["source_keys"] = [""]
@@ -258,3 +263,52 @@ def test_validation_feedback_survives_intervening_transport_failure(interrupted_
     assert service.artifacts.get(rejected_call["artifact"]) == rejected
     assert service.store.one("SELECT SUM(reserved_tokens) AS n FROM material_calls")["n"] == 2560
     assert service.store.campaign(campaign["id"])["teacher_budget_since"] == "2000-01-01"
+
+
+@pytest.mark.parametrize("interrupted_material", ["output_budget"], indirect=True)
+@pytest.mark.parametrize("transport_failure", [False, True])
+def test_output_overrun_feedback_reaches_retry_without_changing_teacher_job(interrupted_material, transport_failure):
+    settings, service, campaign, engine, requests, recovery = interrupted_material
+    import httpx
+
+    working_factory = engine.material_client_factory
+    completed = service.store.one("SELECT id,artifact FROM material_jobs WHERE status='complete'")
+    rejected = service.store.one("SELECT * FROM material_calls WHERE status='failed'")
+    original_evidence = service.artifacts.get(rejected["artifact"])
+    proposal = funded_decision(service, campaign)
+    assert proposal["material_allowance"]["additional_output_tokens"] == 544
+    handle_recovery(settings, recovery["id"], agent=lambda *args: proposal)
+    apply_recovery(settings, recovery["id"])
+    if transport_failure:
+        def disconnected(request):
+            raise RuntimeError("Fixture transport vanished with unknown usage")
+        engine.material_client_factory = lambda **kwargs: httpx.AsyncClient(
+            transport=httpx.MockTransport(disconnected), **kwargs)
+        engine.run(campaign["id"])
+        failed = service.store.one("SELECT * FROM material_calls ORDER BY id DESC LIMIT 1")
+        assert json.loads(failed["usage"]) == {}
+        next_recovery = service.store.one("SELECT * FROM recoveries ORDER BY id DESC")
+        handle_recovery(settings, next_recovery["id"], agent=lambda *args: funded_decision(service, campaign))
+        apply_recovery(settings, next_recovery["id"])
+        engine.material_client_factory = working_factory
+
+    engine.run(campaign["id"])
+    assert service.store.campaign(campaign["id"])["status"] == "complete"
+    retried = requests[2]
+    assert retried["retry_budget"] == {
+        "reserved_output_tokens": 512, "reported_output_tokens": 544, "overrun_tokens": 32}
+    assert retried["task"] == requests[1]["task"]
+    assert retried["output_schema"] == requests[1]["output_schema"]
+    assert "retry_validation" not in retried
+    assert [r["task"]["job"]["id"] for r in requests] == ["one", "two", "two", "three"]
+    calls = service.store.query("SELECT * FROM material_calls ORDER BY id")
+    saved = service.artifacts.get(calls[-2]["artifact"])
+    exact = service.artifacts.get(saved["request_artifact"])
+    assert json.loads(exact["request"]["messages"][1]["content"]) == retried
+    assert exact["request"]["max_tokens"] == 512
+    assert service.store.one("SELECT * FROM material_calls WHERE id=?", (rejected["id"],)) == rejected
+    assert service.artifacts.get(rejected["artifact"]) == original_evidence
+    assert service.store.one("SELECT id,artifact FROM material_jobs WHERE id=?", (completed["id"],)) == completed
+    assert sum(c["reserved_tokens"] for c in calls) == (2560 if transport_failure else 2048)
+    assert service.store.campaign(campaign["id"])["teacher_budget_since"] == "2000-01-01"
+    assert len(service.snapshot(campaign["id"])["round"]["materials"]) == 3

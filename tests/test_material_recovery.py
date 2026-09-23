@@ -33,6 +33,46 @@ def test_provenance_diagnostics_are_bounded_without_echoing_citations():
     assert "PRIVATE_REJECTED_VALUE" not in str(caught.value)
 
 
+def test_author_citation_schema_is_job_scoped_and_host_still_checks_provenance():
+    from types import SimpleNamespace
+    from nekaise_loop.material_jobs import CandidateValidationError, candidates, request_body
+    from nekaise_loop.material_types import CandidateBatch
+    from nekaise_loop.providers.codex_material import strict_schema
+
+    schema = CandidateBatch.model_json_schema()
+    original = json.dumps(schema, sort_keys=True)
+    key = "0123456789abcdef" * 4
+    spec = {"sources": {key: {}}, "job": {"seed_ids": ["seed"], "max_output_tokens": 512}}
+    body = request_body(author(), spec, schema)
+    payload = json.loads(body["messages"][1]["content"])
+    properties = strict_schema(payload["output_schema"])["$defs"]["Candidate"]["properties"]
+    assert properties["source_keys"]["items"]["enum"] == [key]
+    assert properties["seed_ids"]["items"]["enum"] == ["seed"]
+    assert payload["task"] == spec
+    empty = {"sources": {}, "job": {"seed_ids": [], "max_output_tokens": 512}}
+    other = json.loads(request_body(author(), empty, schema)["messages"][1]["content"])
+    empty_properties = strict_schema(other["output_schema"])["$defs"]["Candidate"]["properties"]
+    for field in ("source_keys", "seed_ids"):
+        assert empty_properties[field]["maxItems"] == 0
+        assert "enum" not in empty_properties[field]["items"]
+    assert json.dumps(schema, sort_keys=True) == original
+
+    row = {"id": "fixture", "kind": "sft", "concept": "fixture",
+           "training_text": "fixture", "training_tokenization": "full_text",
+           "source_keys": [key], "seed_ids": ["seed"], "rationale": "fixture"}
+    result = SimpleNamespace(content=json.dumps({"rows": [row]}), complete=True)
+    assert candidates(result, spec) == [CandidateBatch.model_validate_json(result.content).rows[0].model_dump()]
+    # A transport may ignore the schema. The independent host check must still
+    # reject a shortened hash without rewriting it or pruning the candidate.
+    row["source_keys"] = [key[:-3]]
+    result.content = json.dumps({"rows": [row]})
+    with pytest.raises(CandidateValidationError, match="unprovided_source_key"):
+        candidates(result, spec)
+    row["source_keys"], row["seed_ids"] = [], []
+    result.content = json.dumps({"rows": [row]})
+    assert candidates(result, empty)[0]["source_keys"] == []
+
+
 @pytest.fixture
 def interrupted_material(setup_loop, request):
     class ThreeJobs(AuthorTeacher):

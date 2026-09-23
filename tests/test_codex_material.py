@@ -24,6 +24,12 @@ assert schema['required'] == list(schema['properties'])
 prompt=sys.stdin.read()
 payload=json.loads(prompt[prompt.index('\\n{')+1:])
 task=payload['task']
+properties=schema['$defs']['Candidate']['properties']
+for field, allowed in [('source_keys',task['sources']),('seed_ids',task['job']['seed_ids'])]:
+    if allowed:
+        assert properties[field]['items']['enum'] == sorted(set(allowed))
+    else:
+        assert properties[field]['maxItems'] == 0
 row={'id':'variant','kind':'sft','concept':'Resistance','training_tokenization':'full_text',
      'training_text':'Doubling resistance halves heat flow.',
      'source_keys':list(task['sources'])[:1],'seed_ids':task['job']['seed_ids'],

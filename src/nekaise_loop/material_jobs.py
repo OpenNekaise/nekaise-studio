@@ -57,6 +57,18 @@ def recover_author_processes(store):
 
 
 def request_body(author, spec, schema):
+    # Express the existing provenance allowlists in the generation schema too.
+    # Long hashes can be mistyped even after path-only retry feedback. Never
+    # repair returned citations or mutate the shared schema for sibling jobs.
+    schema = json.loads(json.dumps(schema))
+    properties = schema["$defs"]["Candidate"]["properties"]
+    for field, identifiers in (("source_keys", spec["sources"]),
+                               ("seed_ids", spec["job"]["seed_ids"])):
+        allowed = sorted(set(identifiers))
+        if allowed:
+            properties[field]["items"]["enum"] = allowed
+        else:
+            properties[field]["maxItems"] = 0
     instruction = (
         "You are a Material Author working for the primary teacher. Produce candidate teaching material, not student observations or evaluation scores. "
         "Follow the teacher's expansion instructions and corrected seed demonstrations. Use only the supplied source keys for citations; "

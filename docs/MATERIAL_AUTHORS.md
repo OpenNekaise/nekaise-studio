@@ -308,3 +308,14 @@ validator messages or source text. The next attempt on the same job receives tho
 diagnostics; its exact request has a separate immutable artifact, while the job identity
 and completed-job reuse remain stable. Candidate validation and teacher selection remain
 mandatory. Unknown historical diagnostics may be absent and are never invented.
+
+### Citation identifiers
+
+Each Author request constrains candidate `source_keys` and `seed_ids` to the exact
+identifiers supplied for that job in its output schema. An empty allowlist permits
+only an empty array. Codex receives these constraints in its strict output schema;
+other transports receive the same schema in the request. The host independently
+checks returned citations even if a transport ignores schema constraints. It never
+rewrites a mistyped citation or drops the affected row. These are provenance checks,
+not a review of teaching content; Teacher instructions, material and dose remain
+unchanged. Historical requests and rejected responses remain immutable.

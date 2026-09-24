@@ -571,6 +571,12 @@ variation hidden by author-wide averages without inspecting teaching correctness
 or treating short student answers as the entire provider response cost.
 `material_jobs.py` owns worker-scoped bounded dispatch, durable call reservations and
 completed-job reuse. The workspace worker lock, not job TTLs, owns requests.
+Every dispatched job requests positive material: new empty batches fail before job
+completion, even when sibling jobs produced targets. The request schema requires a
+nonempty array; host validation also rejects empty responses and records bounded
+`empty_batch` retry diagnostics with the original response and usage. Historical
+completed empty artifacts remain readable. This is an execution check, not a
+content review or an exact candidate-count requirement.
 When a candidate or provider response is rejected, dispatch stops and already-running
 sibling calls finish within the existing stage deadline. Their completed artifacts and
 usage survive the failed stage; pending jobs await recovery. Operator cancellation,

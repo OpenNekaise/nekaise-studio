@@ -133,7 +133,13 @@ def test_author_sizing_keeps_missing_output_usage_distinct_from_zero(setup_loop,
                for job in evidence["by_job"])
 
 
-def test_author_sizing_exposes_job_variation_and_empty_batch_cost(setup_loop):
+def test_author_sizing_exposes_historical_empty_batch_cost(setup_loop, monkeypatch):
+    # Reproduce a pre-repair completed artifact to preserve historical reporting.
+    # Live dispatch rejects empty batches; the recovery tests exercise that path.
+    from nekaise_loop import material_jobs
+    validate = material_jobs.candidates
+    monkeypatch.setattr(material_jobs, "candidates", lambda result, spec:
+                        [] if spec["job"]["id"] == "empty" else validate(result, spec))
     class SizingTeacher(AuthorTeacher):
         jobs = [("one", "a"), ("two", "a"), ("empty", "a")]
 
@@ -218,8 +224,9 @@ def test_trusted_empty_batch_fails_required_targets_without_silent_recipe_change
     engine.run(campaign["id"])
     assert service.store.campaign(campaign["id"])["status"] == "failed"
     row = service.store.one("SELECT id FROM rounds WHERE campaign_id=?", (campaign["id"],))
-    selected = service.artifacts.get(service.store.one("SELECT artifact FROM stage_runs WHERE round_id=? AND stage='material_select'", (row["id"],))["artifact"])
-    assert selected["curriculum"]["train_epochs"] > 0
+    assert "empty_batch" in service.store.campaign(campaign["id"])["error"]
+    assert not service.store.query("SELECT id FROM stage_runs WHERE round_id=? AND stage='material_select'", (row["id"],))
+    assert service.store.campaign(campaign["id"])["config"]["train_epochs"] > 0
     assert not service.store.query("SELECT id FROM stage_runs WHERE round_id=? AND stage='train'", (row["id"],))
 
 
@@ -841,7 +848,8 @@ def test_required_training_cannot_bypass_expanded_target_consumption(setup_loop,
     engine.run(campaign["id"])
     assert service.store.campaign(campaign["id"])["status"] == "failed"
     assert not FakeModel.datasets
-    assert "teacher-selected expanded training targets" in service.store.campaign(campaign["id"])["error"]
+    expected = "empty_batch" if mode == "empty_batch" else "teacher-selected expanded training targets"
+    assert expected in service.store.campaign(campaign["id"])["error"]
 
 
 def test_required_receipt_binds_frozen_expansion_to_round_and_targets(setup_loop):

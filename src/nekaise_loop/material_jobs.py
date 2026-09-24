@@ -61,6 +61,9 @@ def request_body(author, spec, schema):
     # Long hashes can be mistyped even after path-only retry feedback. Never
     # repair returned citations or mutate the shared schema for sibling jobs.
     schema = json.loads(json.dumps(schema))
+    # Every dispatched ExpansionJob requests positive material. Keep the shared
+    # model readable for historical empty batches, but forbid new empty results.
+    schema["properties"]["rows"]["minItems"] = 1
     properties = schema["$defs"]["Candidate"]["properties"]
     for field, identifiers in (("source_keys", spec["sources"]),
                                ("seed_ids", spec["job"]["seed_ids"])):
@@ -75,6 +78,7 @@ def request_body(author, spec, schema):
         "an empty source list means authored material: use source_keys=[], never an empty-string placeholder. Do not invent source identifiers or student attempts. "
         "Return one JSON object matching the supplied schema. All explanatory text intended for training belongs in the specified material fields. "
         "Candidate rows forbid every property not declared in the schema, including annotations such as territory. "
+        "Return a nonempty rows array; empty_batch retry feedback means the previous response supplied no material. "
         "If retry_validation is present, it contains host validation paths and error types for your previous rejected response; correct those structural errors. "
         "If retry_budget is present, the previous response exceeded its output reservation. Its reported output includes reasoning and the entire JSON, "
         "including prompts and metadata, not just training answers. Keep JSON formatting and incidental metadata concise within the unchanged reservation; "
@@ -116,6 +120,8 @@ def candidates(result, spec):
         batch = CandidateBatch.model_validate_json(result.content)
         if not result.complete:
             raise ValueError("Author response was incomplete")
+        if not batch.rows:
+            raise CandidateValidationError([{"path": ["rows"], "type": "empty_batch"}])
         source_keys = set(spec["sources"])
         seed_ids = set(spec["job"]["seed_ids"])
         diagnostics = []

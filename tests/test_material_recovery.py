@@ -45,6 +45,7 @@ def test_author_citation_schema_is_job_scoped_and_host_still_checks_provenance()
     spec = {"sources": {key: {}}, "job": {"seed_ids": ["seed"], "max_output_tokens": 512}}
     body = request_body(author(), spec, schema)
     payload = json.loads(body["messages"][1]["content"])
+    assert strict_schema(payload["output_schema"])["properties"]["rows"]["minItems"] == 1
     properties = strict_schema(payload["output_schema"])["$defs"]["Candidate"]["properties"]
     assert properties["source_keys"]["items"]["enum"] == [key]
     assert properties["seed_ids"]["items"]["enum"] == ["seed"]
@@ -91,7 +92,9 @@ def interrupted_material(setup_loop, request):
             raise error
         if fault != "output_budget" and payload["task"]["job"]["id"] == "two" and "retry_validation" not in payload:
             batch = json.loads(result["choices"][0]["message"]["content"])
-            if fault == "empty_source":
+            if fault == "empty_batch":
+                batch["rows"] = []
+            elif fault == "empty_source":
                 batch["rows"][0]["source_keys"] = [""]
             elif fault == "unknown_seed":
                 batch["rows"][0]["seed_ids"] = ["PRIVATE_REJECTED_VALUE"]
@@ -101,7 +104,8 @@ def interrupted_material(setup_loop, request):
         import httpx
         return httpx.Response(200, json=result)
     pool = AuthorPool(authors=[author()], concurrency=1, max_calls_per_round=3, max_output_tokens_per_round=1536)
-    settings, service, campaign, engine = configured(setup_loop, handler, teacher=ThreeJobs, pool=pool)
+    settings, service, campaign, engine = configured(setup_loop, handler, teacher=ThreeJobs, pool=pool,
+        review_policy="trusted_author_v1" if fault == "empty_batch" else "teacher_review_v1")
     config = {**campaign["config"], "auto_recover": True, "manage_history": False}
     service.store.execute("UPDATE campaigns SET config=?,teacher_budget_since='2000-01-01' WHERE id=?",
                           (json.dumps(config), campaign["id"]))
@@ -122,14 +126,16 @@ def funded_decision(service, campaign):
     return result
 
 
-@pytest.mark.parametrize("interrupted_material", ["extra_field", "empty_source", "unknown_seed"], indirect=True)
+@pytest.mark.parametrize("interrupted_material", ["extra_field", "empty_source", "unknown_seed", "empty_batch"], indirect=True)
 def test_orchestrator_funds_retry_once_and_training_consumes_valid_expansion(interrupted_material):
     settings, service, campaign, engine, requests, recovery = interrupted_material
     original_calls = service.store.query("SELECT * FROM material_calls ORDER BY id")
     completed = service.store.one("SELECT id,artifact FROM material_jobs WHERE status='complete'")
     rejected = service.artifacts.get(original_calls[1]["artifact"])
-    invalid_row = json.loads(rejected["response"]["choices"][0]["message"]["content"])["rows"][0]
-    expected = ([{"path": ["rows", 0, "source_keys", 0], "type": "unprovided_source_key"}]
+    invalid_rows = json.loads(rejected["response"]["choices"][0]["message"]["content"])["rows"]
+    invalid_row = invalid_rows[0] if invalid_rows else {}
+    expected = ([{"path": ["rows"], "type": "empty_batch"}] if not invalid_rows else
+                [{"path": ["rows", 0, "source_keys", 0], "type": "unprovided_source_key"}]
                 if invalid_row["source_keys"] == [""] else
                 [{"path": ["rows", 0, "seed_ids", 0], "type": "unprovided_seed_id"}]
                 if invalid_row["seed_ids"] == ["PRIVATE_REJECTED_VALUE"] else

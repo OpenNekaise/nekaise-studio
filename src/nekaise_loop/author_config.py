@@ -96,6 +96,37 @@ class AuthorPool(BaseModel):
         return self
 
 
+def merge_pool(pool: AuthorPool, patch: dict, remove_ids: list[str] | None = None) -> AuthorPool:
+    """Apply an additive registry update; omission never removes an author or limit."""
+    if not isinstance(patch, dict):
+        raise ValueError("Material author update must be an object")
+    changes = patch.get("authors", [])
+    if not isinstance(changes, list) or any(not isinstance(a, dict) or not isinstance(a.get("id"), str) for a in changes):
+        raise ValueError("Author updates must be objects with explicit string IDs")
+    ids = [a["id"] for a in changes]
+    if len(set(ids)) != len(ids):
+        raise ValueError("Author update IDs must be unique")
+    remove_ids = [] if remove_ids is None else remove_ids
+    if not isinstance(remove_ids, list) or any(not isinstance(a, str) for a in remove_ids):
+        raise ValueError("Author removals must be a list of IDs")
+    if len(set(remove_ids)) != len(remove_ids):
+        raise ValueError("Author removal IDs must be unique")
+    authors = {a.id: a.model_dump() for a in pool.authors}
+    if set(remove_ids) - authors.keys():
+        raise ValueError("Cannot remove an unknown author ID")
+    if set(ids).intersection(remove_ids):
+        raise ValueError("Cannot update and remove the same author in one continuation")
+    limits = patch.get("resource_limits", {})
+    if not isinstance(limits, dict):
+        raise ValueError("Resource limit update must be an object")
+    for author in changes:
+        authors[author["id"]] = {**authors.get(author["id"], {}), **author}
+    for author_id in remove_ids:
+        del authors[author_id]
+    return AuthorPool.model_validate({**pool.model_dump(), **patch,
+        "authors": list(authors.values()), "resource_limits": {**pool.resource_limits, **limits}})
+
+
 def credential(name: str, env_file: Path) -> str:
     """Read only the requested credential. Never export it into teacher subprocesses.
 

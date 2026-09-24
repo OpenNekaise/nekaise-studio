@@ -156,6 +156,19 @@ The teacher retains curriculum, source, author, task, dose and online assessment
 The historical `teacher_review_v1` path stays readable; recovery must preserve the selected
 trust policy unless the operator explicitly changes it.
 
+## Author registry growth (authorized 2026-09-24)
+
+Material Author changes are additive by default. Preserve existing authors when adding
+another model or updating one named author's configuration; do not replace the entire
+pool because the operator mentions one generator. Omitted authors stay registered.
+Removal or replacement must be a deliberate, recorded decision naming the affected IDs,
+not an implicit side effect, failure fallback or quota workaround. Use the additive
+`material_authors` continuation update and explicit `remove_material_author_ids` for
+removals. Registry-file edits must preserve unrelated authors and limits as well.
+More registered authors does not raise concurrency, call/token budgets or require every
+author to produce material each round. The Teacher chooses an appropriate subset within
+the existing limits. Campaign/job snapshots and historical provenance remain immutable.
+
 ## Generated general material (authorized 2026-09-24)
 
 Every positive-training round must include original general-purpose material from both

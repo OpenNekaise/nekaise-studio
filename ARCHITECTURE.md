@@ -557,6 +557,13 @@ services and simultaneous rollout/learning are not part of this implementation.
 ## Parallel material production
 
 `author_config.py` validates non-secret, campaign-snapshotted registry and resource limits.
+`merge_pool` applies partial continuation updates by stable author ID, preserving omitted
+authors, fields and resource limits. Explicit `remove_material_author_ids` removes only
+named existing entries; duplicates and removal/update conflicts fail before child creation.
+Supplied per-author options replace that options object. Pool size does not alter budgets
+or scheduler concurrency. `Service.continue_campaign` records the ID changes and pool
+digests in immutable context; parent configs and job specs remain intact. Registry-file
+snapshots for new roots are updated separately using the same merge helper.
 `providers/material.py` contains the async MaterialAuthor protocol and compatible HTTP
 transport; local serving endpoints use that same transport without server management.
 `providers/claude_material.py` adds a tool-free Claude Code author with streamed

@@ -29,8 +29,30 @@ historical artifacts and full exact author text remain readable under either pol
 The local registry is `workspace/material-authors.json`. New campaigns snapshot it
 unless their recipe explicitly contains `material_authors`. Existing campaigns and
 continuations retain their recorded registry; an orchestrator can explicitly apply a
-new registry through a `material_authors` config update in a fresh continuation.
+registry changes through a `material_authors` config update in a fresh continuation.
 Changing the file does not silently change an active job or its retry.
+
+Author changes are **additive by default** (operator decision 2026-09-24). A continuation's
+`material_authors` value is a partial update: authors merge by stable `id`, omitted authors
+stay registered, and `authors: []` does not clear the pool. Existing author fields remain
+unless explicitly supplied; a supplied `options` object replaces that author's options.
+New authors need a complete valid spec. Resource limits merge by pool name; unspecified
+budgets and concurrency stay unchanged. Adding a DeepSeek spec and its `deepseek-account`
+limit preserves an existing Luna spec and `codex-account` limit.
+
+Deliberate removal uses the separate continuation update `remove_material_author_ids`, a
+list of exact existing IDs, with reasons recorded in the continuation/Report. Duplicate,
+unknown or simultaneously updated-and-removed IDs are rejected. Changing one model must
+not drop unrelated authors. A replacement under a new ID explicitly adds the new ID and
+removes the old one. Historical campaigns/jobs retain their original specs and provenance.
+The continuation context records added/updated/removed IDs and before/after pool hashes.
+
+The registry file remains a complete snapshot for new root campaigns, not a patch file.
+Use `author_config.merge_pool(load_pool(path), patch, remove_ids)` and atomic file writing
+when updating it; review the resulting complete pool before publication. No hot reload of
+running jobs or automatic registry synchronization is implied by a continuation update.
+The Teacher selects a subset of registered authors for each round; adding many authors
+does not require using all of them, multiply the global budget, or authorize fallback.
 
 Example for the user-selected DeepSeek endpoint:
 

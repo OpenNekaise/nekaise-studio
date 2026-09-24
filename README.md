@@ -101,6 +101,8 @@ freezing; provenance, retry usage and unobserved synthetic examples remain expli
 Configure the registry in `workspace/material-authors.json` and credentials in the ignored
 root `.env`. See [Material Authors](docs/MATERIAL_AUTHORS.md) for setup, budgets, local
 server limits, archival access and extension contracts.
+Author changes append or update named entries by default, preserving other generators.
+The Teacher chooses a subset each round; a larger pool does not increase execution budgets.
 Claude Code can also provide expanded material through `transport=claude_code` using
 existing CLI authentication and a pinned Opus model. Its owned processes and author
 usage remain separate from primary Teacher calls; Teacher selection still controls

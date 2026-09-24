@@ -362,6 +362,12 @@ The teacher still receives actual observations and decides what they establish.
 
 ## Delegated material authors
 
+The Author pool grows additively by default. Choose the authors suited to this round's
+work from the full registered catalog; there is no requirement to use every author or
+allocate equal work to them. A growing pool expands your choices without increasing
+global concurrency or call/token budgets. Only explicitly planned jobs are dispatched;
+registration never authorizes a silent fallback or substitution after failure.
+
 The operator requires expansion through registered **Material Authors** in every positive-training round (authorized 2026-09-18; `expansion_policy=required_v1`). Authors follow the teacher's plan, corrected seeds and selected source snapshots. They may be remote APIs or locally served models. Author concurrency and request/output limits are execution budgets, not curriculum quotas. The teacher chooses authors/jobs and their content. Positive training must consume teacher-selected, edited or preauthorized expanded material; `train_epochs=0` diagnostics may omit expansion. Author failures retain ordinary waiting/recovery; the host never silently changes a recipe to a diagnostic. This operator requirement supersedes older optional-delegation guidance.
 
 After seed revision, the worker persists independent author jobs and candidate artifacts. The operator-selected `material_review_policy` controls how the teacher authorizes them:

@@ -198,6 +198,18 @@ class Service:
             if prior_restoration and config["student_model"] == prior_restoration["reference"]["checkpoint"]:
                 verify_restoration(self.store, self.artifacts, prior_restoration)
                 restoration = prior_restoration
+        author_change = None
+        if "material_authors" in updates or "remove_material_author_ids" in updates:
+            from .author_config import AuthorPool, merge_pool
+            from .artifacts import digest
+            before = AuthorPool.model_validate(config["material_authors"])
+            after = merge_pool(before, updates.get("material_authors", {}), updates.pop("remove_material_author_ids", []))
+            updates["material_authors"] = after.model_dump()
+            old = {a.id: a for a in before.authors}
+            new = {a.id: a for a in after.authors}
+            author_change = {"before_hash": digest(before.model_dump()), "after_hash": digest(after.model_dump()),
+                "added": [i for i in new if i not in old], "removed": [i for i in old if i not in new],
+                "updated": [i for i in new if i in old and new[i] != old[i]], "reason": reason}
         config.update(updates)
         config = CampaignConfig.model_validate(config)
         config = config.model_copy(update={"corpus_path": str((self.settings.root/config.corpus_path).resolve())})
@@ -207,6 +219,8 @@ class Service:
                 config = config.model_copy(update={"inherit_optimizer": False})
         from .teacher_tools import latest_strategy
         context = {"parent_campaign_id": campaign_id, "history_access": "all_workspace_campaigns", "gaps": latest_strategy(self.settings.workspace, campaign_id).get("gaps", [])}
+        if author_change:
+            context["material_author_update"] = author_change
         if restoration:
             context["restoration"] = restoration
         context_key, child_id = self.artifacts.put(context), new_id("campaign")

@@ -13,8 +13,20 @@ from .teaching import MaterialSelection
 def validate_expansion_plan(config, curriculum):
     """Enforce the operator's workflow requirement, without judging teaching content."""
     jobs = curriculum.get("expansion_jobs", [])
+    for row in curriculum["lessons"]:
+        if row.get("material_scope") == "general_chat" and row["kind"] != "sft":
+            raise ValueError("General-chat lessons require kind=sft and native chat_response revisions")
     if config.expansion_policy == "required_v1" and curriculum["train_epochs"] > 0 and not jobs:
         raise ValueError("Positive training requires Material Author expansion_jobs under required_v1; only train_epochs=0 diagnostics may skip expansion")
+    if config.general_material_policy == "required_v1" and curriculum["train_epochs"] > 0:
+        general = {"general_chat", "general_prose"}
+        lessons = curriculum["lessons"]
+        if not any(row.get("material_scope") in general for row in lessons):
+            raise ValueError("Required general material needs Teacher-authored general lessons")
+        if not any(job.get("material_scope") in general for job in jobs):
+            raise ValueError("Required general material needs general Material Author expansion jobs")
+        if not any(row.get("material_scope") == "general_chat" for row in [*lessons, *jobs]):
+            raise ValueError("Required general material needs a declared general-chat group")
     limits = config.material_authors
     if len(jobs) > limits.max_calls_per_round or sum(j["max_output_tokens"] for j in jobs) > limits.max_output_tokens_per_round:
         raise ValueError("Teacher expansion plan exceeds the declared author allowance")
@@ -162,12 +174,16 @@ def select_materials(ctx):
         item = Candidate.model_validate(edits.get(key, original["candidate"])).model_dump()
         # Edited examples may cite any source and seed provided to this job.
         task = ctx.artifacts.get(original["job_id"])["spec"]
+        if (key in selected and task["job"].get("material_scope") == "general_chat"
+                and (item["training_tokenization"] != "chat_response" or not item["training_response"].strip())):
+            raise ValueError("Selected general-chat material requires chat_response and a nonempty training_response")
         if not set(item["source_keys"]) <= task["sources"].keys() or not set(item["seed_ids"]) <= set(task["job"]["seed_ids"]):
             raise ValueError("Edited material cites unprovided provenance; re-author with explicit sources")
         sources = [task["sources"][k] for k in item["source_keys"]]
         document = dict(sources[0]) if sources else {"id": "", "title": "Authored teaching material", "url": "", "license": "generated", "topic": item["concept"], "source_sha256": "", "text": ""}
         document["selection_reason"] = choice["reason"]
         material_rows.append({"id": key, "kind": item["kind"], "concept": item["concept"],
+            "material_scope": task["job"].get("material_scope", "unspecified"),
             "prompt": item["student_prompt"] or item["concept"], "student_prompt": item["student_prompt"],
             "student_format": "chat_template" if item["training_tokenization"] == "chat_response" else "raw_text",
             "student": None, "student_observation": "not_requested", "teacher": item["training_response"] if item["training_tokenization"] == "chat_response" else item["training_text"],

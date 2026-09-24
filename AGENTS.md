@@ -155,3 +155,33 @@ are an operational failure, not permission to silently change the recipe to zero
 The teacher retains curriculum, source, author, task, dose and online assessment choices.
 The historical `teacher_review_v1` path stays readable; recovery must preserve the selected
 trust policy unless the operator explicitly changes it.
+
+## Generated general material (authorized 2026-09-24)
+
+Every positive-training round must include original general-purpose material from both
+the primary Teacher and Material Author, including native chat instruction-response targets.
+Use `general_material_policy=required_v1` for ongoing and new training. Legacy snapshots
+remain readable; do not revert ongoing training to `legacy_optional` without an operator
+request. Diagnostic zero-pass rounds may omit training material. This requirement supersedes
+advice that every lesson or prerequisite must reconnect to the building-energy domain.
+
+The operator wants synthetic material inspired by the coverage of Nemotron-CC v2/v2.1,
+DCLM-baseline, FineWeb and Dolma 3 Mix. Do not download, stream or ingest those datasets.
+Generate original prose and instruction-response examples; never claim they were sampled
+from, reproduce, or are equivalent to the named datasets. Preserve real model/job provenance.
+
+The initial recipe agreed with Claude Opus 5.5 targets 50% general and 50% domain prepared
+causal targets: 38% general chat, 12% general prose, 20% fresh domain, 25% domain replay,
+5% existing domain corpus; initially one pass. These are starting teaching choices, not
+host ratio tolerances or permanent curriculum rules. The Teacher can adapt scope shares,
+languages, replay, dose and online observations, recording reasons and retaining the required
+general portion. Ordinary short requests and diverse response forms need deliberate coverage;
+general examples must not all become domain exercises or use one answer scaffold.
+
+Declare material_scope on lessons, expansion jobs and training readings. Job scope is chosen
+by the Teacher and inherited by candidates; original scope survives replay, and unknown
+historical scope stays unspecified. Compare planned shares with frozen target accounting
+and verified completed exposure. Structural nonzero/provenance checks are not content grading
+or learning gates. Trusted-author policy, execution budgets, Teacher authority and benchmark
+isolation remain. Track actual prompt responsiveness as well as domain learning; successful
+execution, more repeated tokens and lower loss alone do not resolve a chat regression.

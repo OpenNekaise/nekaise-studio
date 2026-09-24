@@ -28,6 +28,8 @@ class Service:
 
     def create(self, name, config: CampaignConfig, *, parent_id=None, context_artifact=None):
         campaign_id = new_id("campaign")
+        if not parent_id and "general_material_policy" not in config.model_fields_set:
+            config = config.model_copy(update={"general_material_policy": "required_v1"})
         if not parent_id and "material_authors" not in config.model_fields_set:
             from .author_config import load_pool
             config = config.model_copy(update={"material_authors": load_pool(self.settings.material_authors_path)})

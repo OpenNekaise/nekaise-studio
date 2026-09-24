@@ -4,6 +4,16 @@ Material Authors expand the primary teacher's plan and corrected seed material.
 They do not own teaching, assessment or recovery decisions. This is part of CoAPT
 Mid-training, using the existing CPT/SFT material recipes and trainer.
 
+The 2026-09-24 operator decision requires original generated general material alongside
+domain material. The Teacher labels each job with `material_scope=general_chat`,
+`general_prose` or `domain`; all its candidates inherit that label. Candidates must not
+return a `material_scope` field themselves. General chat uses native `chat_response`
+serialization with a nonempty answer. The Teacher also authors general seeds. No Nemotron-CC,
+DCLM, FineWeb or Dolma dataset is downloaded or streamed: only their broad coverage inspires
+original examples, recorded with synthetic provenance. See the [scope and accounting
+contract](COAPT.md#generated-general-material) for the initial 50/50 general/domain plan,
+Teacher adaptation, explicit target counts and structural presence checks.
+
 The operator's ongoing-training decision is `material_review_policy=trusted_author_v1`:
 teacher curriculum jobs authorize complete generated batches at the planned mix/passes.
 There is no post-generation Teacher selection call or individual content review, including

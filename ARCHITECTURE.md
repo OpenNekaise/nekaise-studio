@@ -58,6 +58,7 @@ flowchart LR
 | `workers/model.py` | Actual Transformers inference, PyTorch optimization and optimizer persistence. |
 | `workers/generation.py` | Active bounded FP32 batch inference, per-answer audits and shared batch provenance. The legacy model entrypoint remains preserved for training compatibility. |
 | `work_accounting.py` | Prepared dose, material utilization and completed shared inference accounting; no curriculum or recovery decisions. |
+| `material_portfolio.py` | Teacher-declared general/domain scope, frozen and requested target accounting, nonzero general-material workflow checks and completed-counter reconciliation. |
 | `prompts/*.txt` | Reviewed teacher instructions; hashed into stage provenance. |
 | `dashboard/dist/` | Authored static HTML/CSS and ES modules; asset versions stamped for release. |
 
@@ -141,6 +142,25 @@ that inclusion/omission decision after schema and ID checks for artifact/UI comp
 CoAPT Mid-training uses one full-sequence causal-LM trainer for its recipe materials.
 The `cpt` and `sft` lesson kinds both feed the teacher stream; corpus and replay supply
 the other token shares. These identifiers remain stable in schemas and saved artifacts.
+The orthogonal `material_scope` label identifies `general_chat`, `general_prose`, `domain`
+or historical `unspecified` material. The Teacher labels primary lessons, Author jobs and
+readings; Author candidates inherit their job's label, and replay keeps the original label.
+No classifier infers scope from text or relabels old data. New campaigns default to
+`general_material_policy=required_v1` in the service; missing historical configuration
+remains `legacy_optional`. Continuations preserve their recorded policy unless explicitly
+updated. Required positive rounds declare general lessons and Author jobs before dispatch;
+freeze verifies nonzero general-chat targets plus fresh general targets from both origins
+in the exact requested optimizer traversal. Zero-pass diagnostics remain available.
+The Teacher owns content and ratios; checks enforce presence/provenance, not semantic
+quality, ratio tolerances or learning scores. Native chat/EOS serialization remains shared.
+`material_portfolio` records planned shares, actual prepared targets and requested exposure
+by scope and origin, including repeated occurrences and explicit step limits. Train rechecks
+the receipt and attributes completed exposure only when saved token/update counters agree.
+The completed attribution is reconstructed from the deterministic frozen traversal; it is
+not additional per-token instrumentation or per-group loss. Partial attempts do not receive
+completed scope exposure. `learning_work` carries both preparation and completed accounting
+to reflection and subsequent planning. Trainer math, sample traversal and optimizer hashes
+are unchanged by this metadata/accounting feature.
 Freeze runs the student's tokenizer in the ML subprocess and preserves exact input IDs,
 provenance and a token ledger. Teacher-selected rows, including intentional duplicates,
 are used once per chosen pass; source and review targets fill the teacher’s shares.

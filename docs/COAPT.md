@@ -37,7 +37,78 @@ style, the recipe's CPT/SFT composition, the exact prompt shown to the student, 
 readings, historical review examples, token shares, passes over the dataset, evaluation
 design and next actions.
 Configured lesson counts, question counts, source prefix and mixture are suggestions.
+The operator's generated-general-material requirement below also defines the teaching scope;
+general-purpose lessons need not reconnect to the domain.
 Explicit operator lifecycle/resource budgets remain execution constraints.
+
+## Generated general material
+
+The operator requires original synthetic general material alongside domain training
+(2026-09-24, `general_material_policy=required_v1`). In every positive-training round,
+author general teaching seeds and delegate general expansion to Material Authors. Include
+native single-turn general chat/instruction-response examples with nonempty answers.
+Also plan varied general prose. Zero-pass diagnostics may omit material. This supersedes
+older instructions that all teaching or prerequisite practice must return to building energy.
+
+Use Nemotron-CC v2/v2.1, DCLM-baseline, the FineWeb family and Dolma 3 Mix only as inspiration
+for broad coverage and useful writing formats. Do not download, stream or ingest their data.
+Write original synthetic material; use empty sources/source_keys where no actual source was
+provided. Do not invent corpus provenance or call our output a reproduction of those datasets.
+General coverage can include daily conversation, simple intent following, reading comprehension,
+rewriting, summarization, extraction, science, history, practical instructions, math, code,
+creative writing and calibrated uncertainty. Choose topics and languages from student evidence.
+Keep general tasks independent of domain vocabulary and vary answer lengths and formats.
+Teach capabilities honestly for the actual text-only student, without copying the Teacher's
+identity or claiming unavailable tools. Single-turn chat is supported; multi-turn/tool training
+is not implied by conversational subject matter.
+
+The starting recipe agreed with Claude Opus 5.5 targets **50% general / 50% domain** of
+prepared causal target occurrences: **38% general chat, 12% general prose, 20% fresh domain,
+25% domain replay and 5% existing domain corpus**. Start with one pass, keeping the current
+loss, learning rate and optimizer continuity. This changes material and dose together;
+record it as an initial intervention, not a matched causal ablation or a guarantee of recovery.
+For that initial source allocation, token_mix is teacher=0.70, corpus=0.05, replay=0.25;
+general material must supply about 5/7 of the new teacher stream's targets, including both
+primary seeds and Author outputs. It is not a 50% row count or a provider-token ratio.
+Short exchanges matter despite their small token counts: initially aim for roughly 30% of
+general-chat rows to have short answers, while choosing exact prompts and lengths yourself.
+Diversify replay and fresh domain formats; consider reducing the dominance of Route/Given/Compare
+patterns rather than preserving a narrow template through replay. No automatic text filter acts
+on that suggestion. Adapt these starting shares and passes when actual observations justify it,
+recording your reasons while preserving the required general portion. No fixed ratio band,
+assessment panel, learning-score threshold or second material-content review is imposed.
+
+Declare material_scope=general_chat, general_prose or domain on each new lesson and expansion
+job, and declare reading scope when known. Split Author jobs by scope; the host inherits the
+Teacher's job scope, and candidates must not emit their own material_scope field. General chat
+uses training_tokenization=chat_response and a nonempty training_response, preserving the same
+native prefix and EOS as inference. General prose may use full_text. Replay inherits its saved
+scope; old unlabelled rows remain unspecified and must not be counted as verified general data.
+Record planned shares in work_plan.material_scope_mix (including unspecified when needed), and
+explain exact source/job allocation and adaptation in material_strategy and dose_rationale.
+For example, when all initial replay is unlabelled, the declared accounting plan is
+general_chat=0.38, general_prose=0.12, domain=0.25, unspecified=0.25. This is not a domain
+coverage shortfall against the conceptual 50/50 recipe; do not compensate for missing labels
+by increasing domain exposure. General-chat lessons use kind=sft and native chat revisions.
+
+learning_work.material_portfolio compares the plan with actual frozen targets by declared scope
+and origin, separately from the existing teacher/corpus/replay source shares. It includes prompt
+and EOS targets under the current full-sequence loss. Requested exposure follows the exact
+deterministic optimizer traversal, including explicit step overrides. Positive required rounds
+fail structurally if that traversal contains no general-chat targets or no fresh general targets
+from either primary Teacher or Author. The host does not judge semantic quality or enforce the
+planned percentages. Completed exposure is reported only after the saved trainer token/update
+counters match that traversal; partial attempts are not claimed as completed group exposure.
+An accounting mismatch preserves the completed checkpoint and reports both counter sets as
+unverified group exposure; it does not turn successful GPU work into a failed train stage.
+Repetition increases exposure, not distinct coverage. Per-group loss is not measured here.
+
+Choose fresh online contrasts for prompt responsiveness/general tasks alongside domain retention;
+the user-reported greetings and capabilities failures may also be revisited as known regressions.
+Use available verified original/current comparisons when useful and record actual answers and
+conditions. Independent benchmark data stays outside this work. Falling loss, successful training
+or good domain-only answers do not establish retained general behavior. This is ongoing Teacher
+feedback, not an automatic acceptance or checkpoint gate.
 
 Set curriculum train_epochs=0 to preserve weights for this round while still preparing
 lessons and conducting assessment. Positive train_epochs enables training. The separate
@@ -212,7 +283,8 @@ A small dataset and one pass may produce only one short update despite expensive
 authoring and checkpoint I/O. More passes are an available experiment, not a minimum
 or an assurance of learning. When errors persist, decide what bounded observation
 could separate recall, transfer, dose, retention and presentation. You choose when
-prerequisite exercises should reconnect to the campaign's subject. No fixed curriculum,
+domain prerequisite exercises should reconnect to the campaign's subject; required general
+material independently preserves broader capabilities. No fixed curriculum,
 token quantity, repetition schedule, mixture or learning-score gate follows from these
 measurements.
 

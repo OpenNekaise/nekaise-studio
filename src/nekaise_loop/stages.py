@@ -7,6 +7,7 @@ from .artifacts import digest, unchanged_checkpoint, verify_checkpoint, verified
 from .assessment import evaluation_pair, comparable_generations, grade_requests, apply_grades
 from .corpus import read_source
 from .prompt_evidence import prompt_training_prefixes
+from .material_portfolio import portfolio, completed_portfolio
 from .learning_work import latest_work, safe_round_work
 from .work_accounting import preparation_work
 from .scoring import historical_training_pair
@@ -108,7 +109,8 @@ def _comparison(ctx, round_id, checkpoint_kind="output"):
 
 
 def _sources(ctx, references):
-    return [read_source((ctx.engine.settings.root/ctx.config.corpus_path).resolve(), r["document_id"], r["start"], r["length"]) for r in references]
+    return [{**read_source((ctx.engine.settings.root/ctx.config.corpus_path).resolve(), r["document_id"], r["start"], r["length"]),
+             "material_scope": r.get("material_scope", "unspecified")} for r in references]
 
 
 def _primary(sources, concept):
@@ -210,6 +212,10 @@ def draft(ctx):
 def revise(ctx):
     lessons = ctx.output("draft")["lessons"]
     lessons = _merge(lessons, ctx.teacher.revise(lessons), {"text": "teacher"}) if lessons else []
+    for row in lessons:
+        if (row.get("material_scope") == "general_chat" and row["use_for_training"]
+                and (row.get("training_tokenization") != "chat_response" or not row.get("training_response", "").strip())):
+            raise ValueError("General-chat revisions require native chat_response and a nonempty training_response")
     ctx.project("lesson", lessons)
     return {"lessons": lessons}
 
@@ -233,23 +239,26 @@ def freeze(ctx):
     dataset = []
     for row in accepted:
         text = _teaching_text(row)
-        provenance = {"lesson_id": row["id"], "document_id": row["document"]["id"], "source_sha256": row["document"]["source_sha256"]}
+        provenance = {"lesson_id": row["id"], "document_id": row["document"]["id"], "source_sha256": row["document"]["source_sha256"], "material_scope": row.get("material_scope", "unspecified")}
         dataset.append({"id": row["id"], "stream": row["kind"], "text": text, **provenance, **_tokenization(row)})
         if row.get("material_origin"):
             dataset[-1]["material_origin"] = row["material_origin"]
         dataset[-1]["sources"] = [{k:d[k] for k in ("id", "source_sha256", "span_start", "span_length")} for d in row["sources"]]
     selected = {**ctx.output("select"), "curriculum": ctx.output("material_select")["curriculum"]}
     for index, document in enumerate(selected["readings"]):
-        dataset.append({"id": f"reading-{index}", "stream": "corpus", "text": document["text"], "lesson_id": "", "document_id": document["id"], "source_sha256": document["source_sha256"], "span_start": document["span_start"], "span_length": document["span_length"]})
+        dataset.append({"id": f"reading-{index}", "stream": "corpus", "text": document["text"], "lesson_id": "", "document_id": document["id"], "source_sha256": document["source_sha256"], "span_start": document["span_start"], "span_length": document["span_length"], "material_scope": document.get("material_scope", "unspecified")})
     for index, row in enumerate(selected["replay"]):
         if row.get("training_tokenization") != "chat_response" and not _teaching_text(row).strip():
             raise ValueError("Selected historical lesson has no teacher text")
         text = _teaching_text(row)
-        dataset.append({"id": f"history-{index}", "stream": "replay", "text": text, "lesson_id": row["id"], "document_id": row["document"]["id"], "source_sha256": row["document"]["source_sha256"], "origin_round_id": row["origin_round_id"], "origin_artifact": row["origin_artifact"], **_tokenization(row)})
+        dataset.append({"id": f"history-{index}", "stream": "replay", "text": text, "lesson_id": row["id"], "document_id": row["document"]["id"], "source_sha256": row["document"]["source_sha256"], "origin_round_id": row["origin_round_id"], "origin_artifact": row["origin_artifact"], "material_scope": row.get("material_scope", "unspecified"), **_tokenization(row)})
         if row.get("material_origin"):
             dataset[-1]["material_origin"] = row["material_origin"]
     prepared = ctx.trainer.prepare(ctx.round["model_before"], dataset)
+    work_plan = selected["curriculum"].get("work_plan") or {}
+    scopes = portfolio(prepared, {**ctx.config.model_dump(), "train_epochs": selected["curriculum"]["train_epochs"]}, work_plan.get("material_scope_mix"))
     return {**prepared, "dataset_hash": digest(prepared), "accepted": len(accepted), "rejected": len(lessons)-len(accepted),
+            "material_portfolio": scopes,
             "experiment_plan_artifact": experiments.plan_artifact(ctx),
             "preparation_work": preparation_work(prepared, {**ctx.config.model_dump(), "train_epochs": selected["curriculum"]["train_epochs"]}),
             "material_sources": source_accounting(prepared),
@@ -269,10 +278,15 @@ def train(ctx):
     receipt = expansion_receipt(ctx, ctx.output("material_select")["curriculum"], dataset)
     if receipt != dataset.get("material_expansion"):
         raise ValueError("Frozen material expansion receipt does not match this round")
+    curriculum = ctx.output("material_select")["curriculum"]
+    scopes = portfolio(dataset, {**ctx.config.model_dump(), "train_epochs": curriculum["train_epochs"]}, (curriculum.get("work_plan") or {}).get("material_scope_mix"))
+    if dataset.get("material_portfolio") != scopes:
+        raise ValueError("Frozen material portfolio differs from the requested traversal")
     result = ctx.trainer.train(ctx.round["model_before"], dataset, dataset["dataset_hash"], ctx.metric)
     if result["manifest"]["dataset_hash"] != dataset["dataset_hash"] or result["manifest"]["parent"] != ctx.round["model_before"]:
         raise ValueError("Checkpoint does not match its dataset or parent")
-    return {**result, "student_format": ctx.config.student_format, "experiment_plan_artifact": plan_artifact}
+    return {**result, "student_format": ctx.config.student_format, "experiment_plan_artifact": plan_artifact,
+            "material_portfolio": completed_portfolio(scopes, result["manifest"])}
 
 
 def evaluate(ctx):

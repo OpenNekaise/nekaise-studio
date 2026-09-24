@@ -88,6 +88,7 @@ def round_work(store, artifacts, round_id):
                 "updates": 0 if diagnostic else manifest.get("steps"),
                 "tokens": 0 if diagnostic else manifest.get("tokens"),
                 "optimizer_origin": manifest.get("optimizer_origin") if not diagnostic else None},
+            "material_portfolio": {"preparation": frozen.get("material_portfolio"), "completed_training": trained.get("material_portfolio")},
             "prepared_targets_per_pass": frozen.get("ledger", {}).get("total_tokens"),
             "prepared_target_coverage": prepared_coverage(frozen), "requested_passes": selected.get("train_epochs"),
             "teacher_work_plan": selected.get("work_plan"), "preparation": preparation,

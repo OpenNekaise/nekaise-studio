@@ -6,6 +6,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 from .config import TokenMix
 from .material_types import ExpansionJob, MaterialEdit
 from .experiment_types import ExperimentPlan, ExperimentReview
+from .material_portfolio import MaterialScope
 
 
 class Record(BaseModel):
@@ -16,6 +17,7 @@ class SourceRef(Record):
     document_id: str = Field(min_length=1)
     start: int = Field(ge=0)
     length: int = Field(ge=0, description="0 selects the rest of the document")
+    material_scope: MaterialScope = Field(default="unspecified", description="For a training reading, declare domain or general_prose; omitted historical scope remains unspecified.")
 
 
 class ReplayRef(Record):
@@ -26,6 +28,7 @@ class ReplayRef(Record):
 class Lesson(Record):
     id: str = Field(min_length=1)
     kind: Literal["cpt", "sft"] = Field(description="Recipe material within CoAPT Mid-training: cpt=teaching prose, sft=QA supervision")
+    material_scope: MaterialScope = Field(default="unspecified", description="Teacher-declared general_chat, general_prose or domain purpose; independent of source stream and CPT/SFT kind.")
     sources: list[SourceRef]
     concept: str
     prompt: str
@@ -44,10 +47,24 @@ class CurriculumTokenMix(TokenMix):
         return super().total()
 
 
+class MaterialScopeMix(Record):
+    general_chat: float = Field(ge=0, le=1)
+    general_prose: float = Field(ge=0, le=1)
+    domain: float = Field(ge=0, le=1)
+    unspecified: float = Field(default=0, ge=0, le=1)
+
+    @model_validator(mode="after")
+    def total(self):
+        if abs(sum(self.model_dump().values()) - 1) > 1e-6:
+            raise ValueError("Planned material scope shares must sum to one")
+        return self
+
+
 class WorkPlan(Record):
     estimated_targets_per_pass: int = Field(ge=0, description="Teacher estimate of prepared causal targets before repetition; an estimate, never a measured result or minimum")
     material_strategy: str = Field(min_length=1, description="Intended coverage and sources of distinct material, readings and review")
     dose_rationale: str = Field(min_length=1, description="Why this amount and these passes fit observed learning and fixed execution cost; explain a focused diagnostic when chosen")
+    material_scope_mix: MaterialScopeMix | None = Field(default=None, description="Planned shares of all prepared student causal targets, not row counts or provider tokens. Budget unlabelled historical replay as unspecified even when its subject is domain-related. Actual scope accounting is returned separately; no ratio-tolerance gate.")
 
 
 class Curriculum(Record):

@@ -86,7 +86,8 @@ def request_body(author, spec, schema):
         "Without that permission, do not reduce the requested material. "
         "unprovided_source_key and unprovided_seed_id identify citations outside the supplied source keys or job seed_ids; use only those supplied identifiers. "
         "seed_feedback is input-only primary-teacher context keyed by seed ID, not candidate fields. "
-        "Never emit teacher or seed_feedback keys in candidate rows; put the answer in training_response for chat_response or training_text for text modes. "
+        "Never emit teacher, seed_feedback or material_scope keys in candidate rows; job.material_scope is Teacher metadata inherited by the host. Put the answer in training_response for chat_response or training_text for text modes. "
+        "A general_chat job requires every candidate to use chat_response with a nonempty training_response; general_chat_requires_chat_response in retry_validation identifies this requirement. "
         "Tokenization has cross-field requirements, also identified by retry_validation error types: "
         "chat_prompt_required means chat_response needs a nonblank student_prompt; "
         "training_text_required means full_text and prompt_prefix need nonblank training_text; "
@@ -131,6 +132,11 @@ def candidates(result, spec):
         seed_ids = set(spec["job"]["seed_ids"])
         diagnostics = []
         for index, row in enumerate(batch.rows):
+            if (spec["job"].get("material_scope") == "general_chat"
+                    and (row.training_tokenization != "chat_response" or not row.training_response.strip())):
+                diagnostics.append({"path": ["rows", index, "training_tokenization"], "type": "general_chat_requires_chat_response"})
+                if len(diagnostics) == 8:
+                    raise CandidateValidationError(diagnostics)
             for field, allowed, kind in (("source_keys", source_keys, "unprovided_source_key"),
                                          ("seed_ids", seed_ids, "unprovided_seed_id")):
                 for citation_index, citation in enumerate(getattr(row, field)):

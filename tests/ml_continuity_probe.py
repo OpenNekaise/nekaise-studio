@@ -14,6 +14,7 @@ from transformers import GPT2Config, GPT2LMHeadModel, LlamaConfig, LlamaForCausa
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]/"src"))
 from nekaise_loop.workers.model import audit_generation, main
+from nekaise_loop.material_portfolio import portfolio, completed_portfolio
 
 
 def probe(root):
@@ -68,10 +69,15 @@ def probe(root):
         with contextlib.redirect_stdout(output):
             main()
         records = [json.loads(line[5:]) for line in output.getvalue().splitlines() if line.startswith("LOOP ")]
+        frozen = {**dataset, "rows":[{"id":r["row_id"], "stream":r["stream"]} for r in dataset["samples"]]}
+        accounting = completed_portfolio(portfolio(frozen, data["config"]), records[-1]["data"]["manifest"])
+        assert accounting["status"] == "verified", accounting
         return records[-1]["data"], [r["data"] for r in records if r["type"] == "metric"]
     first, _ = train(base, "first")
     second, metrics = train(root/"first", "second")
     whole, _ = train(base, "whole", train_steps=4)
+    automatic, _ = train(base, "automatic", train_steps=0, train_epochs=2, tokens_per_update=3)
+    assert automatic["manifest"]["tokens"] == 8 and automatic["manifest"]["steps"] == 4
     assert first["manifest"]["optimizer_origin"] == "initialized"
     assert second["manifest"]["optimizer_origin"] == "inherited"
     assert second["manifest"]["global_step"] == whole["manifest"]["global_step"] == 4

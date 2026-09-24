@@ -94,6 +94,9 @@ def interrupted_material(setup_loop, request):
             batch = json.loads(result["choices"][0]["message"]["content"])
             if fault == "empty_batch":
                 batch["rows"] = []
+            elif fault == "duplicate_id":
+                batch["rows"][0]["id"] = "PRIVATE_REJECTED_VALUE"
+                batch["rows"].append({**batch["rows"][0], "training_text": "A different teaching example."})
             elif fault == "empty_source":
                 batch["rows"][0]["source_keys"] = [""]
             elif fault == "unknown_seed":
@@ -135,7 +138,7 @@ def funded_decision(service, campaign):
 
 
 @pytest.mark.parametrize("interrupted_material", ["extra_field", "empty_source", "unknown_seed", "empty_batch",
-    "prompt_prefix_mismatch", "chat_prompt_required", "training_text_required"], indirect=True)
+    "duplicate_id", "prompt_prefix_mismatch", "chat_prompt_required", "training_text_required"], indirect=True)
 def test_orchestrator_funds_retry_once_and_training_consumes_valid_expansion(interrupted_material):
     settings, service, campaign, engine, requests, recovery = interrupted_material
     original_calls = service.store.query("SELECT * FROM material_calls ORDER BY id")
@@ -144,6 +147,8 @@ def test_orchestrator_funds_retry_once_and_training_consumes_valid_expansion(int
     invalid_rows = json.loads(rejected["response"]["choices"][0]["message"]["content"])["rows"]
     invalid_row = invalid_rows[0] if invalid_rows else {}
     expected = ([{"path": ["rows"], "type": "empty_batch"}] if not invalid_rows else
+                [{"path": [], "type": "duplicate_candidate_id"}]
+                if len({row["id"] for row in invalid_rows}) != len(invalid_rows) else
                 [{"path": ["rows", 0], "type": "prompt_prefix_mismatch"}]
                 if invalid_row["training_tokenization"] == "prompt_prefix" else
                 [{"path": ["rows", 0], "type": "chat_prompt_required"}]

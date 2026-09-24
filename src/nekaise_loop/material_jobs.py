@@ -79,6 +79,8 @@ def request_body(author, spec, schema):
         "Return one JSON object matching the supplied schema. All explanatory text intended for training belongs in the specified material fields. "
         "Candidate rows forbid every property not declared in the schema, including annotations such as territory. "
         "Return a nonempty rows array; empty_batch retry feedback means the previous response supplied no material. "
+        "Every candidate id must be unique within this batch. duplicate_candidate_id retry feedback means multiple rows reused an id; "
+        "give each row a distinct id while preserving all requested material. This is identifier uniqueness, not content deduplication. "
         "If retry_validation is present, it contains host validation paths and error types for your previous rejected response; correct those structural errors. "
         "If retry_budget is present, the previous response exceeded its output reservation. Its reported output includes reasoning and the entire JSON, "
         "including prompts and metadata, not just training answers. Keep JSON formatting and incidental metadata concise within the unchanged reservation; "

@@ -609,6 +609,10 @@ nonempty array; host validation also rejects empty responses and records bounded
 `empty_batch` retry diagnostics with the original response and usage. Historical
 completed empty artifacts remain readable. This is an execution check, not a
 content review or an exact candidate-count requirement.
+Repeated candidate IDs fail with the bounded `duplicate_candidate_id` diagnostic,
+which retry requests carry without echoing IDs or teaching text. Author instructions
+require distinct IDs while preserving requested material; this does not deduplicate
+content, rename returned rows or accept a rejected batch.
 When a candidate or provider response is rejected, dispatch stops and already-running
 sibling calls finish within the existing stage deadline. Their completed artifacts and
 usage survive the failed stage; pending jobs await recovery. Operator cancellation,

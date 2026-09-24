@@ -51,7 +51,7 @@ class CandidateBatch(MaterialRecord):
     @model_validator(mode="after")
     def ids(self):
         if len({r.id for r in self.rows}) != len(self.rows):
-            raise ValueError("Author returned duplicate candidate IDs")
+            raise PydanticCustomError("duplicate_candidate_id", "Author returned duplicate candidate IDs")
         return self
 
 

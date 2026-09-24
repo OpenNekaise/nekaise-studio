@@ -82,7 +82,8 @@ The dashboard may read Bench's allowlisted aggregate projection through its dedi
 endpoint. No scores enter teaching records, normal Report history, teacher tools, recovery inputs
 or checkpoint decisions. Bench owns asynchronous scheduling and private evidence. This does not
 claim filesystem secrecy under the shared Unix account. Preserve the training source lock during
-deployment. Consult **Claude Fable 5.1** (`claude-fable-5-1`) for design questions or uncertainty.
+deployment. Consult **Claude Opus 5.5** (`claude-opus-5-5`) for design questions or uncertainty
+(operator preference updated 2026-09-24).
 
 ## Checkpoint storage decisions (authorized 2026-09-16)
 

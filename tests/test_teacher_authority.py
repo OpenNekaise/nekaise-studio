@@ -370,6 +370,50 @@ def test_live_adapter_supplies_handbook_archive_tools_and_strict_decisions(setup
     assert len(calls)==1
 
 
+@pytest.mark.parametrize("provider", ["codex", "claude"])
+@pytest.mark.parametrize("count,width", [(0, 24), (126, 24), (201, 24), (126, 160)])
+def test_grade_adapter_binds_coverage_without_limiting_teacher_panel(setup_loop, provider, count, width):
+    from nekaise_loop.providers.teacher import CliTeacher
+    from nekaise_loop.teaching import Grades
+    settings, service, campaign, engine = setup_loop
+    engine.run(campaign["id"], pause=lambda: True)
+    row = service.store.one("SELECT id FROM rounds")
+    items = [{"id": str(i).zfill(width), "student": "Fixture answer", "dimensions": []}
+             for i in range(count)]
+    # Reverse order and a non-binary judgment remain Teacher choices.
+    grades = [{"id": item["id"], "score": .37, "verdict": "partial",
+               "feedback": "Fixture judgment", "gap_type": "teacher-defined",
+               "needs_practice": False, "priority": .12, "dimensions": []}
+              for item in reversed(items)]
+    class Runner:
+        def run(self, command, **kwargs):
+            saved = json.loads((kwargs["cwd"] / "input.json").read_text())
+            assert saved["inputs"]["task"]["items"] == items
+            schema = saved["schema"]
+            rows = schema["properties"]["rows"]
+            assert rows["minItems"] == rows["maxItems"] == count
+            id_schema = schema["$defs"]["Grade"]["properties"]["id"]
+            if count == 126 and width == 24:
+                assert id_schema["enum"] == sorted(item["id"] for item in items)
+                assert "e1e5a1635d835a1c9db04489_dummy" not in id_schema["enum"]
+                assert 13 < rows["minItems"]  # Recovery 401's partial response.
+            else:
+                assert "enum" not in id_schema
+            if provider == "codex":
+                assert json.loads(Path(command[command.index("--output-schema") + 1]).read_text()) == schema
+                Path(command[command.index("--output-last-message") + 1]).write_text(json.dumps({"rows": grades}))
+                return ""
+            assert json.loads(command[command.index("--json-schema") + 1]) == schema
+            return json.dumps({"structured_output": {"rows": grades}})
+    config = CampaignConfig.model_validate({**campaign["config"], "teacher_provider": provider})
+    teacher = CliTeacher(config, settings, service.store, campaign["id"], row["id"],
+                         Runner(), settings.workspace / "grade-adapter")
+    assert teacher.grade(items) == grades
+    generic = Grades.model_json_schema()
+    assert "minItems" not in generic["properties"]["rows"]
+    assert "enum" not in generic["$defs"]["Grade"]["properties"]["id"]
+
+
 def test_operational_handoff_follows_applied_lineage_and_preserves_hold(setup_loop):
     settings, service, parent, engine = setup_loop
     engine.run(parent["id"])

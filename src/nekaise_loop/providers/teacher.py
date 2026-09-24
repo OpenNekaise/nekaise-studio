@@ -221,7 +221,16 @@ class CliTeacher:
         return self.request("evaluate", {"curriculum": curriculum, "lessons": lessons}, Evaluations)["rows"]
 
     def grade(self, items):
-        return self.request("grade", {"items": items}, Grades)["rows"]
+        schema = Grades.model_json_schema()
+        rows = schema["properties"]["rows"]
+        rows["minItems"] = rows["maxItems"] = len(items)
+        ids = sorted({item["id"] for item in items})
+        # Bound schema expansion as in material selection, not assessment size.
+        # Complete requests still reach the Teacher; apply_grades remains the
+        # authority for exact ID coverage and frozen dimension correspondence.
+        if ids and len(ids) <= 200 and sum(map(len, ids)) <= 16000:
+            schema["$defs"]["Grade"]["properties"]["id"]["enum"] = ids
+        return self.request("grade", {"items": items}, Grades, schema=schema)["rows"]
 
     def reflect(self, observations):
         return self.request("reflect", observations, Reflection)

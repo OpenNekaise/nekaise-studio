@@ -2,6 +2,7 @@
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic_core import PydanticCustomError
 
 
 class MaterialRecord(BaseModel):
@@ -34,11 +35,11 @@ class Candidate(MaterialRecord):
     def executable_text(self):
         if self.training_tokenization == "chat_response":
             if not self.student_prompt.strip():
-                raise ValueError("Native chat material needs a user prompt")
+                raise PydanticCustomError("chat_prompt_required", "Native chat material needs a user prompt")
         elif not self.training_text.strip():
-            raise ValueError("Text material needs an explicit training sequence")
+            raise PydanticCustomError("training_text_required", "Text material needs an explicit training sequence")
         if self.training_tokenization == "prompt_prefix" and (not self.student_prompt or not self.training_text.startswith(self.student_prompt)):
-            raise ValueError("Prompt-prefix material must preserve the exact prompt")
+            raise PydanticCustomError("prompt_prefix_mismatch", "Prompt-prefix material must preserve the exact prompt")
         return self
 
 

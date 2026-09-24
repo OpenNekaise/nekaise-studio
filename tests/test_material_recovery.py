@@ -98,6 +98,14 @@ def interrupted_material(setup_loop, request):
                 batch["rows"][0]["source_keys"] = [""]
             elif fault == "unknown_seed":
                 batch["rows"][0]["seed_ids"] = ["PRIVATE_REJECTED_VALUE"]
+            elif fault == "prompt_prefix_mismatch":
+                batch["rows"][0].update(training_tokenization="prompt_prefix",
+                                        student_prompt="PRIVATE_REJECTED_VALUE",
+                                        training_text="A continuation missing its prompt.")
+            elif fault == "chat_prompt_required":
+                batch["rows"][0].update(training_tokenization="chat_response", student_prompt=" ")
+            elif fault == "training_text_required":
+                batch["rows"][0].update(training_tokenization="full_text", training_text=" ")
             else:
                 batch["rows"][0]["territory"] = "PRIVATE_REJECTED_VALUE"
             result["choices"][0]["message"]["content"] = json.dumps(batch)
@@ -126,7 +134,8 @@ def funded_decision(service, campaign):
     return result
 
 
-@pytest.mark.parametrize("interrupted_material", ["extra_field", "empty_source", "unknown_seed", "empty_batch"], indirect=True)
+@pytest.mark.parametrize("interrupted_material", ["extra_field", "empty_source", "unknown_seed", "empty_batch",
+    "prompt_prefix_mismatch", "chat_prompt_required", "training_text_required"], indirect=True)
 def test_orchestrator_funds_retry_once_and_training_consumes_valid_expansion(interrupted_material):
     settings, service, campaign, engine, requests, recovery = interrupted_material
     original_calls = service.store.query("SELECT * FROM material_calls ORDER BY id")
@@ -135,6 +144,12 @@ def test_orchestrator_funds_retry_once_and_training_consumes_valid_expansion(int
     invalid_rows = json.loads(rejected["response"]["choices"][0]["message"]["content"])["rows"]
     invalid_row = invalid_rows[0] if invalid_rows else {}
     expected = ([{"path": ["rows"], "type": "empty_batch"}] if not invalid_rows else
+                [{"path": ["rows", 0], "type": "prompt_prefix_mismatch"}]
+                if invalid_row["training_tokenization"] == "prompt_prefix" else
+                [{"path": ["rows", 0], "type": "chat_prompt_required"}]
+                if invalid_row["training_tokenization"] == "chat_response" else
+                [{"path": ["rows", 0], "type": "training_text_required"}]
+                if not invalid_row["training_text"].strip() else
                 [{"path": ["rows", 0, "source_keys", 0], "type": "unprovided_source_key"}]
                 if invalid_row["source_keys"] == [""] else
                 [{"path": ["rows", 0, "seed_ids", 0], "type": "unprovided_seed_id"}]

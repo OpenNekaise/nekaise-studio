@@ -87,6 +87,11 @@ def request_body(author, spec, schema):
         "unprovided_source_key and unprovided_seed_id identify citations outside the supplied source keys or job seed_ids; use only those supplied identifiers. "
         "seed_feedback is input-only primary-teacher context keyed by seed ID, not candidate fields. "
         "Never emit teacher or seed_feedback keys in candidate rows; put the answer in training_response for chat_response or training_text for text modes. "
+        "Tokenization has cross-field requirements, also identified by retry_validation error types: "
+        "chat_prompt_required means chat_response needs a nonblank student_prompt; "
+        "training_text_required means full_text and prompt_prefix need nonblank training_text; "
+        "prompt_prefix_mismatch means prompt_prefix needs a nonempty student_prompt and training_text must begin with that exact student_prompt, including whitespace, followed by the continuation. "
+        "For standalone plain-prose CPT material use full_text with the complete prose in training_text, unless the teacher specifies another mode. "
         "Do not insert model-specific role markers or a thinking prefill: the student tokenizer will serialize accepted content."
     )
     payload = {"task": spec, "output_schema": schema}

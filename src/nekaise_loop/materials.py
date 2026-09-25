@@ -86,6 +86,8 @@ def expand(ctx):
         specs.append({"job": job, "teacher_plan": selected["curriculum"]["notes"],
                       "seed_artifact": seed_artifact, "seeds": examples,
                       "seed_feedback": feedback, "sources": sources})
+        if ctx.config.student_identity is not None:
+            specs[-1]["student_identity"] = ctx.config.student_identity.model_dump()
     results = run_jobs(ctx, specs)
     rows = []
     for result in results:

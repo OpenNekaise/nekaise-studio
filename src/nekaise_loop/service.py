@@ -212,6 +212,8 @@ class Service:
                 "updated": [i for i in new if i in old and new[i] != old[i]], "reason": reason}
         config.update(updates)
         config = CampaignConfig.model_validate(config)
+        from .identity import validate_identity_update
+        validate_identity_update(CampaignConfig.model_validate(parent["config"]).student_identity, config.student_identity)
         config = config.model_copy(update={"corpus_path": str((self.settings.root/config.corpus_path).resolve())})
         if latest:
             manifest = trained["manifest"]

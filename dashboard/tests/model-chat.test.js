@@ -25,3 +25,22 @@ test('model text is escaped and version, reset and stop controls remain visible'
   assert.match(html,/Stop reply/);
   assert.match(html,/New chat/);
 });
+
+test('named release belongs to each checkpoint and never changes reply text', () => {
+  const html = chatView({status:{available:true,model:{id:'new',round_number:4,identity:{display_name:'Kai 0.1',origin:'Sweden',developer:'Nekaise'}}},messages:[
+    {role:'assistant',content:'I am named MiniCPM.',model:{id:'old',round_number:3,identity:{display_name:'Kai 0.0'}}},
+    {role:'assistant',content:'legacy reply',model:{id:'legacy',round_number:1}},
+  ],busy:false,draft:'',progress:'',error:''});
+  assert.match(html, /Kai 0.1/);
+  assert.match(html, /A Swedish AI from Nekaise/);
+  assert.match(html.replace(/<[^>]*>/g, ''), /Kai 0.0 · Iteration 3/);
+  assert.match(html.replace(/<[^>]*>/g, ''), /Model · Iteration 1/);
+  assert.match(html, /I am named MiniCPM\./);
+});
+
+test('identity metadata is escaped', () => {
+  const html = chatView({status:{available:true,model:{identity:{display_name:'<Kai>',origin:'Sweden',developer:'<Nekaise>'}}},messages:[],busy:false,draft:'',progress:'',error:''});
+  assert.ok(!html.includes('<Kai>') && !html.includes('<Nekaise>'));
+  assert.match(html, /&lt;Kai&gt;/);
+  assert.match(html, /&lt;Nekaise&gt;/);
+});

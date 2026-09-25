@@ -49,6 +49,7 @@ flowchart LR
 | `stages.py` | CoAPT Mid-training operations and the explicit flow of learning data. |
 | `corpus.py` | Paginated corpus discovery and exact teacher-selected verified source spans. |
 | `teaching.py` | Teacher-owned curriculum, revision, assessment and reflection contracts. |
+| `identity.py` | Immutable student character snapshots, major.minor versions and public checkpoint attribution. |
 | `teacher_tools.py` | Read-only access to all campaigns, rounds, records, metrics, artifacts and corpus. |
 | `processes.py` | Owned process groups, timeouts, cancellation, incremental output. |
 | `providers/base.py` | Teacher, student and trainer contracts. |
@@ -681,6 +682,22 @@ Diagnostic retry requests preserve the original job key and record exact per-att
 request artifacts. See the material-author contract for authority and failure limits.
 
 ## Interactive Model tab
+
+Optional `CampaignConfig.student_identity` records name, version, developer, origin,
+foundation model and the exact charter text. `docs/KAI.md` is the authoring source;
+execution reads the frozen config, never a changing document. Teacher requests include
+it in config hints and Author requests in their immutable job specification. Training
+manifests already retain the complete runtime config. A continuation may introduce an
+identity; changing an existing named contract requires a different major.minor version.
+Legacy configs remain without attribution. Versions name development lines and may
+contain multiple checkpoints; iterations and manifest hashes identify exact weights.
+
+Model chat exposes public identity metadata and the charter hash from the checkpoint's
+own training manifest. It never borrows a newer campaign's intended identity for older
+weights, including weight-preserving rounds. The UI escapes these fields and retains
+each reply's actual version. Attribution describes the training contract, not proof of
+learned behavior. Character learning uses ordinary Teacher/Author training targets;
+chat adds no identity system message and does not rewrite the model's words.
 
 `model_chat.py` exposes a read-only snapshot resolver and a request-owned CPU chat
 worker; `workers/chat.py` is the isolated ML entrypoint. The HTTP process imports no

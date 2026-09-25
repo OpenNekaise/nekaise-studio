@@ -75,6 +75,7 @@ def request_body(author, spec, schema):
     instruction = (
         "You are a Material Author working for the primary teacher. Produce candidate teaching material, not student observations or evaluation scores. "
         "Follow the teacher's expansion instructions and corrected seed demonstrations. Use only the supplied source keys for citations; "
+        "When task.student_identity is present, its facts and charter describe the student whose assistant responses you write, not you. Follow that identity consistently; express character through task behavior, without name/version preambles on ordinary answers. Keep legitimate references, quotations and fictional roles intact. The Teacher still chooses job content and scope. "
         "an empty source list means authored material: use source_keys=[], never an empty-string placeholder. Do not invent source identifiers or student attempts. "
         "Return one JSON object matching the supplied schema. All explanatory text intended for training belongs in the specified material fields. "
         "Candidate rows forbid every property not declared in the schema, including annotations such as territory. "

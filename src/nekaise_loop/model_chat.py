@@ -14,6 +14,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from .artifacts import digest
 from .checkpoint_lineage import latest_completed_snapshot
+from .identity import StudentIdentity
 from . import ownership
 
 MAX_PROMPT_TOKENS = 2048
@@ -58,9 +59,13 @@ def latest_snapshot(service):
     if config['config'].get('student_format', 'raw_text') != 'chat_template':
         raise ValueError("The current model has no native chat interface")
     identity = digest({'checkpoint': str(path), 'manifest': result['manifest']})
+    # The checkpoint's own training config owns attribution. A newer campaign's
+    # target must never relabel an older or weight-preserving diagnostic snapshot.
+    recorded = result['manifest'].get('config', {}).get('student_identity')
+    student_identity = StudentIdentity.model_validate(recorded).public_metadata() if recorded else None
     return {'id': identity, 'campaign_id': config['id'], 'run_name': config['name'],
             'round_id': row['id'], 'round_number': row['number'],
-            'completed_at': row['updated_at'], 'device': 'cpu',
+            'completed_at': row['updated_at'], 'device': 'cpu', 'identity': student_identity,
             'max_prompt_tokens': MAX_PROMPT_TOKENS, 'max_new_tokens': MAX_NEW_TOKENS}, result
 
 

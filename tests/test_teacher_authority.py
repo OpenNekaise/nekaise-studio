@@ -331,6 +331,7 @@ def test_live_adapter_supplies_handbook_archive_tools_and_strict_decisions(setup
             assert "TEACHING HANDBOOK" in saved["prompt"]
             assert "nekaise_loop.teacher_tools" in saved["prompt"]
             assert saved["inputs"]["operations"]["latest_applied_review"]["decision"] == applied
+            assert saved["inputs"]["config_hints"]["student_identity"] == identity
             expected_strategy = large_data if large_field == "latest_strategy" else latest_strategy(settings.workspace, campaign["id"])
             assert saved["inputs"]["latest_strategy"] == expected_strategy
             assert kwargs["stdin"] == saved["prompt"]
@@ -364,7 +365,9 @@ def test_live_adapter_supplies_handbook_archive_tools_and_strict_decisions(setup
             assert command[command.index("--tools")+1] == "Read,Glob,Grep,Bash"
             assert json.loads(command[command.index("--json-schema")+1]) == schema
             return json.dumps({"structured_output":plan()})
-    config = CampaignConfig.model_validate({**campaign["config"],"teacher_provider":provider})
+    identity = {"name": "Kai", "version": "0.0", "developer": "Nekaise", "origin": "Sweden",
+                "foundation_model": "openbmb/MiniCPM5-1B-SFT", "charter": "Exact fixture charter.\n"}
+    config = CampaignConfig.model_validate({**campaign["config"],"teacher_provider":provider,"student_identity":identity})
     teacher = CliTeacher(config,settings,service.store,campaign["id"],row["id"],Runner(),settings.workspace/"adapter-check")
     assert teacher.curriculum(payload) == Curriculum.model_validate(plan()).model_dump()
     assert len(calls)==1

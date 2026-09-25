@@ -156,6 +156,24 @@ The teacher retains curriculum, source, author, task, dose and online assessment
 The historical `teacher_review_v1` path stays readable; recovery must preserve the selected
 trust policy unless the operator explicitly changes it.
 
+## Kai identity and versions (authorized 2026-09-25)
+
+The student is **Kai**, a **Swedish AI developed by Nekaise**, named from the `kai`
+in Kebnekaise. Use named major.minor development versions starting at **Kai 0.0**;
+keep iteration numbers and checkpoint digests separate. Versions are strings, not
+decimal numbers, and do not advance automatically with training rounds or scores.
+The exact identity metadata and character charter are snapshotted in `student_identity`
+campaign config. `docs/KAI.md` is the authoring document; runtime consumes the stored
+snapshot, not that mutable file. A changed contract under the same name/version requires
+a new version. Keep the actual foundation model in provenance and self-descriptions
+when asked; Kai's Swedish identity does not invent a human biography or tool access.
+Teach the character through varied general material from Teacher and Authors while
+preserving their curriculum/dose authority and trusted-author policy. Model chat keeps
+native, unconditioned inference and actual outputs: no hidden identity prompt, hardcoded
+reply or answer substitution. Attribute Kai/version in the UI only from the checkpoint's
+own recorded identity; do not relabel legacy snapshots or claim learned behavior from
+metadata. Preserve existing authors, general-material policy, budgets and compatible Adam.
+
 ## Author registry growth (authorized 2026-09-24)
 
 Material Author changes are additive by default. Preserve existing authors when adding

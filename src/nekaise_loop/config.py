@@ -7,6 +7,7 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 from .author_config import AuthorPool
+from .identity import StudentIdentity
 
 ROOT = Path(__file__).resolve().parents[2]
 STAGES = ("select", "plan", "draft", "revise", "expand", "material_select", "gate", "freeze", "train", "evaluate", "answer", "grade", "adapt")
@@ -29,6 +30,7 @@ class TokenMix(BaseModel):
 class CampaignConfig(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
     student_model: str = Field(default="openbmb/MiniCPM5-1B-Base", min_length=1, max_length=500)
+    student_identity: StudentIdentity | None = Field(default=None, description="Immutable identity/character target and named major.minor development version; absent on legacy campaigns")
     student_format: Literal["raw_text", "chat_template"] = Field(default="raw_text", description="raw_text preserves literal continuation; chat_template uses the checkpoint's native single-user, no-thinking assistant prefix")
     teacher_provider: Literal["claude", "codex"] = "codex"
     teacher_model: str = Field(default="gpt-5.6-terra", min_length=1, max_length=150)

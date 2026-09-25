@@ -92,6 +92,20 @@ exact generation-prefix tokens and assistant termination; full-sequence CoAPT Mi
 loss is unchanged. Base checkpoints remain available for teacher-led comparisons with
 each side's interface recorded. See [student serialization](docs/COAPT.md#student-text-interface-and-response-boundaries).
 
+## Kai
+
+**Kai is a Swedish AI developed by Nekaise**, with a name drawn from Kebnekaise.
+Its [character charter](docs/KAI.md) guides a calm, warm, curious and candid voice,
+with truthful foundation provenance and descriptions of its actual capabilities.
+The initial named development version is **Kai 0.0**; checkpoint iterations and
+digests remain separate. Teacher and Authors receive the same frozen identity snapshot
+and create varied training material. Model chat shows the real model output without
+an identity prompt or replacement answers. A Kai/version label appears only for
+checkpoints carrying that identity; it does not prove the character has been learned.
+This adopts the broad idea of character teaching described by
+[Anthropic](https://www.anthropic.com/research/claude-character) within our existing
+CoAPT Mid-training path; it does not implement their preference-training pipeline.
+
 ## Parallel material authors
 
 The primary teacher can delegate plan/seed expansion to configurable **Material Authors**.

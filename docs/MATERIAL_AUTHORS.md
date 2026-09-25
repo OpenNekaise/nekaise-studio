@@ -98,8 +98,59 @@ original snapshots and failure evidence.
 Each author has independent model options. Add Kimi or another compatible endpoint
 with its documented model, base URL and a separate credential variable. Do not copy
 DeepSeek-specific thinking parameters to a backend that does not support them.
-The endpoint must support `/chat/completions`; `json_mode=false` omits the response
-format parameter, but the returned content still has to match the candidate schema.
+Use `openai_chat` for `/chat/completions` or `openai_responses` for streamed `/responses`.
+`json_mode=false` omits the response format parameter; returned content still has to
+match the candidate schema.
+
+### Responses authors: Kimi K3
+
+The operator-selected APIKEY.FAN endpoint uses `kimi-k3`. Add this partial registry
+update with `merge_pool`; preserve all existing Authors and global allowances:
+
+```json
+{
+  "authors": [{
+    "id": "kimi-k3", "label": "Kimi K3",
+    "transport": "openai_responses", "location": "remote",
+    "base_url": "https://api.apikey.fan/v1", "model": "kimi-k3",
+    "api_key_env": "APIKEY_FUN_KEY", "concurrency": 1,
+    "resource_pool": "apikey-fan-account", "max_output_tokens": 8192,
+    "timeout_seconds": 900, "json_mode": true, "options": {}
+  }],
+  "resource_limits": {"apikey-fan-account": 1}
+}
+```
+
+`APIKEY_FUN_KEY` is the operator's credential variable name, despite the endpoint's
+`.fan` suffix. Keep it in the ignored root `.env` or service environment. This is a
+direct HTTP Author, independent of Codex configuration and primary Teacher settings.
+The Teacher chooses whether and how to use it within existing pool budgets.
+
+The adapter maps the journaled common request's `messages` to Responses `input`,
+`max_tokens` to `max_output_tokens`, and JSON mode to `text.format`. It requests
+`stream=true` and `store=false`. Source fingerprints fix this mapping; response
+evidence records its version and the exact mapped request's SHA-256. Options cannot
+override context, output caps, tools or transport. The normal byte limit covers the
+entire received SSE stream, including reasoning and event overhead; the scheduler's
+65-second idle timeout and the Author's total timeout both apply. No automatic retry,
+model substitution or protocol fallback occurs.
+
+Following the [Responses streaming contract](https://developers.openai.com/api/reference/resources/responses/streaming-events),
+only a completed terminal envelope supplies material. The gateway-documented
+`response.done` alias also requires `status=completed`; `[DONE]`, deltas and EOF alone
+are insufficient. The first terminal ends the request. Exactly one completed
+assistant message with nonempty `output_text` is accepted; reasoning stays in raw
+terminal evidence, and refusals/tool calls are not material. Malformed or truncated
+streams fail with bounded diagnostics and unknown usage. HTTP 402/429 use the existing
+provider-wait path; other failures go to ordinary orchestrator recovery. This does
+not introduce per-author fallback or a different scheduling policy.
+
+Responses `input_tokens` and `output_tokens` map to the existing separate Author
+ledger. Cached input is a subset; reasoning is already included in output, never
+added twice. Missing counts stay unknown. Reported output above its reservation is
+rejected with usage retained. Original usage details and the provider-reported model
+are preserved, without asserting independent verification of the underlying model.
+No credential values or raw partial frames enter diagnostic artifacts.
 
 For local models, register an operator-managed compatible serving endpoint with
 `location=local`, the actual model name and optionally an empty `api_key_env`.

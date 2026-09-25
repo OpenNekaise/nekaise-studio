@@ -72,6 +72,12 @@ class AuthorSpec(BaseModel):
                 raise ValueError("Unsupported Codex author reasoning effort")
         elif not self.base_url:
             raise ValueError("HTTP material authors require an endpoint")
+        if self.transport == "openai_responses":
+            reserved = {"input", "instructions", "max_output_tokens", "text", "tools", "tool_choice",
+                        "previous_response_id", "conversation", "background", "store", "include",
+                        "truncation", "stream_options"}
+            if reserved.intersection(k.lower() for k in self.options):
+                raise ValueError("Responses author options cannot override context, output format, tools or execution limits")
         return self
 
 

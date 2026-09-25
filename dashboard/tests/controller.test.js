@@ -74,7 +74,7 @@ test("iteration navigation, previous runs and stale requests keep the correct ru
     assert.match(get("content").innerHTML, /Fixture agent narrative/);
     await click({ view: "overview" });
     assert.match(get("content").innerHTML, /data-round="a1"/);
-    for (const title of ["Teacher tokens", "Tokens trained", "Teacher assessment", "Independent eval"]) assert.ok(get("content").innerHTML.includes(title), title);
+    for (const title of ["Teacher tokens", "Tokens trained", "Teacher assessment", "Independent eval", "GPQA Diamond"]) assert.ok(get("content").innerHTML.includes(title), title);
     assert.ok(requests.some(r => /telemetry/.test(r.path)));
     assert.ok(requests.some(r => /benchmark/.test(r.path)));
     failUsage = true;
@@ -82,7 +82,7 @@ test("iteration navigation, previous runs and stale requests keep the correct ru
     assert.match(get("content").innerHTML, /Usage unavailable/);
     assert.match(get("content").innerHTML, /Evaluation unavailable/);
     assert.match(get("content").innerHTML, /data-round="a1"/);
-    assert.equal((get("content").innerHTML.match(/class="panel usage-card /g) || []).length, 5);
+    assert.equal((get("content").innerHTML.match(/class="panel usage-card /g) || []).length, 6);
     failUsage = false;
     const beforeExperiments = requests.length;
     await click({ studioSection: "experiments" });

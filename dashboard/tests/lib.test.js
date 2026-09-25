@@ -91,10 +91,10 @@ test("waiting remains visible with the next retry and escaped error", () => {
   assert.ok(!html.includes("<script>"));
   assert.equal(recoveryNotice(snapshot), "");
 });
-test("Studio opens with all five charts and lessons remain accessible", () => {
+test("Studio opens with all overview charts and lessons remain accessible", () => {
   const html = overview({ ...snapshot, rounds: [{ ...round, id: "r2", number: 2 }, round] });
-  for (const title of ["Teacher tokens", "Tokens trained", "Teacher assessment", "Independent eval", "Training loss", "Session time"]) assert.ok(html.includes(title), title);
-  assert.equal((html.match(/class="panel usage-card /g) || []).length, 5);
+  for (const title of ["Teacher tokens", "Tokens trained", "Teacher assessment", "Independent eval", "GPQA Diamond", "Training loss", "Session time"]) assert.ok(html.includes(title), title);
+  assert.equal((html.match(/class="panel usage-card /g) || []).length, 6);
   assert.match(html, /data-round="r1"/); assert.match(html, /data-round="r2"/);
   assert.ok(!html.includes("/private/checkpoint"));
   const lessons = overview(snapshot, "teaching");

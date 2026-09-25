@@ -130,6 +130,11 @@ def create_app(settings: Settings | None = None, *, allowed_hosts: tuple[str, ..
         service.store.campaign(campaign_id)
         return JSONResponse(read_benchmark(campaign_id), headers={"Cache-Control": "no-store"})
 
+    @app.get("/api/benchmarks/gpqa-diamond")
+    def gpqa_diamond():
+        from .benchmark_catalog import read_gpqa
+        return JSONResponse(read_gpqa(), headers={"Cache-Control": "no-store"})
+
     @app.get("/api/campaigns/{campaign_id}/benchmark/history")
     def benchmark_history(campaign_id: str, history: str = Query(pattern=r"^[a-f0-9]{64}$"),
                           page: int = Query(ge=0)):

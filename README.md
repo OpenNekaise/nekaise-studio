@@ -79,6 +79,10 @@ Python executable in your training environment.
 See [deployment](deploy/README.md) for service setup, [architecture](ARCHITECTURE.md) for
 implementation details, and [validation](docs/VALIDATION.md) for what has been tested.
 
+The dashboard also displays command-driven **GPQA Diamond** evaluations from Bench.
+Supply a local model checkpoint to Bench's `gpqa` command; completed aggregate results
+appear automatically on Studio's separate card. See [GPQA display](docs/GPQA-DISPLAY.md).
+
 ## License
 
 [MIT](LICENSE). Corpus documents retain their original licenses.

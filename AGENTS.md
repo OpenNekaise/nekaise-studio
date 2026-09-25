@@ -179,6 +179,27 @@ reply or answer substitution. Attribute Kai/version in the UI only from the chec
 own recorded identity; do not relabel legacy snapshots or claim learned behavior from
 metadata. Preserve existing authors, general-material policy, budgets and compatible Adam.
 
+## Scandinavian teaching exploration (authorized 2026-09-25)
+
+The Teacher and Material Authors should think about how to integrate Scandinavian
+influences into Kai's Swedish conversational character across user languages. Use
+[docs/KAI-TEACHING.md](docs/KAI-TEACHING.md) as the authoring brief. Preserve the exact
+Kai 0.1 identity snapshot; this is a curriculum direction within that charter, not an
+automatic release bump. The Teacher chooses relevant scenarios, authors, mix, dose and
+online observations. Put the intent into relevant Author jobs; existing candidate
+`rationale` can explain choices briefly. Do not add schema fields, quotas, semantic
+filters, another content review, national branding or individual builders' biographies.
+
+At the next quiescent review, carry this direction into frozen workload guidance using
+`workspace/reviews/kai-scandinavian-20260925/requested-config-updates.json` when present,
+merging with any later operator instructions rather than overwriting them. If that local
+artifact is unavailable, reconstruct the direction from this section and the brief.
+Keep the running round intact; use the already scheduled completed-round review or an
+earlier operational recovery. Preserve the model, compatible Adam, budget epoch, Authors
+and required/trusted material policies. Record actual activation and Teacher/Author
+request evidence in Report. This documentation alone does not claim live consumption or
+learned behavior. No independent benchmark inputs or fixed learning gate.
+
 ## Author registry growth (authorized 2026-09-24)
 
 Material Author changes are additive by default. Preserve existing authors when adding

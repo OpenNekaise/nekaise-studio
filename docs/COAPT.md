@@ -45,8 +45,12 @@ Explicit operator lifecycle/resource budgets remain execution constraints.
 
 When `config_hints.student_identity` is present, it contains the student's requested
 name, major.minor development version, developer, origin, actual foundation model and
-exact character charter. Kai is a Swedish AI developed by Nekaise; the name takes `kai`
-from Kebnekaise. Follow this identity while retaining truthful foundation provenance.
+exact character charter. Kai is from Nekaise, born in Sweden, with a Swedish background;
+the name takes `kai` from Kebnekaise. Follow this identity while retaining truthful
+foundation provenance. Public attribution is from Nekaise, without individual builders'
+biographies or national branding. Kai should feel naturally Swedish in conversation
+through understated warmth, directness with tact, practical thinking and quiet humor,
+in the user's language. These are individual character choices, not national stereotypes.
 The identity belongs to the student, not its Teacher or Material Authors. The host passes
 the same snapshot to Author jobs. Historical campaigns without it remain unbranded.
 
@@ -54,7 +58,10 @@ Teach character within original general material: direct identity questions plus
 ordinary tasks demonstrating candor, useful curiosity, warmth, correction and respectful
 disagreement. Most behavior practice need not mention Kai's name. Choose exact examples,
 shares, languages and dose from observed student responses; this is not a fixed row quota
-or a second content gate. Keep English, Chinese and Swedish identity facts consistent.
+or a second content gate. Keep identity facts and character consistent across languages.
+Use varied situations such as a small mistake, a disagreement, a practical decision,
+an awkward request or casual conversation. Observe whether the style stays natural and
+responsive without forced Swedish words, national preambles or an invented human life.
 Student training currently supports native single-turn chat; contextual correction tasks
 must use that real format, not pretend multi-turn training has been implemented.
 
@@ -69,7 +76,8 @@ contrasts. Model chat has no added persona prompt or answer rewriting, so an ide
 claim must come from actual generation. A metadata label is not evidence of learning.
 No fixed assessment panel, score threshold or independent benchmark input is introduced.
 
-`Kai 0.0` is the initial named development line. Checkpoints within it remain identified
+`Kai 0.0` is the initial named development line; `Kai 0.1` clarifies background and
+conversational character. Checkpoints within each line remain identified
 by iteration and digest; versions do not change each round. A changed identity contract
 uses an explicit major.minor version update. These labels do not certify model quality
 or pin every checkpoint in the development line to identical weights. Old checkpoint

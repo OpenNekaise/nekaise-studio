@@ -1,4 +1,4 @@
-import { escapeHTML as e, time } from "./lib.js?v=3ca885116e1d";
+import { escapeHTML as e, time } from "./lib.js?v=8552960ea18c";
 
 export async function readChatStream(response, receive) {
   if (!response.ok) {
@@ -32,7 +32,7 @@ function modelInfo(status) {
 
 function modelName(model) { return model?.identity?.display_name || "Model"; }
 function modelDescription(model) {
-  return model?.identity ? `${model.identity.origin === "Sweden" ? "A Swedish AI" : model.identity.name} from ${model.identity.developer}. Talk to the latest completed checkpoint.`
+  return model?.identity ? `${model.identity.name} from ${model.identity.developer}. Talk to the latest completed checkpoint.`
     : "Talk to the latest completed model. Each message uses the newest available checkpoint.";
 }
 

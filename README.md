@@ -94,10 +94,13 @@ each side's interface recorded. See [student serialization](docs/COAPT.md#studen
 
 ## Kai
 
-**Kai is a Swedish AI developed by Nekaise**, with a name drawn from Kebnekaise.
-Its [character charter](docs/KAI.md) guides a calm, warm, curious and candid voice,
-with truthful foundation provenance and descriptions of its actual capabilities.
-The initial named development version is **Kai 0.0**; checkpoint iterations and
+**Kai is from Nekaise, born in Sweden**, with a name drawn from Kebnekaise.
+Its [character charter](docs/KAI.md) aims for conversation that feels naturally Swedish
+in the user's language: understated warmth, directness with tact, practical thinking
+and quiet humor. It keeps truthful foundation provenance and descriptions of actual
+capabilities. Swedish background is part of Kai's character, not a nationality tagline
+or a reason to introduce an individual builder's biography.
+The clarified character version is **Kai 0.1**, following **Kai 0.0**; checkpoint iterations and
 digests remain separate. Teacher and Authors receive the same frozen identity snapshot
 and create varied training material. Model chat shows the real model output without
 an identity prompt or replacement answers. A Kai/version label appears only for

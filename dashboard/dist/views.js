@@ -1,9 +1,9 @@
-import { efficiencyCard, ratioLabel } from "./efficiency.js?v=3ca885116e1d";
-import { escapeHTML as e, number, duration, time, percent, safeURL, diffWords, lossChart, iterationMetrics, dateLabel, modelLabel } from "./lib.js?v=3ca885116e1d";
-import { usageCharts, elapsedLabel, phaseFor, phases } from "./telemetry.js?v=3ca885116e1d";
-import { benchmarkCard, benchmarkHistory } from "./benchmark.js?v=3ca885116e1d";
-import { teacherAssessmentCard } from "./teacher-assessment.js?v=3ca885116e1d";
-import { experimentCard, experimentsView } from "./experiments.js?v=3ca885116e1d";
+import { efficiencyCard, ratioLabel } from "./efficiency.js?v=8552960ea18c";
+import { escapeHTML as e, number, duration, time, percent, safeURL, diffWords, lossChart, iterationMetrics, dateLabel, modelLabel } from "./lib.js?v=8552960ea18c";
+import { usageCharts, elapsedLabel, phaseFor, phases } from "./telemetry.js?v=8552960ea18c";
+import { benchmarkCard, benchmarkHistory } from "./benchmark.js?v=8552960ea18c";
+import { teacherAssessmentCard } from "./teacher-assessment.js?v=8552960ea18c";
+import { experimentCard, experimentsView } from "./experiments.js?v=8552960ea18c";
 
 export const badge = (status, small = false) => `<span class="status ${e(status)} ${small ? "small" : ""}">${e(status || "pending")}</span>`;
 const empty = (text) => `<div class="empty-inline">${e(text)}</div>`;

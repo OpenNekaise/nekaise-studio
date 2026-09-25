@@ -1,4 +1,4 @@
-import { escapeHTML as e, number, dateLabel } from "./lib.js?v=05be6631cf7e";
+import { escapeHTML as e, number, dateLabel } from "./lib.js?v=28aacea7ef76";
 
 const pct = value => Number.isFinite(value) ? `${number(value * 100, 1)}%` : "—";
 const model = row => `${row.model_label}${row.round_number ? ` · iteration ${row.round_number}` : ""} · ${row.model_id?.slice(0, 8) || "pending identity"}`;
@@ -25,5 +25,5 @@ export function gpqaCard(data) {
     <p class="usage-description">Graduate-level science${latest ? ` · ${latest.correct} / 198 correct` : " · 198 questions"}</p>
     ${progress}<div class="usage-footer"><span>${latest ? e(model(latest)) : "No completed full evaluation yet."}</span>
     <span>${latest ? `${attempt !== latest ? "Last completed result · " : ""}${e(dateLabel(latest.updated_at))}` : attempt?.status === "running" ? "The score appears after all 198 answers are verified." : attempt ? "Review the saved evaluator diagnostics before retrying." : "Run the GPQA command in Bench to evaluate a local model."}</span>
-    <span>Standalone evaluations across models · independent of the selected training run</span></div>${details}</section>`;
+    <span>Standalone evaluations across models · independent of the selected training run</span>${data?.rejected_entries ? `<span>${number(data.rejected_entries)} saved result(s) unavailable after verification.</span>` : ""}</div>${details}</section>`;
 }

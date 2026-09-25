@@ -16,8 +16,9 @@ scheduled after training. Score changes do not control checkpoint or teaching de
 `GET /api/benchmarks/gpqa-diamond` reads only a bounded, allowlisted JSON catalogue from
 `../nekaise-bench/workspace/gpqa/projection/gpqa-diamond.json`. Override the directory with
 `NEKAISE_BENCH_GPQA_PROJECTION_DIR`. No Torch imports, subprocesses or training database
-writes occur in this endpoint. Unsupported protocols, inconsistent counts, missing seals,
-oversize projections and escaping symlinks fail closed to an unavailable display.
+writes occur in this endpoint. Unsupported protocols, inconsistent counts and missing seals
+reject the affected entries while preserving valid results; rejected-entry counts remain
+explicit. Oversize projections and escaping symlinks fail closed to an unavailable display.
 
 The card spans explicit model evaluations, independently of the selected campaign. It
 shows the actual evaluated identity and date, correct/198, a descriptive interval,

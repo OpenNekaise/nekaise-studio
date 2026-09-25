@@ -1,11 +1,11 @@
-import { createModelChat } from "./model-chat.js?v=05be6631cf7e";
-import { escapeHTML as e, time, modelLabel, readAPIResponse } from "./lib.js?v=05be6631cf7e";
-import { overview, iterationView, historyView, reportsView, emptyStudio, badge, recoveryNotice, studioScope, studioNavigation } from "./views.js?v=05be6631cf7e";
-import { elapsedLabel } from "./telemetry.js?v=05be6631cf7e";
+import { createModelChat } from "./model-chat.js?v=28aacea7ef76";
+import { escapeHTML as e, time, modelLabel, readAPIResponse } from "./lib.js?v=28aacea7ef76";
+import { overview, iterationView, historyView, reportsView, emptyStudio, badge, recoveryNotice, studioScope, studioNavigation } from "./views.js?v=28aacea7ef76";
+import { elapsedLabel } from "./telemetry.js?v=28aacea7ef76";
 
-import { createAssessmentHistory } from "./teacher-assessment.js?v=05be6631cf7e";
-import { createBenchmarkBrowser } from "./benchmark-browser.js?v=05be6631cf7e";
-import { createExperimentBrowser } from "./experiment-browser.js?v=05be6631cf7e";
+import { createAssessmentHistory } from "./teacher-assessment.js?v=28aacea7ef76";
+import { createBenchmarkBrowser } from "./benchmark-browser.js?v=28aacea7ef76";
+import { createExperimentBrowser } from "./experiment-browser.js?v=28aacea7ef76";
 
 const $ = id => document.getElementById(id);
 const state = {

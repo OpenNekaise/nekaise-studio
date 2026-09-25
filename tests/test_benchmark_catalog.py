@@ -59,6 +59,26 @@ def test_reader_bounds_and_symlink_escape(tmp_path):
     assert read_gpqa(root)["status"] == "unavailable"
 
 
+def test_bad_or_stale_history_cannot_hide_a_valid_new_result(tmp_path):
+    data = fixture()
+    good = copy.deepcopy(data["runs"][0])
+    bad = copy.deepcopy(good); bad["run_id"] = "20260925T123456123456Z-abcdef02"; bad["score"] = .5
+    old = copy.deepcopy(good); old.update(run_id="20260925T123456123456Z-abcdef03", status="running", completed=7,
+                                         started_at="2020-01-01T00:00:00Z", updated_at="2020-01-01T00:00:00Z")
+    for key in ("correct", "score", "ci95", "invalid", "budget_exhausted", "seal_sha256"):
+        old[key] = None
+    data["runs"] = [good, bad, old]
+    write(tmp_path, data); value = read_gpqa(tmp_path)
+    assert value["status"] == "ok" and value["rejected_entries"] == 1 and len(value["runs"]) == 2
+    assert not value["stale"] and value["runs"][1]["stale"]
+
+
+def test_numerical_roundoff_at_zero_does_not_reject_real_zero(tmp_path):
+    data = fixture(); data["runs"][0]["ci95"][0] = 1e-18
+    write(tmp_path, data)
+    assert read_gpqa(tmp_path)["runs"][0]["score"] == 0
+
+
 def test_endpoint_does_not_mutate_training_or_enter_snapshots(setup_loop, tmp_path, monkeypatch):
     settings, service, campaign, engine = setup_loop
     write(tmp_path, fixture()); monkeypatch.setenv("NEKAISE_BENCH_GPQA_PROJECTION_DIR", str(tmp_path))

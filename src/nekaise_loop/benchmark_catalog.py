@@ -53,7 +53,8 @@ class Aggregate(BaseModel):
                     self.completed != self.n or abs(self.score - self.correct / self.n) > 1e-9):
                 raise ValueError("Incomplete or inconsistent GPQA result")
             if (self.correct + max(self.invalid, self.budget_exhausted) > self.n or
-                    not 0 <= self.ci95[0] <= self.score <= self.ci95[1] <= 1):
+                    not 0 <= self.ci95[0] <= self.ci95[1] <= 1 or
+                    self.ci95[0] > self.score + 1e-12 or self.ci95[1] < self.score - 1e-12):
                 raise ValueError("Inconsistent result diagnostics")
         return self
 
@@ -62,7 +63,7 @@ class Catalog(BaseModel):
     model_config = ConfigDict(extra="ignore", strict=True)
     schema_version: Literal[1]
     benchmark: Literal["gpqa-diamond"]
-    runs: list[Aggregate] = Field(max_length=40)
+    runs: list[object] = Field(max_length=40)
 
 
 def read_gpqa(directory=None):
@@ -79,12 +80,22 @@ def read_gpqa(directory=None):
             raw = handle.read(256 * 1024 + 1)
         if len(raw) > 256 * 1024:
             return empty
-        value = Catalog.model_validate(json.loads(raw)).model_dump()
-        runs = value["runs"]
-        if len({r["run_id"] for r in runs}) != len(runs):
-            return empty
-        stale = bool(runs and runs[0]["status"] == "running" and
-                     (datetime.now(timezone.utc) - datetime.fromisoformat(runs[0]["updated_at"].replace("Z", "+00:00"))).total_seconds() > 600)
-        return {**value, "status": "ok", "stale": stale}
+        envelope = Catalog.model_validate(json.loads(raw))
+        runs = []
+        for item in envelope.runs:
+            try:
+                row = Aggregate.model_validate(item).model_dump()
+            except (ValueError, TypeError):
+                continue
+            row["stale"] = bool(row["status"] == "running" and
+                (datetime.now(timezone.utc) - datetime.fromisoformat(row["updated_at"].replace("Z", "+00:00"))).total_seconds() > 600)
+            runs.append(row)
+        ids = [row["run_id"] for row in runs]
+        runs = [row for row in runs if ids.count(row["run_id"]) == 1]
+        rejected = len(envelope.runs) - len(runs)
+        if rejected and not runs:
+            return {**empty, "rejected_entries": rejected}
+        return {"schema_version": 1, "benchmark": "gpqa-diamond", "runs": runs,
+                "status": "ok", "stale": bool(runs and runs[0]["stale"]), "rejected_entries": rejected}
     except (OSError, ValueError, TypeError):
         return empty

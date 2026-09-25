@@ -25,7 +25,22 @@ shows the actual evaluated identity and date, correct/198, a descriptive interva
 invalid/budget failure counts and protocol details. It keeps the last completed result
 visible during a new attempt; progress has no provisional accuracy. Lack of progress for
 ten minutes is labelled explicitly, without pretending to establish process death.
-No matching baseline or general-chat improvement is inferred from a GPQA score.
+The chart uses the original `openbmb/MiniCPM5-1B-SFT` starting model as its reference.
+Its inference-file identity is pinned as
+`bf0f16bf094d8942f90a53ecefb4749ec52dd60406988438bceb896dab89aec8`, verified
+from Studio lineage and local snapshot revision `a60b37f1fc409c54e1e337b0723aaac6f92dfec0`.
+The identity is configuration, never a hardcoded score: the horizontal dashed line
+requires a completed aggregate for those actual bytes. Model labels cannot designate
+a baseline. The baseline does not replace the latest non-baseline model's headline.
+
+Only matching protocol IDs, dataset and token budgets share a chart or score difference.
+Incompatible results remain in the table with an explicit comparison-unavailable note.
+The chart has a fixed 0–100% scale, a separate 25% random-choice reference, model points,
+and the measured baseline's interval. Pending/failed evaluations never draw a baseline.
+Format and budget failures stay visible; this strict generative score combines science
+performance with format compliance, and does not establish general-chat improvement.
+Bench retains completed baseline references within its bounded aggregate catalogue.
+This rendering uses the existing aggregate endpoint and changes no training Python or prompts.
 
 The only code consumer of `benchmark_catalog` is the dedicated API route. Results never
 join normal snapshots, teacher history, operational Report, recovery inputs or training

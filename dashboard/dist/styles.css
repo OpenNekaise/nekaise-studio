@@ -592,3 +592,18 @@ del { background: #f4e0d5; text-decoration-color: #ac7c65; }
 .studio-charts .gpqa-card > .muted { padding: 0 18px; font-size: .75rem; }
 .studio-charts .gpqa-card .usage-description { min-height: 0; }
 .studio-charts .gpqa-card .usage-footer { min-height: 0; }
+.gpqa-comparison { padding: 8px 18px 14px; }
+.gpqa-comparison svg { display: block; width: 100%; max-width: 900px; margin: auto; height: auto; }
+.gpqa-comparison svg text { font-family: inherit; font-size: 11px; fill: var(--muted); }
+.gpqa-grid { stroke: var(--line); stroke-width: 1; }
+.gpqa-baseline-line { stroke: var(--clay); stroke-width: 2; stroke-dasharray: 8 5; vector-effect: non-scaling-stroke; }
+.gpqa-chance-line { stroke: var(--muted); stroke-width: 1; stroke-dasharray: 2 5; vector-effect: non-scaling-stroke; }
+.gpqa-score-point { fill: var(--pine); stroke: var(--surface); stroke-width: 1.5; }
+.gpqa-legend { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px 20px; color: var(--muted); font-size: .75rem; }
+.gpqa-legend > span { display: inline-flex; align-items: center; gap: 7px; }
+.gpqa-legend > span::before { content: ""; width: 20px; border-top: 2px dashed var(--clay); }
+.gpqa-legend .gpqa-legend-model::before { width: 7px; height: 7px; border: 0; border-radius: 50%; background: var(--pine); }
+.gpqa-legend .gpqa-legend-chance::before { border-top: 1px dotted var(--muted); }
+.gpqa-baseline-note { color: var(--muted); font-size: .75rem; line-height: 1.6; margin: 10px 0 0; }
+.gpqa-card .table-scroll { overflow-x: auto; }
+@media (max-width: 640px) { .gpqa-comparison svg text { font-size: 22px; } }

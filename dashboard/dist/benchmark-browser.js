@@ -1,4 +1,4 @@
-import { METRICS } from "./benchmark.js?v=df594e975750";
+import { METRICS } from "./benchmark.js?v=d2803ff6ecfc";
 
 // A browsing session pins an immutable aggregate snapshot while live polling continues.
 export function createBenchmarkBrowser(read, changed = () => {}) {

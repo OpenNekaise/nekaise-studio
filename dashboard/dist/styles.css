@@ -586,3 +586,9 @@ del { background: #f4e0d5; text-decoration-color: #ac7c65; }
 .model-composer-actions > span { margin-right: auto; font-size: 12px; }
 #model-progress { min-height: 22px; font-size: 12px; }
 @media (max-width: 640px) { .model-message.user { margin-left: 6%; } .model-message.assistant { margin-right: 0; } .model-composer-actions > span { max-width: 150px; } }
+
+/* Standalone model evaluations have their own compact, full-width surface. */
+.studio-charts .gpqa-card { grid-column: 1 / -1; min-height: 0; }
+.studio-charts .gpqa-card > .muted { padding: 0 18px; font-size: .75rem; }
+.studio-charts .gpqa-card .usage-description { min-height: 0; }
+.studio-charts .gpqa-card .usage-footer { min-height: 0; }

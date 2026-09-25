@@ -1,4 +1,4 @@
-import { escapeHTML as e, number, dateLabel } from "./lib.js?v=df594e975750";
+import { escapeHTML as e, number, dateLabel } from "./lib.js?v=d2803ff6ecfc";
 
 const pct = value => Number.isFinite(value) ? `${number(value * 100, 1)}%` : "—";
 const model = row => `${row.model_label}${row.round_number ? ` · iteration ${row.round_number}` : ""} · ${row.model_id?.slice(0, 8) || "pending identity"}`;

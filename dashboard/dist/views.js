@@ -1,10 +1,10 @@
-import { gpqaCard } from "./gpqa.js?v=df594e975750";
-import { efficiencyCard, ratioLabel } from "./efficiency.js?v=df594e975750";
-import { escapeHTML as e, number, duration, time, percent, safeURL, diffWords, lossChart, iterationMetrics, dateLabel, modelLabel } from "./lib.js?v=df594e975750";
-import { usageCharts, elapsedLabel, phaseFor, phases } from "./telemetry.js?v=df594e975750";
-import { benchmarkCard, benchmarkHistory } from "./benchmark.js?v=df594e975750";
-import { teacherAssessmentCard } from "./teacher-assessment.js?v=df594e975750";
-import { experimentCard, experimentsView } from "./experiments.js?v=df594e975750";
+import { gpqaCard } from "./gpqa.js?v=d2803ff6ecfc";
+import { efficiencyCard, ratioLabel } from "./efficiency.js?v=d2803ff6ecfc";
+import { escapeHTML as e, number, duration, time, percent, safeURL, diffWords, lossChart, iterationMetrics, dateLabel, modelLabel } from "./lib.js?v=d2803ff6ecfc";
+import { usageCharts, elapsedLabel, phaseFor, phases } from "./telemetry.js?v=d2803ff6ecfc";
+import { benchmarkCard, benchmarkHistory } from "./benchmark.js?v=d2803ff6ecfc";
+import { teacherAssessmentCard } from "./teacher-assessment.js?v=d2803ff6ecfc";
+import { experimentCard, experimentsView } from "./experiments.js?v=d2803ff6ecfc";
 
 export const badge = (status, small = false) => `<span class="status ${e(status)} ${small ? "small" : ""}">${e(status || "pending")}</span>`;
 const empty = (text) => `<div class="empty-inline">${e(text)}</div>`;

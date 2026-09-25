@@ -153,7 +153,7 @@ def test_cli_rejected_tool_input_is_diagnostic_only_and_retry_gets_safe_paths(se
     failed = service.store.query("SELECT * FROM material_calls WHERE status='failed'")
     assert failed
     expected = ([{"path": ["rows", 0, "training_response_note"], "type": "extra_forbidden"}]
-                if fault == "rejected_schema" else [{"path": [], "type": "completion_or_provenance"}])
+                if fault == "rejected_schema" else [{"path": [], "type": "response_incomplete"}])
     for call in failed:
         evidence = service.artifacts.get(call["artifact"])
         assert evidence["validation_errors"] == expected

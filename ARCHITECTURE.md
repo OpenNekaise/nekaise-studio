@@ -610,6 +610,13 @@ nonempty array; host validation also rejects empty responses and records bounded
 `empty_batch` retry diagnostics with the original response and usage. Historical
 completed empty artifacts remain readable. This is an execution check, not a
 content review or an exact candidate-count requirement.
+General-chat job request schemas require native `chat_response` mode and nonempty
+prompt/response fields, matching the existing host checks without changing other
+scopes. Provider-incomplete responses receive `response_incomplete` retry feedback
+instead of JSON syntax errors, so truncated JSON retains completion guidance. Parseable
+rejected CLI tool input retains specific schema diagnostics, but is never accepted as
+completed material even if locally schema-valid. Original output and usage remain saved;
+the host never repairs partial JSON or reduces Teacher material.
 Repeated candidate IDs fail with the bounded `duplicate_candidate_id` diagnostic,
 which retry requests carry without echoing IDs or teaching text. Author instructions
 require distinct IDs while preserving requested material; this does not deduplicate

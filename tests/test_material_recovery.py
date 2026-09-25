@@ -74,6 +74,41 @@ def test_author_citation_schema_is_job_scoped_and_host_still_checks_provenance()
     assert candidates(result, empty)[0]["source_keys"] == []
 
 
+def test_general_chat_request_schema_matches_host_contract_without_changing_other_scopes():
+    from types import SimpleNamespace
+    from nekaise_loop.material_jobs import CandidateValidationError, candidates, request_body
+    from nekaise_loop.material_types import CandidateBatch
+    from nekaise_loop.providers.codex_material import strict_schema
+
+    schema = CandidateBatch.model_json_schema()
+    original = json.dumps(schema, sort_keys=True)
+    for scope in ("general_chat", "general_prose", "domain", "unspecified"):
+        spec = {"sources": {}, "job": {"seed_ids": [], "max_output_tokens": 512, "material_scope": scope}}
+        payload = json.loads(request_body(author(), spec, schema)["messages"][1]["content"])
+        candidate = payload["output_schema"]["$defs"]["Candidate"]
+        properties = candidate["properties"]
+        if scope == "general_chat":
+            assert properties["training_tokenization"]["enum"] == ["chat_response"]
+            for field in ("student_prompt", "training_response"):
+                assert field in candidate["required"]
+                assert properties[field]["minLength"] == 1
+                assert "default" not in properties[field]
+            assert "training_tokenization" in candidate["required"]
+            assert strict_schema(payload["output_schema"])["$defs"]["Candidate"]["properties"]["training_tokenization"]["enum"] == ["chat_response"]
+        else:
+            assert properties["training_tokenization"]["enum"] == ["full_text", "chat_response", "prompt_prefix"]
+        row = {"id": "prose", "kind": "cpt", "concept": "fixture", "training_text": "Original prose.",
+               "training_tokenization": "full_text", "rationale": "fixture"}
+        result = SimpleNamespace(content=json.dumps({"rows": [row]}), complete=True)
+        if scope == "general_chat":
+            with pytest.raises(CandidateValidationError, match="general_chat_requires_chat_response"):
+                candidates(result, spec)
+        else:
+            assert candidates(result, spec)[0]["training_text"] == "Original prose."
+        assert payload["task"] == spec
+    assert json.dumps(schema, sort_keys=True) == original
+
+
 @pytest.fixture
 def interrupted_material(setup_loop, request):
     class ThreeJobs(AuthorTeacher):
@@ -92,7 +127,9 @@ def interrupted_material(setup_loop, request):
             raise error
         if fault != "output_budget" and payload["task"]["job"]["id"] == "two" and "retry_validation" not in payload:
             batch = json.loads(result["choices"][0]["message"]["content"])
-            if fault == "empty_batch":
+            if fault in {"truncated_json", "incomplete_valid_json"}:
+                result["choices"][0]["finish_reason"] = "length"
+            elif fault == "empty_batch":
                 batch["rows"] = []
             elif fault == "duplicate_id":
                 batch["rows"][0]["id"] = "PRIVATE_REJECTED_VALUE"
@@ -112,6 +149,8 @@ def interrupted_material(setup_loop, request):
             else:
                 batch["rows"][0]["territory"] = "PRIVATE_REJECTED_VALUE"
             result["choices"][0]["message"]["content"] = json.dumps(batch)
+            if fault == "truncated_json":
+                result["choices"][0]["message"]["content"] = '{"rows":[{"id":"unfinished'
         import httpx
         return httpx.Response(200, json=result)
     pool = AuthorPool(authors=[author()], concurrency=1, max_calls_per_round=3, max_output_tokens_per_round=1536)
@@ -124,6 +163,25 @@ def interrupted_material(setup_loop, request):
     assert len(requests) == 2
     recovery = service.store.one("SELECT * FROM recoveries ORDER BY id DESC")
     return settings, service, campaign, engine, requests, recovery
+
+
+@pytest.mark.parametrize("interrupted_material", ["truncated_json", "incomplete_valid_json"], indirect=True)
+def test_incomplete_author_response_gets_completion_feedback_and_preserves_reservations(interrupted_material):
+    settings, service, campaign, engine, requests, recovery = interrupted_material
+    original = service.store.query("SELECT * FROM material_calls ORDER BY id")
+    rejected = service.artifacts.get(original[1]["artifact"])
+    expected = [{"path": [], "type": "response_incomplete"}]
+    assert rejected["validation_errors"] == expected
+    assert rejected["response"]["choices"][0]["finish_reason"] == "length"
+    proposal = funded_decision(service, campaign)
+    handle_recovery(settings, recovery["id"], agent=lambda *args: proposal)
+    apply_recovery(settings, recovery["id"])
+    engine.run(campaign["id"])
+    assert service.store.campaign(campaign["id"])["status"] == "complete"
+    assert requests[2]["retry_validation"] == expected
+    assert requests[2]["task"] == requests[1]["task"]
+    assert service.store.query("SELECT * FROM material_calls ORDER BY id")[:2] == original
+    assert service.store.campaign(campaign["id"])["teacher_budget_since"] == "2000-01-01"
 
 
 def funded_decision(service, campaign):

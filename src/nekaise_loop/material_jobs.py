@@ -65,6 +65,17 @@ def request_body(author, spec, schema):
     # model readable for historical empty batches, but forbid new empty results.
     schema["properties"]["rows"]["minItems"] = 1
     properties = schema["$defs"]["Candidate"]["properties"]
+    if spec["job"].get("material_scope") == "general_chat":
+        # Mirror the existing job-level execution contract in the request.
+        # Keep the shared schema and other scopes readable in their native modes.
+        properties["training_tokenization"]["enum"] = ["chat_response"]
+        candidate_schema = schema["$defs"]["Candidate"]
+        for field in ("student_prompt", "training_response", "training_tokenization"):
+            if field not in candidate_schema["required"]:
+                candidate_schema["required"].append(field)
+        for field in ("student_prompt", "training_response"):
+            properties[field]["minLength"] = 1
+            properties[field].pop("default", None)
     for field, identifiers in (("source_keys", spec["sources"]),
                                ("seed_ids", spec["job"]["seed_ids"])):
         allowed = sorted(set(identifiers))
@@ -83,6 +94,9 @@ def request_body(author, spec, schema):
         "Every candidate id must be unique within this batch. duplicate_candidate_id retry feedback means multiple rows reused an id; "
         "give each row a distinct id while preserving all requested material. This is identifier uniqueness, not content deduplication. "
         "If retry_validation is present, it contains host validation paths and error types for your previous rejected response; correct those structural errors. "
+        "response_incomplete means the provider did not finish the previous response; even parseable partial JSON is not accepted. "
+        "Budget for a complete JSON object, including closing all strings, rows and arrays, within max_tokens. "
+        "Keep formatting and incidental metadata concise while preserving the Teacher's requested material; do not reduce the requested material unless the Teacher explicitly permits it. "
         "If retry_budget is present, the previous response exceeded its output reservation. Its reported output includes reasoning and the entire JSON, "
         "including prompts and metadata, not just training answers. Keep JSON formatting and incidental metadata concise within the unchanged reservation; "
         "Preserve the teacher's content and schema fields; follow any explicit teacher permission to return fewer rows to fit the budget. "
@@ -125,10 +139,13 @@ class CandidateValidationError(ValueError):
 def candidates(result, spec):
     try:
         if not isinstance(result.content, str):
+            if not result.complete:
+                raise CandidateValidationError([{"path": [], "type": "response_incomplete"}])
             raise ValueError("Author response was incomplete or did not contain final content")
         batch = CandidateBatch.model_validate_json(result.content)
         if not result.complete:
-            raise ValueError("Author response was incomplete")
+            # Parsed rejected tool input is diagnostic evidence, never material.
+            raise CandidateValidationError([{"path": [], "type": "response_incomplete"}])
         if not batch.rows:
             raise CandidateValidationError([{"path": ["rows"], "type": "empty_batch"}])
         source_keys = set(spec["sources"])
@@ -158,6 +175,10 @@ def candidates(result, spec):
         diagnostics = [{"path": [p if isinstance(p, int) or re.fullmatch(r"[a-zA-Z_][a-zA-Z0-9_]{0,63}", str(p)) else "<field>"
                                  for p in e["loc"][:12]], "type": e["type"]}
                        for e in exc.errors(include_input=False, include_context=False, include_url=False)[:8]]
+        # Truncation must not masquerade as JSON syntax failure. Preserve useful
+        # schema paths from parseable rejected CLI tool input, however.
+        if not result.complete and any(e["type"] == "json_invalid" for e in diagnostics):
+            diagnostics = [{"path": [], "type": "response_incomplete"}]
         raise CandidateValidationError(diagnostics) from None
     except (KeyError, TypeError, ValueError):
         raise CandidateValidationError([{"path": [], "type": "completion_or_provenance"}]) from None

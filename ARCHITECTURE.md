@@ -527,6 +527,11 @@ answer IDs when their enum fits the adapter's schema budget (200 IDs / 16,000 ch
 Larger panels still receive every answer and the exact count constraint. Host validation
 always checks unique, complete ID coverage and frozen dimensions; schema constraints do
 not assign scores, guarantee provider compliance or replace those checks.
+Revision requests likewise bind the row count to the supplied lessons and constrain
+lesson IDs within the same schema budget. Larger requests retain every lesson and
+the exact count constraint. The stage merge still rejects missing, unexpected or
+duplicate IDs; the Teacher retains correction text and `use_for_training` decisions,
+including explicit exclusion through a returned row rather than a missing row.
 Only matching recorded prompt tokens, decoding settings and runtime support a per-item
 delta. Diagnostic rounds reuse their one observation explicitly and produce no delta.
 No comparison, dimension or work-accounting value controls checkpoint acceptance.

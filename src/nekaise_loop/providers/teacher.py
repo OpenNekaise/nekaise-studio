@@ -191,7 +191,16 @@ class CliTeacher:
         return self.request("curriculum", brief, Curriculum)
 
     def revise(self, lessons):
-        return self.request("revise", {"lessons": lessons}, Revisions)["rows"]
+        schema = Revisions.model_json_schema()
+        rows = schema["properties"]["rows"]
+        rows["minItems"] = rows["maxItems"] = len(lessons)
+        ids = sorted({lesson["id"] for lesson in lessons})
+        # Match grading's schema-size budget, never limit the Teacher's lessons.
+        # The stage merge still checks exact coverage; training selection and
+        # every correction remain Teacher decisions.
+        if ids and len(ids) <= 200 and sum(map(len, ids)) <= 16000:
+            schema["$defs"]["Revision"]["properties"]["id"]["enum"] = ids
+        return self.request("revise", {"lessons": lessons}, Revisions, schema=schema)["rows"]
 
     def select_materials(self, manifest):
         schema = MaterialSelection.model_json_schema()

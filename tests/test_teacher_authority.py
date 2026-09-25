@@ -417,6 +417,55 @@ def test_grade_adapter_binds_coverage_without_limiting_teacher_panel(setup_loop,
     assert "enum" not in generic["$defs"]["Grade"]["properties"]["id"]
 
 
+@pytest.mark.parametrize("provider", ["codex", "claude"])
+@pytest.mark.parametrize("count,width", [(0, 24), (39, 24), (201, 24), (126, 160)])
+def test_revision_adapter_binds_coverage_without_limiting_teacher_lessons(setup_loop, provider, count, width):
+    from nekaise_loop.providers.teacher import CliTeacher
+    from nekaise_loop.stages import _merge
+    from nekaise_loop.teaching import Revisions
+    settings, service, campaign, engine = setup_loop
+    engine.run(campaign["id"], pause=lambda: True)
+    row = service.store.one("SELECT id FROM rounds")
+    lessons = [{"id": str(i).zfill(width), "student": "Fixture attempt"} for i in range(count)]
+    # Reverse order, exact text and explicit exclusions remain Teacher choices.
+    revisions = [{"id": lesson["id"], "text": "", "training_text": "",
+                  "training_tokenization": "chat_response", "training_response": "",
+                  "errors": [], "evidence": [], "use_for_training": False,
+                  "reason": "Teacher excludes this fixture"} for lesson in reversed(lessons)]
+    class Runner:
+        def run(self, command, **kwargs):
+            saved = json.loads((kwargs["cwd"] / "input.json").read_text())
+            assert saved["inputs"]["task"]["lessons"] == lessons
+            schema = saved["schema"]
+            rows = schema["properties"]["rows"]
+            assert rows["minItems"] == rows["maxItems"] == count
+            id_schema = schema["$defs"]["Revision"]["properties"]["id"]
+            if count == 39:
+                assert id_schema["enum"] == sorted(lesson["id"] for lesson in lessons)
+                assert 38 < rows["minItems"]  # Recovery 421's omitted revision.
+            else:
+                assert "enum" not in id_schema
+            if provider == "codex":
+                assert json.loads(Path(command[command.index("--output-schema") + 1]).read_text()) == schema
+                Path(command[command.index("--output-last-message") + 1]).write_text(json.dumps({"rows": revisions}))
+                return ""
+            assert json.loads(command[command.index("--json-schema") + 1]) == schema
+            return json.dumps({"structured_output": {"rows": revisions}})
+    config = CampaignConfig.model_validate({**campaign["config"], "teacher_provider": provider})
+    teacher = CliTeacher(config, settings, service.store, campaign["id"], row["id"],
+                         Runner(), settings.workspace / "revision-adapter")
+    assert teacher.revise(lessons) == revisions
+    assert [r["id"] for r in _merge(lessons, revisions)] == [r["id"] for r in lessons]
+    if count:
+        for invalid in (revisions[:-1], [{**revisions[0], "id": "unexpected"}, *revisions[1:]],
+                        [revisions[0], *revisions[:-1]]):
+            with pytest.raises(ValueError, match="missing or unexpected IDs"):
+                _merge(lessons, invalid)
+    generic = Revisions.model_json_schema()
+    assert "minItems" not in generic["properties"]["rows"]
+    assert "enum" not in generic["$defs"]["Revision"]["properties"]["id"]
+
+
 def test_operational_handoff_follows_applied_lineage_and_preserves_hold(setup_loop):
     settings, service, parent, engine = setup_loop
     engine.run(parent["id"])

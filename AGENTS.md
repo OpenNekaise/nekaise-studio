@@ -242,3 +242,13 @@ and verified completed exposure. Structural nonzero/provenance checks are not co
 or learning gates. Trusted-author policy, execution budgets, Teacher authority and benchmark
 isolation remain. Track actual prompt responsiveness as well as domain learning; successful
 execution, more repeated tokens and lower loss alone do not resolve a chat regression.
+
+## Primary Teacher selection (authorized 2026-09-26)
+
+The operator selected **GPT-6 Sol** (`gpt-6-sol`) through the existing Codex transport
+for the primary Teacher in ongoing training, with **high** reasoning effort. Apply this
+selection through a recorded continuation from the latest completed checkpoint, preserving
+compatible Adam and the current budget epoch. Keep Kai's frozen identity, workload guidance,
+all Material Authors, their limits, and required/trusted material policies intact. The
+orchestrator remains a separate role with its existing configuration. Historical campaign
+and provider records retain their original model identities.

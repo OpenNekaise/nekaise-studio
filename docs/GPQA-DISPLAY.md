@@ -10,8 +10,12 @@ python -m nekaise_bench gpqa --model latest --studio ../nekaise-studio
 
 Use the ML Python environment; `--limit 2` is a smoke check and never publishes a full
 198-question score. See [Bench's protocol](../../nekaise-bench/docs/GPQA.md) for complete
-options, dataset attribution and limitations. Runs are command-driven, not automatically
-scheduled after training. Score changes do not control checkpoint or teaching decisions.
+options, dataset attribution and limitations. Bench's independent timer evaluates the
+latest completed checkpoint once daily at **03:00 Europe/Stockholm** (operator decision,
+2026-09-27). It uses four CPU threads and publishes completed aggregates automatically;
+it is not triggered by training rounds. Missed triggers catch up once after the user
+service manager returns. Manual evaluations remain available. Score changes do not
+control checkpoint or teaching decisions.
 
 `GET /api/benchmarks/gpqa-diamond` reads only a bounded, allowlisted JSON catalogue from
 `../nekaise-bench/workspace/gpqa/projection/gpqa-diamond.json`. Override the directory with

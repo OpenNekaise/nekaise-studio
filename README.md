@@ -79,8 +79,9 @@ Python executable in your training environment.
 See [deployment](deploy/README.md) for service setup, [architecture](ARCHITECTURE.md) for
 implementation details, and [validation](docs/VALIDATION.md) for what has been tested.
 
-The dashboard also displays command-driven **GPQA Diamond** evaluations from Bench.
-Supply a local model checkpoint to Bench's `gpqa` command; completed aggregate results
+The dashboard displays **GPQA Diamond** evaluations from Bench, scheduled independently
+each day at 03:00 Europe/Stockholm on the latest completed checkpoint. Bench's `gpqa`
+command also accepts a local model checkpoint for an on-demand run. Completed aggregates
 appear automatically on Studio's separate card. See [GPQA display](docs/GPQA-DISPLAY.md).
 
 ## License

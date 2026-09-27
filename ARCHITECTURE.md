@@ -134,6 +134,14 @@ and matching cleaned-document hashes decide admission. Read-only snapshots toler
 active corpus grower; eligibility must remain unchanged throughout selection. The teacher selects
 sources and spans; a configured prefix is only an initial search suggestion. The index has
 no fixed frontier cutoff. Admission still checks the authoritative manifest and content hash.
+Studio reads eligibility policy versions 1 and 2. Version 1 restrictions implicitly deny
+default-corpus use; version 2 distinguishes collection from default-corpus effects and
+adds the conjunctive `license` selector. Any matching default-corpus denial excludes a
+source; a collection-only denial does not revoke use of held bytes. Studio reads only
+the default `corpus/` view and its open license class (`public-domain`, `cc-by`, `cc-by-sa`,
+`cc0`, `open`), never alternative collected-use views. Unknown versions, malformed
+selectors/effects and unknown license classes fail closed. The publisher's classification
+vocabulary is a local compatibility contract; new classes require an explicit adapter update.
 
 The teacher is the teaching authority. The teacher selects exact
 training text and whether each lesson should be used. The historical `gate` stage records

@@ -9,6 +9,10 @@ from contextlib import contextmanager, closing
 from pathlib import Path
 
 
+# The corpus publisher's default view contains only its open use class.
+# Other collected classes are not Studio inputs, even when their status is ok.
+DEFAULT_CORPUS_LICENSES = frozenset({"public-domain", "cc-by", "cc-by-sa", "cc0", "open"})
+
 
 @contextmanager
 def settled_corpus(root: Path):
@@ -23,22 +27,40 @@ def settled_corpus(root: Path):
 
 
 def eligible(row: dict, policy: dict) -> bool:
-    if row.get("status") != "ok" or not row.get("license") or row["license"] in {"proprietary-internal", "restricted", "pointer-only"}:
+    if row.get("status") != "ok" or row.get("license") not in DEFAULT_CORPUS_LICENSES:
         return False
     for rule in policy.values():
         match = rule["match"]
-        if all((str(row.get("id", "")).startswith(value) if key == "id_prefix" else row.get(key) == value) for key, value in match.items()):
+        # Collection denial governs fetching, not use of already held bytes.
+        # Every matching default-view denial wins; v1 implicitly denies both.
+        denied = rule.get("effects", {"default_corpus": "deny"})["default_corpus"] == "deny"
+        if denied and all((str(row.get("id", "")).startswith(value) if key == "id_prefix" else row.get(key) == value) for key, value in match.items()):
             return False
     return True
 
 
 def policy_at(root):
     data = json.loads((root/"registry/eligibility.json").read_text())
-    if data.get("version") != 1 or not isinstance(data.get("restrictions"), dict):
+    if (not isinstance(data, dict) or type(data.get("version")) is not int
+            or data["version"] not in (1, 2) or not isinstance(data.get("restrictions"), dict)):
         raise ValueError("Unsupported corpus eligibility policy")
-    for rule in data["restrictions"].values():
-        if rule.get("status") != "restricted" or not rule.get("match") or set(rule["match"]) - {"source", "id_prefix"}:
+    selectors = {"source", "id_prefix", "license"} if data["version"] == 2 else {"source", "id_prefix"}
+    for name, rule in data["restrictions"].items():
+        if not name or not isinstance(rule, dict):
             raise ValueError("Invalid corpus eligibility selector")
+        match = rule.get("match")
+        if (rule.get("status") != "restricted" or not isinstance(match, dict) or not match
+                or set(match) - selectors
+                or any(not isinstance(value, str) or not value for value in match.values())):
+            raise ValueError("Invalid corpus eligibility selector")
+        if data["version"] == 2:
+            effects = rule.get("effects")
+            if (not isinstance(effects, dict) or set(effects) != {"collection", "default_corpus"}
+                    or any(value not in ("allow", "deny") for value in effects.values())
+                    or "deny" not in effects.values()):
+                raise ValueError("Invalid corpus eligibility effects")
+        elif "effects" in rule:
+            raise ValueError("Corpus eligibility effects require policy version 2")
     return data["restrictions"]
 
 

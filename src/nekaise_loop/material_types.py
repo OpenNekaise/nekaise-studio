@@ -4,6 +4,7 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 from pydantic_core import PydanticCustomError
 from .material_portfolio import MaterialScope
+from .curriculum_types import LearningTrack
 
 
 class MaterialRecord(BaseModel):
@@ -11,6 +12,8 @@ class MaterialRecord(BaseModel):
 
 
 class ExpansionJob(MaterialRecord):
+    learning_track: LearningTrack = "unspecified"
+    curriculum_unit_id: str = ""
     id: str = Field(pattern=r"^[a-zA-Z0-9_-]{1,80}$")
     author_id: str
     material_scope: MaterialScope = Field(default="unspecified", description="Teacher-declared scope for this entire job. Separate general_chat, general_prose and domain jobs; inherited by all its candidates, never chosen by the Author.")

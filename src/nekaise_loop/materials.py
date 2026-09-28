@@ -83,9 +83,24 @@ def expand(ctx):
         for i in job["reading_indices"]:
             source = selected["readings"][i]
             sources[digest(source)] = source
+        progression = selected.get("progression")
+        unit = None
+        if progression:
+            work = ctx.artifacts.get(progression["assignment_artifact"])
+            if job["learning_track"] == "gpc":
+                unit = work["unit"]
+                for source in ctx.artifacts.get(progression["research_artifact"])["sources"]:
+                    sources[digest(source)] = source
+            elif job["learning_track"] == "corpus":
+                for span in work["spans"][:2]:
+                    source = {k: v for k, v in span.items() if k != "after"}
+                    source["id"] = span["document_id"]
+                    sources[digest(source)] = source
         specs.append({"job": job, "teacher_plan": selected["curriculum"]["notes"],
                       "seed_artifact": seed_artifact, "seeds": examples,
                       "seed_feedback": feedback, "sources": sources})
+        if unit:
+            specs[-1]["curriculum_unit"] = unit
         if ctx.config.student_identity is not None:
             specs[-1]["student_identity"] = ctx.config.student_identity.model_dump()
     results = run_jobs(ctx, specs)
@@ -186,6 +201,8 @@ def select_materials(ctx):
         document["selection_reason"] = choice["reason"]
         material_rows.append({"id": key, "kind": item["kind"], "concept": item["concept"],
             "material_scope": task["job"].get("material_scope", "unspecified"),
+            "learning_track": task["job"].get("learning_track", "unspecified"),
+            "curriculum_unit_id": task["job"].get("curriculum_unit_id", ""),
             "prompt": item["student_prompt"] or item["concept"], "student_prompt": item["student_prompt"],
             "student_format": "chat_template" if item["training_tokenization"] == "chat_response" else "raw_text",
             "student": None, "student_observation": "not_requested", "teacher": item["training_response"] if item["training_tokenization"] == "chat_response" else item["training_text"],

@@ -95,6 +95,20 @@ class Store:
                     additional_output_tokens INTEGER NOT NULL CHECK(additional_output_tokens>=0),
                     decision TEXT NOT NULL, created_at TEXT NOT NULL
                 );
+                CREATE TABLE IF NOT EXISTS curriculum_progress (
+                    namespace TEXT PRIMARY KEY, contract TEXT NOT NULL, sequence INTEGER NOT NULL,
+                    state TEXT NOT NULL, updated_at TEXT NOT NULL
+                );
+                CREATE TABLE IF NOT EXISTS curriculum_assignments (
+                    namespace TEXT NOT NULL REFERENCES curriculum_progress(namespace), sequence INTEGER NOT NULL,
+                    artifact TEXT NOT NULL, research_artifact TEXT, created_at TEXT NOT NULL,
+                    PRIMARY KEY(namespace,sequence)
+                );
+                CREATE TABLE IF NOT EXISTS curriculum_receipts (
+                    round_id TEXT PRIMARY KEY REFERENCES rounds(id), namespace TEXT NOT NULL,
+                    sequence INTEGER NOT NULL, artifact TEXT NOT NULL, created_at TEXT NOT NULL,
+                    UNIQUE(namespace,sequence)
+                );
             """)
             # executescript ends the preceding transaction. Keep every v4
             # column/backfill/version change in one crash-safe transaction.

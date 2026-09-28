@@ -126,4 +126,4 @@ def read_source(root, document_id, start=0, length=0):
         excerpt = text[start:start+length] if length else text[start:]
         if not excerpt.strip():
             raise ValueError("Selected source span is empty")
-        return {"id": document_id, "title": row.get("title", document_id), "url": row.get("url", ""), "license": row["license"], "topic": row.get("topic", ""), "source_sha256": source_hash, "manifest_sha256": row.get("sha256"), "text": excerpt, "span_start": start, "span_length": len(excerpt), "document_chars": len(text), "selection_reason": "Selected by the teacher", "replay": False}
+        return {"source": row.get("source", ""), "id": document_id, "title": row.get("title", document_id), "url": row.get("url", ""), "license": row["license"], "topic": row.get("topic", ""), "source_sha256": source_hash, "manifest_sha256": row.get("sha256"), "text": excerpt, "span_start": start, "span_length": len(excerpt), "document_chars": len(text), "selection_reason": "Selected by the teacher", "replay": False}

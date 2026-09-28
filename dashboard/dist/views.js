@@ -1,10 +1,11 @@
-import { gpqaCard } from "./gpqa.js?v=ebb687a0fdd7";
-import { efficiencyCard, ratioLabel } from "./efficiency.js?v=ebb687a0fdd7";
-import { escapeHTML as e, number, duration, time, percent, safeURL, diffWords, lossChart, iterationMetrics, dateLabel, modelLabel } from "./lib.js?v=ebb687a0fdd7";
-import { usageCharts, elapsedLabel, phaseFor, phases } from "./telemetry.js?v=ebb687a0fdd7";
-import { benchmarkCard, benchmarkHistory } from "./benchmark.js?v=ebb687a0fdd7";
-import { teacherAssessmentCard } from "./teacher-assessment.js?v=ebb687a0fdd7";
-import { experimentCard, experimentsView } from "./experiments.js?v=ebb687a0fdd7";
+import { curriculumCard } from "./curriculum.js?v=8966e20f4ec9";
+import { gpqaCard } from "./gpqa.js?v=8966e20f4ec9";
+import { efficiencyCard, ratioLabel } from "./efficiency.js?v=8966e20f4ec9";
+import { escapeHTML as e, number, duration, time, percent, safeURL, diffWords, lossChart, iterationMetrics, dateLabel, modelLabel } from "./lib.js?v=8966e20f4ec9";
+import { usageCharts, elapsedLabel, phaseFor, phases } from "./telemetry.js?v=8966e20f4ec9";
+import { benchmarkCard, benchmarkHistory } from "./benchmark.js?v=8966e20f4ec9";
+import { teacherAssessmentCard } from "./teacher-assessment.js?v=8966e20f4ec9";
+import { experimentCard, experimentsView } from "./experiments.js?v=8966e20f4ec9";
 
 export const badge = (status, small = false) => `<span class="status ${e(status)} ${small ? "small" : ""}">${e(status || "pending")}</span>`;
 const empty = (text) => `<div class="empty-inline">${e(text)}</div>`;
@@ -102,7 +103,7 @@ export function overview(s, section = "overview") {
   const preview = lessons.find(row => row.teacher) || lessons[0];
   const iterations = `<section class="panel teaching-room"><div class="panel-heading"><h2>Iterations</h2><span class="quiet">${count(s.rounds.length, "iteration")} in this run</span></div>${iterationList(s)}</section>`;
   if (section === "teaching") return heading + studioNavigation(section) + recoveryNotice(s) + currentIteration(s) + (preview ? `<div class="section-heading"><h2>Inside the lesson</h2><button class="text-button" data-round="${e(round.id)}">All lessons & materials →</button></div>${lessonCard(preview, 0, false)}` : `<div class="teaching-placeholder"><h2>Teaching material</h2><p>Lessons and student attempts appear here when they are recorded.</p></div>`) + iterations;
-  return heading + sessionStrip(s) + `<div class="usage-grid studio-charts" aria-label="Training charts">${usageCharts(s.telemetry)}${efficiencyCard(s.telemetry)}${teacherAssessmentCard(s.teacherAssessment, s.round)}${benchmarkCard(s.benchmark, s.benchmarkBrowser)}${gpqaCard(s.gpqa)}</div><div class="chart-scope"><span>${s.telemetry ? `Usage across ${count(s.telemetry.campaign_count, "run")} in this continuation lineage` : "Loading recorded session usage"}</span><span>Independent eval observes checkpoints separately</span></div>${benchmarkHistory(s.benchmarkBrowser?.snapshot || s.benchmark, s.benchmarkBrowser)}${studioNavigation(section)}${recoveryNotice(s)}<div class="studio-detail-grid">${currentIteration(s)}${chartPanel(s)}</div>${iterations}${learningWork(s.round?.learning_work)}`;
+  return heading + sessionStrip(s) + `<div class="usage-grid studio-charts" aria-label="Training charts">${usageCharts(s.telemetry)}${efficiencyCard(s.telemetry)}${teacherAssessmentCard(s.teacherAssessment, s.round)}${benchmarkCard(s.benchmark, s.benchmarkBrowser)}${gpqaCard(s.gpqa)}</div><div class="chart-scope"><span>${s.telemetry ? `Usage across ${count(s.telemetry.campaign_count, "run")} in this continuation lineage` : "Loading recorded session usage"}</span><span>Independent eval observes checkpoints separately</span></div>${benchmarkHistory(s.benchmarkBrowser?.snapshot || s.benchmark, s.benchmarkBrowser)}${curriculumCard(s.curriculum_progress)}${studioNavigation(section)}${recoveryNotice(s)}<div class="studio-detail-grid">${currentIteration(s)}${chartPanel(s)}</div>${iterations}${learningWork(s.round?.learning_work)}`;
 }
 
 function lessonCard(row, index, diff, selected) {

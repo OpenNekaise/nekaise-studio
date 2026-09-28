@@ -33,6 +33,11 @@ class Service:
         if not parent_id and "material_authors" not in config.model_fields_set:
             from .author_config import load_pool
             config = config.model_copy(update={"material_authors": load_pool(self.settings.material_authors_path)})
+        if not parent_id and "curriculum_loop" not in config.model_fields_set and config.general_material_policy == "required_v1":
+            from .general_curriculum import import_curriculum
+            config = config.model_copy(update={"curriculum_loop": import_curriculum(self.settings.workspace,
+                self.settings.root / "curricula/general_purpose_curriculum.json")})
+        config = CampaignConfig.model_validate(config.model_dump())
         config = config.model_copy(update={"corpus_path": str((self.settings.root / config.corpus_path).resolve())})
         with self.store.connect(immediate=True) as db:
             db.execute("INSERT INTO campaigns(id,name,status,config,created_at,updated_at,parent_campaign_id,context_artifact,implementation_hash) VALUES(?,?,'ready',?,?,?,?,?,?)", (campaign_id, name, encode(config.model_dump()), now(), now(), parent_id, context_artifact, source_fingerprint()))
@@ -212,6 +217,13 @@ class Service:
                 "updated": [i for i in new if i in old and new[i] != old[i]], "reason": reason}
         config.update(updates)
         config = CampaignConfig.model_validate(config)
+        prior_loop = parent["config"].get("curriculum_loop")
+        if prior_loop and actor != "operator":
+            loop = config.curriculum_loop
+            if (not loop or loop.projection_artifact != prior_loop["projection_artifact"]
+                    or loop.remediation_cap > prior_loop["remediation_cap"]
+                    or (loop.namespace != prior_loop["namespace"] and restore_round is None)):
+                raise Conflict("Recovery must preserve forward progression, the pinned curriculum and remediation cap; only explicit Base restoration may reset its namespace")
         from .identity import validate_identity_update
         validate_identity_update(CampaignConfig.model_validate(parent["config"]).student_identity, config.student_identity)
         config = config.model_copy(update={"corpus_path": str((self.settings.root/config.corpus_path).resolve())})
@@ -319,7 +331,9 @@ class Service:
         if detail:
             frozen = self.store.one("SELECT artifact FROM stage_runs WHERE round_id=? AND stage='freeze' AND status='complete' ORDER BY attempt DESC LIMIT 1", (detail["id"],))
             detail["token_ledger"] = self.artifacts.get(frozen["artifact"]).get("ledger") if frozen else None
-        return {"campaign": campaign, "rounds": rounds, "round": detail, "events": events, "recovery": recovery, "teacher_usage": usage, "stages": [{"id": s, "label": STAGE_LABELS[s]} for s in STAGES], "timestamp": now()}
+        from .curriculum_progress import status as curriculum_status
+        progression = curriculum_status(self.store, self.artifacts, campaign["config"])
+        return {"campaign": campaign, "rounds": rounds, "round": detail, "events": events, "recovery": recovery, "teacher_usage": usage, "curriculum_progress": progression, "stages": [{"id": s, "label": STAGE_LABELS[s]} for s in STAGES], "timestamp": now()}
 
     def readiness(self):
         settings = self.settings

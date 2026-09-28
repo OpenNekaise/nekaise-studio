@@ -160,3 +160,13 @@ Only one chat request runs at a time. The native conversation limit is 2,048 pro
 tokens and 256 output tokens; a long conversation needs a new chat. Raw-text Base runs
 are not exposed as chat models. Deployment or checkpoint maintenance can briefly make
 chat unavailable; training continues independently. See the [runtime contract](ARCHITECTURE.md#interactive-model-tab).
+
+## Forward curriculum coverage
+
+The current progressive curriculum traverses all eligible built-environment corpus
+passages and a pinned general-purpose map (20 domains, 265 units). The Teacher chooses
+the forward mix; adaptive follow-up is capped at 20% of causal targets. Every registered
+Author contributes forward material. Verified train-stage saves advance both cursors,
+independently of assessment scores. Teacher web research supplies real reference
+excerpts for original general material. See [the progression contract](docs/PROGRESSIVE-CURRICULUM.md)
+for source snapshots, full-span accounting, retries and continuation semantics.

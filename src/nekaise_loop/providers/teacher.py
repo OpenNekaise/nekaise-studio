@@ -5,6 +5,7 @@ import json
 from pathlib import Path
 import shlex
 import sys
+import time
 from ..artifacts import atomic_write, canonical, digest
 from ..config import ROOT
 from ..teaching import Curriculum, Revisions, Evaluations, Grades, Reflection, MaterialSelection
@@ -101,6 +102,7 @@ class CliTeacher:
         self.config, self.settings, self.store = config, settings, store
         self.campaign_id, self.round_id = campaign_id, round_id
         self.runner, self.directory = runner, directory
+        self.deadline = time.monotonic() + config.max_stage_seconds
 
     def request(self, purpose, payload, model, *, schema=None):
         campaign = self.store.campaign(self.campaign_id)
@@ -149,10 +151,16 @@ class CliTeacher:
             # can then read SQLite without needing to create shared-memory files.
             with self.store.connect() as history_handle:
                 history_handle.execute("SELECT id FROM campaigns LIMIT 1").fetchone()
-                return self.runner.run(command, cwd=call_dir, log=call_dir/"provider.log", timeout=self.config.max_stage_seconds, stdin=prompt)
+                timeout = self.deadline - time.monotonic() if self.config.curriculum_loop else self.config.max_stage_seconds
+                if timeout <= 0:
+                    raise TimeoutError("Teacher research/planning exhausted the shared stage time budget")
+                return self.runner.run(command, cwd=call_dir, log=call_dir/"provider.log", timeout=timeout, stdin=prompt)
         try:
             if self.config.teacher_provider == "claude":
                 command = [self.settings.claude, "-p", "--model", self.config.teacher_model, "--effort", "high", "--tools", "Read,Glob,Grep,Bash", "--allowedTools", "Read,Glob,Grep,Bash", "--permission-prompts", "none", "--strict-mcp-config", "--no-session-persistence", "--output-format", "json", "--json-schema", json.dumps(schema)]
+                if purpose == "research":
+                    for flag in ("--tools", "--allowedTools"):
+                        command[command.index(flag)+1] += ",WebSearch,WebFetch"
                 output = run(command)
                 envelope = parse_json(output)
                 if envelope.get("is_error"):
@@ -163,6 +171,8 @@ class CliTeacher:
                 schema_path, result_path = call_dir / "schema.json", call_dir / "response.json"
                 atomic_write(schema_path, canonical(schema))
                 command = [self.settings.codex, "exec", "--ephemeral", "--ignore-user-config", "--skip-git-repo-check", "-C", str(call_dir), "-s", "read-only", "-m", self.config.teacher_model, "-c", 'model_reasoning_effort="high"', "--output-schema", str(schema_path), "--output-last-message", str(result_path), "--json", "--color", "never", "-"]
+                if purpose == "research":
+                    command[-1:-1] = ["-c", 'web_search="live"']
                 run(command)
                 response = parse_json(result_path.read_text())
                 usage = {"cost_usd": None, "note": "CLI does not provide a cost estimate in this adapter"}
@@ -189,6 +199,10 @@ class CliTeacher:
 
     def curriculum(self, brief):
         return self.request("curriculum", brief, Curriculum)
+
+    def research(self, brief):
+        from ..curriculum_types import ResearchPlan
+        return self.request("research", brief, ResearchPlan)
 
     def revise(self, lessons):
         schema = Revisions.model_json_schema()

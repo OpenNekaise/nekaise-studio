@@ -39,8 +39,28 @@ def select(ctx):
         "concurrency": ctx.config.material_authors.concurrency}
     if ctx.campaign.get("context_artifact"):
         brief["campaign_context_artifact"] = ctx.campaign["context_artifact"]
+    progression = None
+    if ctx.config.curriculum_loop:
+        from .curriculum_progress import assignment, required_authors, validate_plan
+        from .curriculum_research import research
+        work = assignment(ctx)
+        authors = [a.id for a in ctx.config.material_authors.authors]
+        references = research(ctx, work)
+        progression = {"assignment_artifact": ctx.artifacts.put(work), "research_artifact": ctx.artifacts.put(references),
+                       "required_authors": authors}
+        ctx.progression = progression
+        brief["progression"] = {**progression, "unit": work["unit"], "gpc_cycle": work["gpc_cycle"],
+            "unit_position": work["unit_index"] + 1, "unit_count": work["unit_count"],
+            "research": references, "remediation_cap": ctx.config.curriculum_loop.remediation_cap,
+            "corpus_spans_available": len(work["spans"]),
+            "corpus_preview": [{k: v for k, v in s.items() if k != "after"} for s in work["spans"][:8]],
+            "full_assignment_path": str(ctx.artifacts.root / progression["assignment_artifact"][:2] / (progression["assignment_artifact"] + ".json"))}
     curriculum = Curriculum.model_validate(ctx.teacher.curriculum(brief)).model_dump()
     validate_expansion_plan(ctx.config, curriculum)
+    if progression:
+        if curriculum["train_epochs"]:
+            required_authors(ctx)
+        validate_plan(ctx, curriculum, work, authors)
     experiment = experiments.prepare(ctx, curriculum["experiment"])
     scoring = [historical_training_pair(ctx, rid) for rid in curriculum["scoring_round_ids"]]
     if len({r["id"] for r in curriculum["lessons"]}) != len(curriculum["lessons"]):
@@ -53,6 +73,8 @@ def select(ctx):
     lessons = []
     for task in curriculum["lessons"]:
         sources = _sources(ctx, task["sources"])
+        if progression and task["learning_track"] == "gpc":
+            sources = list({d["id"]: d for d in [*sources, *references["sources"]]}.values())
         document = _primary(sources, task["concept"])
         document["selection_reason"] = task["reason"]
         lessons.append({**task, "sources": sources, "document": document, "student": "", "teacher": "", "errors": [], "evidence": [], "gate": None})
@@ -60,7 +82,8 @@ def select(ctx):
     replay = [replay_lesson(ctx.engine.settings.workspace, row["round_id"], row["lesson_id"]) for row in curriculum["replay"]]
     ctx.project("lesson", lessons)
     ctx.event("teacher", "Teacher selected curriculum", {"lessons": len(lessons), "readings": len(readings), "replay": len(replay), "token_mix": curriculum["token_mix"], "notes": curriculum["notes"]})
-    return {"curriculum": curriculum, "lessons": lessons, "readings": readings, "replay": replay, "comparison": comparison, "scoring": scoring, "experiment": experiment}
+    return {"curriculum": curriculum, "lessons": lessons, "readings": readings, "replay": replay, "comparison": comparison, "scoring": scoring, "experiment": experiment,
+            **({"progression": progression} if progression else {})}
 
 
 def _comparison(ctx, round_id, checkpoint_kind="output"):
@@ -109,8 +132,30 @@ def _comparison(ctx, round_id, checkpoint_kind="output"):
 
 
 def _sources(ctx, references):
-    return [{**read_source((ctx.engine.settings.root/ctx.config.corpus_path).resolve(), r["document_id"], r["start"], r["length"]),
-             "material_scope": r.get("material_scope", "unspecified")} for r in references]
+    snapshots = []
+    if ctx.config.curriculum_loop and references:
+        progression = getattr(ctx, "progression", None) or ctx.output("select").get("progression")
+        if progression:
+            snapshots.extend(ctx.artifacts.get(progression["research_artifact"])["sources"])
+            for span in ctx.artifacts.get(progression["assignment_artifact"])["spans"]:
+                snapshots.append({**span, "id": span["document_id"]})
+    result = []
+    for r in references:
+        source = next((d for d in snapshots if d["id"] == r["document_id"]
+                       and d["span_start"] <= r["start"] < d["span_start"]+d["span_length"]
+                       and ((r["length"] == 0 and d["id"].startswith("research-"))
+                            or (r["length"] > 0 and r["start"]+r["length"] <= d["span_start"]+d["span_length"]))), None)
+        if source:
+            start = r["start"]-source["span_start"]
+            excerpt = source["text"][start:start+r["length"]] if r["length"] else source["text"][start:]
+            source = {k: v for k, v in source.items() if k != "after"}
+            source.update(text=excerpt, span_start=r["start"], span_length=len(excerpt))
+            if not excerpt.strip():
+                raise ValueError("Selected reference excerpt is empty")
+        else:
+            source = read_source((ctx.engine.settings.root/ctx.config.corpus_path).resolve(), r["document_id"], r["start"], r["length"])
+        result.append({**source, "material_scope": r.get("material_scope", "unspecified")})
+    return result
 
 
 def _primary(sources, concept):
@@ -241,12 +286,16 @@ def freeze(ctx):
         text = _teaching_text(row)
         provenance = {"lesson_id": row["id"], "document_id": row["document"]["id"], "source_sha256": row["document"]["source_sha256"], "material_scope": row.get("material_scope", "unspecified")}
         dataset.append({"id": row["id"], "stream": row["kind"], "text": text, **provenance, **_tokenization(row)})
+        if ctx.config.curriculum_loop:
+            dataset[-1].update(learning_track=row["learning_track"], curriculum_unit_id=row.get("curriculum_unit_id", ""))
         if row.get("material_origin"):
             dataset[-1]["material_origin"] = row["material_origin"]
         dataset[-1]["sources"] = [{k:d[k] for k in ("id", "source_sha256", "span_start", "span_length")} for d in row["sources"]]
     selected = {**ctx.output("select"), "curriculum": ctx.output("material_select")["curriculum"]}
     for index, document in enumerate(selected["readings"]):
         dataset.append({"id": f"reading-{index}", "stream": "corpus", "text": document["text"], "lesson_id": "", "document_id": document["id"], "source_sha256": document["source_sha256"], "span_start": document["span_start"], "span_length": document["span_length"], "material_scope": document.get("material_scope", "unspecified")})
+        if ctx.config.curriculum_loop:
+            dataset[-1]["learning_track"] = "remediation"
     for index, row in enumerate(selected["replay"]):
         if row.get("training_tokenization") != "chat_response" and not _teaching_text(row).strip():
             raise ValueError("Selected historical lesson has no teacher text")
@@ -254,11 +303,20 @@ def freeze(ctx):
         dataset.append({"id": f"history-{index}", "stream": "replay", "text": text, "lesson_id": row["id"], "document_id": row["document"]["id"], "source_sha256": row["document"]["source_sha256"], "origin_round_id": row["origin_round_id"], "origin_artifact": row["origin_artifact"], "material_scope": row.get("material_scope", "unspecified"), **_tokenization(row)})
         if row.get("material_origin"):
             dataset[-1]["material_origin"] = row["material_origin"]
+        if ctx.config.curriculum_loop:
+            dataset[-1]["learning_track"] = "remediation"
+    if ctx.config.curriculum_loop and selected["curriculum"]["train_epochs"]:
+        work = ctx.artifacts.get(selected["progression"]["assignment_artifact"])
+        dataset.extend({**{k: v for k, v in span.items() if k != "after"}, "curriculum_span": True}
+                       for span in work["spans"])
     prepared = ctx.trainer.prepare(ctx.round["model_before"], dataset)
+    from .curriculum_progress import progress_receipt
+    progression = progress_receipt(ctx, prepared) if ctx.config.curriculum_loop else None
     work_plan = selected["curriculum"].get("work_plan") or {}
     scopes = portfolio(prepared, {**ctx.config.model_dump(), "train_epochs": selected["curriculum"]["train_epochs"]}, work_plan.get("material_scope_mix"))
     return {**prepared, "dataset_hash": digest(prepared), "accepted": len(accepted), "rejected": len(lessons)-len(accepted),
             "material_portfolio": scopes,
+            **({"curriculum_progress": progression} if progression else {}),
             "experiment_plan_artifact": experiments.plan_artifact(ctx),
             "preparation_work": preparation_work(prepared, {**ctx.config.model_dump(), "train_epochs": selected["curriculum"]["train_epochs"]}),
             "material_sources": source_accounting(prepared),
@@ -282,10 +340,17 @@ def train(ctx):
     scopes = portfolio(dataset, {**ctx.config.model_dump(), "train_epochs": curriculum["train_epochs"]}, (curriculum.get("work_plan") or {}).get("material_scope_mix"))
     if dataset.get("material_portfolio") != scopes:
         raise ValueError("Frozen material portfolio differs from the requested traversal")
+    from .curriculum_progress import progress_receipt
+    progression = progress_receipt(ctx, dataset) if ctx.config.curriculum_loop else None
+    if progression != dataset.get("curriculum_progress"):
+        raise ValueError("Frozen curriculum progress receipt differs from assignment")
     result = ctx.trainer.train(ctx.round["model_before"], dataset, dataset["dataset_hash"], ctx.metric)
     if result["manifest"]["dataset_hash"] != dataset["dataset_hash"] or result["manifest"]["parent"] != ctx.round["model_before"]:
         raise ValueError("Checkpoint does not match its dataset or parent")
+    if progression:
+        progression["after"]["checkpoint"] = result["checkpoint"]
     return {**result, "student_format": ctx.config.student_format, "experiment_plan_artifact": plan_artifact,
+            **({"curriculum_progress": progression} if progression else {}),
             "material_portfolio": completed_portfolio(scopes, result["manifest"])}
 
 

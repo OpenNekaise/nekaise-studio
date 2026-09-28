@@ -36,6 +36,9 @@ class Context:
         if row["stage"] in {"freeze", "train"}:
             curriculum = Curriculum.model_validate(self.output("material_select")["curriculum"])
             runtime_config = runtime_config.model_copy(update={"token_mix": curriculum.token_mix, "train_epochs": curriculum.train_epochs})
+            if runtime_config.curriculum_loop:
+                runtime_config = runtime_config.model_copy(update={"curriculum_loop": runtime_config.curriculum_loop.model_copy(
+                    update={"forward_corpus_share": curriculum.forward_corpus_share})})
         local = engine.model_factory(runtime_config, engine.settings, runner, self.directory)
         self.student, self.trainer = local, local
 
@@ -151,6 +154,8 @@ class Engine:
                                 index_selection(self.store, row["id"], stage_id, artifact, result.get("experiment"), db)
                             if stage == "train":
                                 db.execute("UPDATE rounds SET checkpoint=? WHERE id=?", (result["checkpoint"], row["id"]))
+                                from .curriculum_progress import commit_progress
+                                commit_progress(db, row["id"], result, artifact)
                             self.store.event(campaign_id, row["id"], "stage_complete", f"{STAGE_LABELS[stage]} complete", {"stage": stage, "artifact": artifact}, db=db)
                         dependency_hashes.append(artifact)
                     except BaseException as exc:

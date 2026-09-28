@@ -24,6 +24,9 @@ def main():
     sub.add_parser("history-inventory")
     sub.add_parser("history-reviews")
     sub.add_parser("reindex-experiments")
+    curriculum = sub.add_parser("import-curriculum", help="Pin the safe teaching projection and print a continuation update")
+    curriculum.add_argument("path")
+    curriculum.add_argument("--namespace", default=None)
     reports = sub.add_parser("reports")
     reports.add_argument("--before", type=int)
     reports.add_argument("--limit", type=int, choices=range(1, 101), default=30)
@@ -37,6 +40,7 @@ def main():
     continuation = sub.add_parser("continue")
     continuation.add_argument("campaign_id")
     continuation.add_argument("--rounds", type=int, default=-1)
+    continuation.add_argument("--updates", help="JSON continuation update file; Author changes remain additive")
     for verb in ("start", "pause", "resume", "stop", "review"):
         p = sub.add_parser(verb)
         p.add_argument("campaign_id")
@@ -75,6 +79,9 @@ def main():
     elif args.command == "reindex-experiments":
         from .experiments import rebuild_index
         result = rebuild_index(service.store, service.artifacts)
+    elif args.command == "import-curriculum":
+        from .general_curriculum import import_curriculum
+        result = {"curriculum_loop": import_curriculum(settings.workspace, args.path, namespace=args.namespace).model_dump(), "train_steps": 0}
     elif args.command == "reports":
         from .reports import catalog, current_status
         result = {"current": current_status(service), **catalog(service, before=args.before, limit=args.limit)}
@@ -90,7 +97,9 @@ def main():
     elif args.command == "status":
         result = service.snapshot(args.campaign_id)
     elif args.command == "continue":
-        campaign = service.continue_campaign(args.campaign_id, {"rounds": args.rounds}, start=True)
+        from pathlib import Path
+        updates = json.loads(Path(args.updates).read_text()) if args.updates else {}
+        campaign = service.continue_campaign(args.campaign_id, {"rounds": args.rounds, **updates}, start=True)
         service.ensure_worker()
         result = {"campaign_id": campaign["id"], "status": campaign["status"]}
     else:

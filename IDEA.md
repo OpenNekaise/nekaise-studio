@@ -164,3 +164,13 @@ remains intact. The default `required_v1` policy supersedes earlier optional-del
 legacy artifacts stay readable. Studio displays measured training tokens / primary Teacher
 tokens, with per-round observations and a smoothed trend. The same usage feedback reaches
 curriculum and reflection. See [the contract](docs/COAPT.md#training-production-efficiency).
+
+## Forward curriculum coverage
+
+The current progressive curriculum traverses all eligible built-environment corpus
+passages and a pinned general-purpose map (20 domains, 265 units). The Teacher chooses
+the forward mix; adaptive follow-up is capped at 20% of causal targets. Every registered
+Author contributes forward material. Verified train-stage saves advance both cursors,
+independently of assessment scores. Teacher web research supplies real reference
+excerpts for original general material. See [the progression contract](docs/PROGRESSIVE-CURRICULUM.md)
+for source snapshots, full-span accounting, retries and continuation semantics.

@@ -252,3 +252,26 @@ compatible Adam and the current budget epoch. Keep Kai's frozen identity, worklo
 all Material Authors, their limits, and required/trusted material policies intact. The
 orchestrator remains a separate role with its existing configuration. Historical campaign
 and provider records retain their original model identities.
+
+## Progressive two-source teaching (authorized 2026-09-28)
+
+The operator requires forward coverage of all eligible downloaded `nekaise-corpus`
+passages and all units in the pinned general-purpose curriculum. Use
+`curriculum_loop.policy=progressive_v1`; see [docs/PROGRESSIVE-CURRICULUM.md](docs/PROGRESSIVE-CURRICULUM.md).
+The Teacher chooses the corpus/general mix each round. Remediation, replay and extra
+readings together must remain at or below 20% of actual causal targets; weak answers
+cannot stall either source cursor. Every registered Author must contribute forward
+material each positive round within existing execution budgets. Provider failures
+are recovery/wait conditions, not implicit Author removal. This supersedes older
+subset-Author advice and unconstrained source selection for progressive campaigns.
+
+Advance passage/unit cursors only in the verified train-stage commit, independently
+of assessment scores. Preserve exact whole-span exposure and pending assignments
+across retries/continuations. Never claim generated paraphrases or repeated tiny
+readings cover raw documents. GPC research uses actual fetched references; Teacher
+and Authors generate original general material. Raw curriculum benchmark routing,
+mastery gates and learner-state proposals are authoring context only, excluded from
+the runtime teaching projection. No independent benchmark feedback enters training.
+Teacher authority over explanations, prompts, language, dose and online assessment,
+trusted Author content, Kai identity and additive registries remain. Explicit stop
+prevails; the operator authorized resuming this implementation after validation.

@@ -7,6 +7,7 @@ from .config import TokenMix
 from .material_types import ExpansionJob, MaterialEdit
 from .experiment_types import ExperimentPlan, ExperimentReview
 from .material_portfolio import MaterialScope
+from .curriculum_types import LearningTrack
 
 
 class Record(BaseModel):
@@ -26,6 +27,8 @@ class ReplayRef(Record):
 
 
 class Lesson(Record):
+    learning_track: LearningTrack = "unspecified"
+    curriculum_unit_id: str = ""
     id: str = Field(min_length=1)
     kind: Literal["cpt", "sft"] = Field(description="Recipe material within CoAPT Mid-training: cpt=teaching prose, sft=QA supervision")
     material_scope: MaterialScope = Field(default="unspecified", description="Teacher-declared general_chat, general_prose or domain purpose; independent of source stream and CPT/SFT kind.")
@@ -68,6 +71,7 @@ class WorkPlan(Record):
 
 
 class Curriculum(Record):
+    forward_corpus_share: float = Field(default=0.5, gt=0, lt=1, description="Under progressive_v1, choose corpus share of forward targets (corpus + GPC), excluding the capped remediation portion. Whole spans cause small deviations; no synthetic target is cropped.")
     lessons: list[Lesson]
     readings: list[SourceRef]
     replay: list[ReplayRef]

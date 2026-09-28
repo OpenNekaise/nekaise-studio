@@ -755,3 +755,13 @@ Checkpoint files are read-only and no optimizer state is loaded. Each request ex
 and releases its memory; there is no GPU residency, background model server or training
 pause for ordinary chat. CPU, RAM bandwidth and checkpoint reads remain shared machine
 resources, so this is GPU isolation rather than a claim of zero overall contention.
+
+## Forward curriculum coverage
+
+The current progressive curriculum traverses all eligible built-environment corpus
+passages and a pinned general-purpose map (20 domains, 265 units). The Teacher chooses
+the forward mix; adaptive follow-up is capped at 20% of causal targets. Every registered
+Author contributes forward material. Verified train-stage saves advance both cursors,
+independently of assessment scores. Teacher web research supplies real reference
+excerpts for original general material. See [the progression contract](docs/PROGRESSIVE-CURRICULUM.md)
+for source snapshots, full-span accounting, retries and continuation semantics.

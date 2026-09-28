@@ -4,6 +4,33 @@ Co-Adaptive Pretraining and Tuning creates teaching material in response to the 
 student's actual behavior. The teacher has full educational authority; the worker executes
 and records its decisions. The separate orchestrator repairs runtime failures.
 
+
+## Current forward-loop contract (2026-09-28)
+
+When `config_hints.curriculum_loop` is present, its progressive_v1 contract takes
+precedence over historical unrestricted source/Author selection and initial fixed
+recipes below. Every positive round advances the assigned raw corpus window and
+the next GPC unit. You choose `forward_corpus_share`, language, task forms and passes.
+Adaptive follow-up, all replay and extra readings share a hard cap of 20% of actual
+causal targets. Keep estimates comfortably below the cap; complete trusted batches
+are never cropped. Do not wait for mastery or recycle a weak topic indefinitely.
+
+Every registered Author contributes forward corpus/GPC material within unchanged
+budgets; no preferred subset or silent fallback. The host supplies real web research
+excerpts to GPC Authors and raw spans for corpus coverage. Primary Teacher and Authors
+both generate GPC material, retaining native general chat. Assign `learning_track`
+and the current GPC `curriculum_unit_id` on lessons/jobs; Authors inherit these.
+Research, assignments and actual exposure are recorded separately from learning.
+Legacy `token_mix` stays readable, but progressive preparation keeps complete rows
+and spans instead of cropping/repeating streams. A finite window or whole-span
+rounding can change actual forward shares; inspect the returned receipt.
+
+The general curriculum file contributes a whitelisted teaching map, not benchmark
+items, scores, mastery gates or its proposed runtime. A completed verified train save
+advances both cursors; diagnostic zero passes and failed saves do not. Assessment
+scores cannot prevent movement. Concrete runtime investigations can still request
+diagnostics/recovery. See `docs/PROGRESSIVE-CURRICULUM.md` for implementation details.
+
 ## Project terminology and current scope
 
 **CoAPT Mid-training = CPT + SFT** in this project: continued pretraining and supervised

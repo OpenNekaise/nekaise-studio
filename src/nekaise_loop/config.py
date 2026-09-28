@@ -8,6 +8,7 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 from .author_config import AuthorPool
 from .identity import StudentIdentity
+from .curriculum_types import CurriculumLoop
 
 ROOT = Path(__file__).resolve().parents[2]
 STAGES = ("select", "plan", "draft", "revise", "expand", "material_select", "gate", "freeze", "train", "evaluate", "answer", "grade", "adapt")
@@ -29,6 +30,7 @@ class TokenMix(BaseModel):
 
 class CampaignConfig(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
+    curriculum_loop: CurriculumLoop | None = Field(default=None, description="Pinned two-source progression contract; absent for historical campaigns")
     student_model: str = Field(default="openbmb/MiniCPM5-1B-Base", min_length=1, max_length=500)
     student_identity: StudentIdentity | None = Field(default=None, description="Immutable identity/character target and named major.minor development version; absent on legacy campaigns")
     student_format: Literal["raw_text", "chat_template"] = Field(default="raw_text", description="raw_text preserves literal continuation; chat_template uses the checkpoint's native single-user, no-thinking assistant prefix")
@@ -68,6 +70,12 @@ class CampaignConfig(BaseModel):
     orchestrator_timeout: int = Field(default=1800, ge=30, le=7200)
     max_repair_attempts: int = Field(default=3, ge=1, le=10)
     seed: int = Field(default=3407, ge=0, le=2**31-1)
+
+    @model_validator(mode="after")
+    def progressive_traversal(self):
+        if self.curriculum_loop and self.train_steps:
+            raise ValueError("Progressive curriculum requires complete passes (train_steps=0)")
+        return self
 
     @field_validator("rounds", "max_teacher_calls")
     @classmethod

@@ -1,5 +1,14 @@
 # Working on Nekaise Studio
 
+## GPU execution throughput (authorized 2026-09-28)
+
+The operator approved isolated performance diagnostics followed by deployment of a
+validated physical-batching configuration and automatic resumption. Preserve the
+effective token update, learning recipe and compatible Adam; see
+[TRAINING-THROUGHPUT.md](docs/TRAINING-THROUGHPUT.md). Profiling never creates official
+training exposure or deployable weights. Do not silently reset Adam for a runtime
+change, or infer multi-GPU support from a single-GPU throughput measurement.
+
 ## Buffered teaching throughput (authorized 2026-09-28)
 
 The operator approved [buffered teaching cycles](docs/TEACHING-CYCLES.md): compact

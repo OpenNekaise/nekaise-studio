@@ -7,6 +7,11 @@ CPU preparation stages; the sequential GPU consumer commits each verified save t
 the existing progress transaction. HTTP remains model-free. See the extension and
 recovery contracts in [TEACHING-CYCLES.md](docs/TEACHING-CYCLES.md).
 
+`training_execution=batched_v1` selects an independent padded-microbatch worker, with
+token-exact updates and an explicit compatible-Adam bridge from the preserved serial
+runtime. `training_profile` owns isolated diagnostic model processes under the source
+and workspace worker locks. See [TRAINING-THROUGHPUT.md](docs/TRAINING-THROUGHPUT.md).
+
 The control plane, worker, ML runtime, and dashboard are separate. The web server reads
 records and queues actions. The worker owns the loop and model processes. SQLite and
 immutable artifacts are the interface between them.

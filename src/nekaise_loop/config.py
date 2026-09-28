@@ -50,6 +50,9 @@ class CampaignConfig(BaseModel):
     train_steps: int = Field(default=0, ge=0, le=10000, description="0 derives updates from token budget; positive values are explicit overrides")
     train_epochs: int = Field(default=1, ge=0, le=10, description="Suggested passes; teacher chooses, including 0 for no weight updates")
     tokens_per_update: int = Field(default=2048, ge=64, le=65536)
+    training_execution: Literal["serial_v1", "batched_v1"] = "serial_v1"
+    training_microbatch_size: int = Field(default=1, ge=1, le=32, description="Independent sequences per forward; preserves tokens_per_update and document boundaries")
+    training_activation_checkpointing: bool = Field(default=True, description="Trade activation memory for recomputation in the batched trainer")
     warmup_tokens: int = Field(default=8192, ge=0, le=10000000)
     inherit_optimizer: bool = True
     learning_rate: float = Field(default=1e-5, ge=1e-7, le=0.01)

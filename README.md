@@ -4,6 +4,9 @@ Current throughput mode: [buffered teaching cycles](docs/TEACHING-CYCLES.md) com
 Teacher decisions across independently saved ~128K-target blocks. Author/CPU preparation
 can overlap GPU training; verified saves advance corpus/GPC coverage. Teacher feedback
 occurs at cycle boundaries, with all Authors and compatible optimizer state preserved.
+An opt-in [physical batching runtime](docs/TRAINING-THROUGHPUT.md) improves GPU execution
+without changing the number of targets per optimizer update. Its profiling worker
+measures real frozen data without advancing teaching exposure or saving experimental weights.
 
 **AI training AI, in a continuous research loop.**
 

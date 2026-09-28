@@ -157,7 +157,7 @@ class Service:
     def continue_campaign(self, campaign_id, updates=None, reason="Continue learning", *, start=False, actor="operator", recovery_id=None):
         from .artifacts import verify_checkpoint
         from .restoration import base_reference, verify_restoration
-        from .training import recipe_hash, training_code_hash
+        from .training_runtime import optimizer_transition
         updates = dict(updates or {})
         if "restore_base_from_round" in updates and (not isinstance(updates["restore_base_from_round"], str) or not updates["restore_base_from_round"]):
             raise ValueError("Base restoration requires a completed historical round ID")
@@ -241,12 +241,21 @@ class Service:
         from .identity import validate_identity_update
         validate_identity_update(CampaignConfig.model_validate(parent["config"]).student_identity, config.student_identity)
         config = config.model_copy(update={"corpus_path": str((self.settings.root/config.corpus_path).resolve())})
+        migration = None
         if latest:
             manifest = trained["manifest"]
-            if manifest.get("recipe_hash") and (manifest["recipe_hash"] != recipe_hash(config.model_dump()) or manifest.get("training_code") != training_code_hash()):
-                config = config.model_copy(update={"inherit_optimizer": False})
+            if manifest.get("recipe_hash"):
+                try:
+                    migration = optimizer_transition(manifest, config.model_dump())
+                except ValueError as exc:
+                    if config.inherit_optimizer and (config.training_execution == "batched_v1"
+                            or manifest.get("config", {}).get("training_execution") == "batched_v1"):
+                        raise Conflict(str(exc)) from exc
+                    config = config.model_copy(update={"inherit_optimizer": False})
         from .teacher_tools import latest_strategy
         context = {"parent_campaign_id": campaign_id, "history_access": "all_workspace_campaigns", "gaps": latest_strategy(self.settings.workspace, campaign_id).get("gaps", [])}
+        if migration and config.inherit_optimizer:
+            context["optimizer_transition"] = migration
         if author_change:
             context["material_author_update"] = author_change
         if restoration:

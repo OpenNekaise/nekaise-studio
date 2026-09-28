@@ -15,6 +15,12 @@ def main():
     serve.add_argument("--port", type=int, default=8765)
     serve.add_argument("--allow-host", action="append", default=[], help="Exact hostname allowed through a private reverse proxy; repeatable")
     sub.add_parser("worker")
+    profile = sub.add_parser("profile-training", help="Run an isolated diagnostic worker on verified saved targets; no official training exposure")
+    profile.add_argument("round_id")
+    profile.add_argument("--mixed", action="store_true")
+    profile.add_argument("--warmup", type=int, default=8)
+    profile.add_argument("--steps", type=int, default=32)
+    profile.add_argument("--equivalence-only", action="store_true")
     sub.add_parser("supervisor")
     for verb in ("recover", "apply-recovery"):
         sub.add_parser(verb).add_argument("recovery_id", type=int)
@@ -55,6 +61,11 @@ def main():
     if args.command == "worker":
         from .worker import run_worker
         run_worker(settings)
+        return
+    if args.command == "profile-training":
+        from .training_profile import run_profile
+        run_profile(settings, args.round_id, mixed=args.mixed, warmup=args.warmup,
+                    steps=args.steps, equivalence_only=args.equivalence_only)
         return
     if args.command == "supervisor":
         from .supervisor import run_supervisor

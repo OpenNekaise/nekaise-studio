@@ -30,6 +30,8 @@ class LocalModel:
                 on_message(message)
         env = {**os.environ, "HF_HUB_OFFLINE": "1", "TRANSFORMERS_OFFLINE": "1", "TOKENIZERS_PARALLELISM": "false", "PYTHONDONTWRITEBYTECODE": "1"}
         entrypoint = {"score": "scoring.py", "generate": "generation.py", "progressive_prepare": "progressive.py"}.get(task, "model.py")
+        if task == "train" and self.config.training_execution == "batched_v1":
+            entrypoint = "batched_training.py"
         self.runner.run([self.settings.model_python, "-u", str(ROOT / "src/nekaise_loop/workers" / entrypoint), task, str(path)], cwd=self.directory, log=self.directory / f"{task}.log", timeout=self.config.max_stage_seconds if timeout is None else timeout, on_message=receive, env=env)
         if len(result) != 1:
             raise RuntimeError("Model worker did not return exactly one result")

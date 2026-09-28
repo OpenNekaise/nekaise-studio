@@ -1,5 +1,18 @@
 # Working on Nekaise Studio
 
+## Buffered teaching throughput (authorized 2026-09-28)
+
+The operator approved [buffered teaching cycles](docs/TEACHING-CYCLES.md): compact
+Teacher requests, combined planning/assessment design and judgment/reflection,
+approximately 128K targets per saved block, two initial blocks then up to four per
+cycle, and at most two future prepared blocks. Keep GPT-6 Sol high effort, all Authors,
+compatible Adam and the progressive corpus/GPC namespace. Teacher chooses exact
+quantities and mix; 70–75% corpus is a starting preference, follow-up is capped at 20%.
+Separate prepared data from verified coverage and actual checkpoint lineage. Retry
+retains cumulative reservations and immutable cycle budgets. Resume after validation
+is authorized. This supersedes a fresh Teacher review on every saved block; online
+teaching assessment remains mandatory at cycle boundaries.
+
 All coding agents, including the interactive assistant and the recovery orchestrator,
 must automatically commit completed code, prompt, configuration and documentation changes
 after relevant validation, then push the current branch to its configured upstream.

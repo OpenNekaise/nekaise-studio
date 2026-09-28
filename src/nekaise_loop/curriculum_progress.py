@@ -16,7 +16,12 @@ def initial_state():
             "gpc_completed": 0, "completed_rounds": 0, "checkpoint": None}
 
 
-def assignment(ctx):
+def cursor_state(state):
+    """Coverage identity without a checkpoint that may not have been saved yet."""
+    return {k: v for k, v in state.items() if k != "checkpoint"}
+
+
+def assignment(ctx, *, prepared_state=None, sequence=None, predecessor_round_id=None):
     policy = ctx.config.curriculum_loop
     root = (ctx.engine.settings.root / ctx.config.corpus_path).resolve()
     contract = {"projection_artifact": policy.projection_artifact, "corpus_path": str(root)}
@@ -28,12 +33,22 @@ def assignment(ctx):
             raise ValueError("Curriculum namespace has a different pinned curriculum or corpus; use an explicit new namespace")
         parent_checkpoint = json.loads(state_row["state"]).get("checkpoint")
         actual_parent = getattr(ctx, "round", {}).get("model_before", ctx.config.student_model)
-        if parent_checkpoint and Path(parent_checkpoint).resolve() != Path(actual_parent).resolve():
+        if prepared_state is not None:
+            if sequence is None or sequence < state_row["sequence"]:
+                raise ValueError("Speculative assignment cannot precede committed coverage")
+            if sequence == state_row["sequence"] and cursor_state(prepared_state) != cursor_state(json.loads(state_row["state"])):
+                raise ValueError("Prepared frontier differs from committed coverage")
+            state_row = {**state_row, "sequence": sequence,
+                         "state": encode({**cursor_state(prepared_state), "checkpoint": None})}
+        elif parent_checkpoint and Path(parent_checkpoint).resolve() != Path(actual_parent).resolve():
             raise ValueError("Curriculum progress belongs to a different checkpoint; an older-weight branch requires a new namespace")
         previous = db.execute("SELECT artifact FROM curriculum_assignments WHERE namespace=? AND sequence=?",
                               (policy.namespace, state_row["sequence"])).fetchone()
         if previous:
-            return ctx.artifacts.get(previous["artifact"])
+            work = ctx.artifacts.get(previous["artifact"])
+            if cursor_state(work["before"]) != cursor_state(json.loads(state_row["state"])):
+                raise ValueError("Saved assignment belongs to a different prepared frontier")
+            return work
     projection = ctx.artifacts.get(policy.projection_artifact)
     if projection.get("format") != "general_teaching_projection_v1" or not projection.get("units"):
         raise ValueError("Invalid pinned general curriculum projection")
@@ -86,10 +101,17 @@ def assignment(ctx):
               "unit_count": len(projection["units"]), "gpc_cycle": state["gpc_completed"] // len(projection["units"]),
               "spans": spans, "inventory": inventory,
               "projection_artifact": policy.projection_artifact}
+    if prepared_state is not None:
+        result.update(deferred_checkpoint_binding=True, predecessor_round_id=predecessor_round_id)
     key = ctx.artifacts.put(result)
+    if prepared_state is not None:
+        # Keep future windows in pending cycle blocks. Only verified training
+        # claims their immutable namespace/sequence, so invalidated preparation
+        # cannot occupy a future coverage position forever.
+        return result
     with ctx.store.connect(immediate=True) as db:
         current = db.execute("SELECT sequence FROM curriculum_progress WHERE namespace=?", (policy.namespace,)).fetchone()
-        if current[0] != state_row["sequence"]:
+        if (prepared_state is None and current[0] != state_row["sequence"]) or current[0] > state_row["sequence"]:
             raise ValueError("Curriculum cursor changed during assignment")
         db.execute("INSERT OR IGNORE INTO curriculum_assignments VALUES (?,?,?,NULL,?)",
                    (policy.namespace, state_row["sequence"], key, now()))
@@ -166,7 +188,31 @@ def progress_receipt(ctx, dataset):
                  completed_rounds=work["before"]["completed_rounds"]+1)
     return {"namespace": work["namespace"], "sequence": work["sequence"],
             "assignment_artifact": selection["assignment_artifact"], "before": work["before"], "after": after,
-            "unit_id": work["unit"]["id"], "targets": measured, "corpus_spans": count}
+            "unit_id": work["unit"]["id"], "targets": measured, "corpus_spans": count,
+            **({"deferred_checkpoint_binding": True, "predecessor_round_id": work.get("predecessor_round_id")}
+               if work.get("deferred_checkpoint_binding") else {})}
+
+
+def bind_progress(ctx, receipt):
+    """Bind an immutable prepared frontier to the actual, verified parent before GPU work."""
+    if not receipt or not receipt.get("deferred_checkpoint_binding"):
+        return receipt
+    receipt = copy.deepcopy(receipt)
+    current = ctx.store.one("SELECT sequence,state FROM curriculum_progress WHERE namespace=?", (receipt["namespace"],))
+    state = json.loads(current["state"]) if current else None
+    if (not state or current["sequence"] != receipt["sequence"]
+            or cursor_state(state) != cursor_state(receipt["before"])):
+        raise ValueError("Prepared block does not start at the committed corpus/GPC frontier")
+    if state.get("checkpoint") and state["checkpoint"] != ctx.round["model_before"]:
+        raise ValueError("Prepared block cannot bind to a different model lineage")
+    predecessor = receipt.get("predecessor_round_id")
+    if predecessor:
+        prior = ctx.store.one("SELECT round_id FROM curriculum_receipts WHERE namespace=? AND sequence=?",
+                              (receipt["namespace"], receipt["sequence"]-1))
+        if not prior or prior["round_id"] != predecessor:
+            raise ValueError("Prepared block's predecessor has not committed verified training")
+    receipt["before"] = state
+    return receipt
 
 
 def commit_progress(db, round_id, result, train_artifact):
@@ -186,6 +232,13 @@ def commit_progress(db, round_id, result, train_artifact):
     if (receipt["after"].get("checkpoint") != result["checkpoint"]
             or (receipt["before"].get("checkpoint") and receipt["before"]["checkpoint"] != result["manifest"]["parent"])):
         raise ValueError("Curriculum checkpoint lineage differs from the verified training save")
+    if receipt.get("deferred_checkpoint_binding"):
+        saved = db.execute("SELECT artifact FROM curriculum_assignments WHERE namespace=? AND sequence=?",
+                           (receipt["namespace"], receipt["sequence"])).fetchone()
+        if saved and saved[0] != receipt["assignment_artifact"]:
+            raise ValueError("Another assignment already owns this coverage position")
+        db.execute("INSERT OR IGNORE INTO curriculum_assignments VALUES (?,?,?,NULL,?)",
+                   (receipt["namespace"], receipt["sequence"], receipt["assignment_artifact"], now()))
     db.execute("INSERT INTO curriculum_receipts VALUES (?,?,?,?,?)",
                (round_id, receipt["namespace"], receipt["sequence"], train_artifact, now()))
     db.execute("UPDATE curriculum_progress SET sequence=sequence+1,state=?,updated_at=? WHERE namespace=?",

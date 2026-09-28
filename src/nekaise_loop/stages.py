@@ -132,7 +132,7 @@ def _comparison(ctx, round_id, checkpoint_kind="output"):
 
 
 def _sources(ctx, references):
-    snapshots = []
+    snapshots = list(getattr(ctx, "additional_sources", []))
     if ctx.config.curriculum_loop and references:
         progression = getattr(ctx, "progression", None) or ctx.output("select").get("progression")
         if progression:
@@ -309,7 +309,7 @@ def freeze(ctx):
         work = ctx.artifacts.get(selected["progression"]["assignment_artifact"])
         dataset.extend({**{k: v for k, v in span.items() if k != "after"}, "curriculum_span": True}
                        for span in work["spans"])
-    prepared = ctx.trainer.prepare(ctx.round["model_before"], dataset)
+    prepared = ctx.trainer.prepare(getattr(ctx, "tokenization_checkpoint", ctx.round["model_before"]), dataset)
     from .curriculum_progress import progress_receipt
     progression = progress_receipt(ctx, prepared) if ctx.config.curriculum_loop else None
     work_plan = selected["curriculum"].get("work_plan") or {}
@@ -344,6 +344,8 @@ def train(ctx):
     progression = progress_receipt(ctx, dataset) if ctx.config.curriculum_loop else None
     if progression != dataset.get("curriculum_progress"):
         raise ValueError("Frozen curriculum progress receipt differs from assignment")
+    from .curriculum_progress import bind_progress
+    progression = bind_progress(ctx, progression)
     result = ctx.trainer.train(ctx.round["model_before"], dataset, dataset["dataset_hash"], ctx.metric)
     if result["manifest"]["dataset_hash"] != dataset["dataset_hash"] or result["manifest"]["parent"] != ctx.round["model_before"]:
         raise ValueError("Checkpoint does not match its dataset or parent")

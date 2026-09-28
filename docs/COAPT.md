@@ -1,5 +1,16 @@
 # CoAPT Mid-training in Nekaise Studio
 
+For `teaching_cycle.policy=buffered_v1`, the operator-approved
+[buffered cycle contract](TEACHING-CYCLES.md) supersedes the per-round draft/revise/review
+sequence below. One Teacher package authors forward seeds, plans Author jobs and freezes
+assessment for several saved blocks. Seeds have no current student attempt. Each block
+commits verified corpus/GPC progress; actual student assessment and reflection occur at
+the cycle boundary. Aim initially for 128K targets/block, two initial blocks then four,
+roughly 70–75% corpus with Teacher-chosen mix and <=20% follow-up. Every Author remains
+required; trusted batches are not re-reviewed. Exact raw allocation is independent of
+generated yield, without padding or repeated tiny passages. Compact default evidence
+preserves unrestricted archive access. No independent benchmark controls this loop.
+
 Co-Adaptive Pretraining and Tuning creates teaching material in response to the current
 student's actual behavior. The teacher has full educational authority; the worker executes
 and records its decisions. The separate orchestrator repairs runtime failures.

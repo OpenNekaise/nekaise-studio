@@ -27,7 +27,11 @@ def recorded_prompt(prefix: str, inputs: dict, directory: Path, *, purpose=None)
     if purpose is not None:
         path = (directory / "recorded-data.json").resolve()
         atomic_write(path, canonical(inputs))
-        data = evidence_view(inputs, purpose, {"op": "request_data"})
+        if purpose in {"cycle_research", "cycle_plan", "cycle_review"}:
+            from ..cycle_context import compact_inputs
+            data = compact_inputs(inputs)
+        else:
+            data = evidence_view(inputs, purpose, {"op": "request_data"})
         view = {"format": "teaching_evidence_v1",
                 "original_data": {"path": str(path), "canonical_sha256": digest(inputs)},
                 "evidence_references": data is not inputs,
@@ -158,7 +162,7 @@ class CliTeacher:
         try:
             if self.config.teacher_provider == "claude":
                 command = [self.settings.claude, "-p", "--model", self.config.teacher_model, "--effort", "high", "--tools", "Read,Glob,Grep,Bash", "--allowedTools", "Read,Glob,Grep,Bash", "--permission-prompts", "none", "--strict-mcp-config", "--no-session-persistence", "--output-format", "json", "--json-schema", json.dumps(schema)]
-                if purpose == "research":
+                if purpose in {"research", "cycle_research"}:
                     for flag in ("--tools", "--allowedTools"):
                         command[command.index(flag)+1] += ",WebSearch,WebFetch"
                 output = run(command)
@@ -171,7 +175,7 @@ class CliTeacher:
                 schema_path, result_path = call_dir / "schema.json", call_dir / "response.json"
                 atomic_write(schema_path, canonical(schema))
                 command = [self.settings.codex, "exec", "--ephemeral", "--ignore-user-config", "--skip-git-repo-check", "-C", str(call_dir), "-s", "read-only", "-m", self.config.teacher_model, "-c", 'model_reasoning_effort="high"', "--output-schema", str(schema_path), "--output-last-message", str(result_path), "--json", "--color", "never", "-"]
-                if purpose == "research":
+                if purpose in {"research", "cycle_research"}:
                     command[-1:-1] = ["-c", 'web_search="live"']
                 run(command)
                 response = parse_json(result_path.read_text())
@@ -203,6 +207,18 @@ class CliTeacher:
     def research(self, brief):
         from ..curriculum_types import ResearchPlan
         return self.request("research", brief, ResearchPlan)
+
+    def cycle_research(self, brief):
+        from ..cycle_types import CycleResearch
+        return self.request("cycle_research", brief, CycleResearch)
+
+    def cycle_plan(self, brief):
+        from ..cycle_types import CyclePlan
+        return self.request("cycle_plan", brief, CyclePlan)
+
+    def cycle_review(self, observations):
+        from ..cycle_types import CycleReview
+        return self.request("cycle_review", observations, CycleReview)
 
     def revise(self, lessons):
         schema = Revisions.model_json_schema()

@@ -15,6 +15,18 @@ class CurriculumLoop(BaseModel):
     remediation_cap: float = Field(default=0.20, ge=0, lt=0.5)
     corpus_window_chars: int = Field(default=262144, ge=1024, le=2000000)
     span_chars: int = Field(default=2400, ge=128, le=12000)
+    raw_target_tokens: int = Field(default=0, ge=0, le=2000000, description="Runtime Teacher block allocation; 0 retains the legacy ratio-derived amount")
+
+
+class TeachingCycle(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+    policy: Literal["buffered_v1"] = "buffered_v1"
+    block_target_tokens: int = Field(default=131072, ge=1024, le=1048576)
+    blocks_per_cycle: int = Field(default=4, ge=1, le=8)
+    initial_blocks_per_cycle: int = Field(default=2, ge=1, le=8)
+    prefetch_blocks: int = Field(default=2, ge=1, le=2)
+    max_author_calls_per_cycle: int = Field(default=64, ge=1, le=512)
+    max_author_output_tokens_per_cycle: int = Field(default=524288, ge=256, le=4194304)
 
 class ResearchSource(BaseModel):
     model_config = ConfigDict(extra="forbid")

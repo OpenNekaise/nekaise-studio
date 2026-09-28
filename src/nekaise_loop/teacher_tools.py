@@ -33,9 +33,10 @@ def latest_strategy(workspace, campaign_id):
         visited = set()
         while campaign_id and campaign_id not in visited:
             visited.add(campaign_id)
-            stage = db.execute("SELECT s.artifact FROM stage_runs s JOIN rounds r ON r.id=s.round_id WHERE r.campaign_id=? AND s.stage='adapt' AND s.status='complete' ORDER BY r.number DESC,s.id DESC LIMIT 1", (campaign_id,)).fetchone()
-            if stage:
-                return Artifacts(Path(workspace)).get(stage["artifact"])
+            for stage in db.execute("SELECT s.artifact FROM stage_runs s JOIN rounds r ON r.id=s.round_id WHERE r.campaign_id=? AND s.stage='adapt' AND s.status='complete' ORDER BY r.number DESC,s.id DESC", (campaign_id,)):
+                result = Artifacts(Path(workspace)).get(stage["artifact"])
+                if not result.get("review_pending"):
+                    return result
             row = db.execute("SELECT parent_campaign_id,context_artifact FROM campaigns WHERE id=?", (campaign_id,)).fetchone()
             campaign_id = row["parent_campaign_id"] if row else None
         return {}

@@ -1,5 +1,10 @@
 # Forward corpus and general curriculum
 
+The optional [buffered cycle path](TEACHING-CYCLES.md) preserves these cursors but uses
+an explicit Teacher raw-target allocation and several saved blocks per assessment.
+Future windows remain speculative until verified training commits; they never count as
+coverage during preparation. The legacy ratio-based sizing below remains readable.
+
 The September 28 operator direction adds two independent exposure cursors to CoAPT
 Mid-training. Assessment still informs teaching, but poor answers cannot hold the
 model on one topic. The Teacher chooses the forward corpus/general mix each round;

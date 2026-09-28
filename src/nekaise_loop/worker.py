@@ -43,7 +43,7 @@ def _run_worker(settings):
             if stage["process_pid"]:
                 stop_owned(stage["process_pid"], stage["process_start"])
             store.execute("UPDATE stage_runs SET status='interrupted',error='Worker stopped before completing this stage',finished_at=?,process_pid=NULL,process_start=NULL WHERE id=?", (now(), stage["id"]))
-        store.execute("UPDATE rounds SET status='interrupted' WHERE status='running'")
+        store.execute("UPDATE rounds SET status='interrupted' WHERE status IN ('running','preparing')")
         # A queued start survives a restart. Explicit holds survive a consumed
         # command too, including a crash before the status update was persisted.
         for campaign in store.query("SELECT * FROM campaigns WHERE status IN ('running','pausing','stopping')"):

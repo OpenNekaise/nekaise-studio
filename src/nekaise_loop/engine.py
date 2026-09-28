@@ -38,7 +38,8 @@ class Context:
             runtime_config = runtime_config.model_copy(update={"token_mix": curriculum.token_mix, "train_epochs": curriculum.train_epochs})
             if runtime_config.curriculum_loop:
                 runtime_config = runtime_config.model_copy(update={"curriculum_loop": runtime_config.curriculum_loop.model_copy(
-                    update={"forward_corpus_share": curriculum.forward_corpus_share})})
+                    update={"forward_corpus_share": curriculum.forward_corpus_share,
+                            "raw_target_tokens": curriculum.raw_target_tokens if self.config.teaching_cycle else 0})})
         local = engine.model_factory(runtime_config, engine.settings, runner, self.directory)
         self.student, self.trainer = local, local
 
@@ -68,6 +69,9 @@ class Engine:
     def run(self, campaign_id, controls=lambda: False, pause=lambda: False):
         campaign = self.store.campaign(campaign_id)
         config = CampaignConfig.model_validate(campaign["config"])
+        if config.teaching_cycle:
+            from .cycle_engine import run
+            return run(self, campaign_id, controls, pause)
         self.store.set_status(campaign_id, "running")
         try:
             restoration = (self.artifacts.get(campaign["context_artifact"]).get("restoration")

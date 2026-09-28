@@ -1,4 +1,4 @@
-import { escapeHTML as e, time } from "./lib.js?v=8966e20f4ec9";
+import { escapeHTML as e, time } from "./lib.js?v=9d7841b9939d";
 
 export async function readChatStream(response, receive) {
   if (!response.ok) {

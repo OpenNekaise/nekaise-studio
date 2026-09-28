@@ -21,6 +21,10 @@ class MaterialAllowance(BaseModel):
 
 
 def allowance_totals(db, round_id, since, pool):
+    cycle = db.execute("SELECT c.* FROM teaching_cycles c JOIN teaching_blocks b ON b.cycle_id=c.id WHERE b.round_id=?", (round_id,)).fetchone()
+    contract = json.loads(cycle["contract"]) if cycle else None
+    if contract:
+        since = contract["budget_since"]
     used = db.execute("""SELECT COUNT(*) AS calls,COALESCE(SUM(c.reserved_tokens),0) AS tokens,
         COALESCE(SUM(CASE WHEN json_type(c.usage,'$.completion_tokens')='integer'
             THEN MAX(0,json_extract(c.usage,'$.completion_tokens')-c.reserved_tokens) ELSE 0 END),0) AS overrun
@@ -29,11 +33,31 @@ def allowance_totals(db, round_id, since, pool):
     grants = db.execute("""SELECT COALESCE(SUM(additional_calls),0) AS calls,
         COALESCE(SUM(additional_output_tokens),0) AS tokens FROM material_allowances
         WHERE round_id=? AND budget_since=?""", (round_id, since)).fetchone()
-    return {"used_calls": used["calls"], "reserved_tokens": used["tokens"],
+    totals = {"budget_since": since, "used_calls": used["calls"], "reserved_tokens": used["tokens"],
             "reported_output_overrun_tokens": used["overrun"],
             "granted_calls": grants["calls"], "granted_output_tokens": grants["tokens"],
             "remaining_calls": pool.max_calls_per_round + grants["calls"] - used["calls"],
             "remaining_output_tokens": pool.max_output_tokens_per_round + grants["tokens"] - used["tokens"] - used["overrun"]}
+    if cycle:
+        count = db.execute("SELECT COUNT(*) FROM teaching_blocks WHERE cycle_id=?", (cycle["id"],)).fetchone()[0]
+        calls_cap = min(contract["cycle_calls"], count*contract["per_block_calls"])
+        tokens_cap = min(contract["cycle_output_tokens"], count*contract["per_block_output_tokens"])
+        usage = db.execute("""SELECT COUNT(*) AS calls,COALESCE(SUM(c.reserved_tokens),0) AS tokens,
+            COALESCE(SUM(CASE WHEN json_type(c.usage,'$.completion_tokens')='integer'
+              THEN MAX(0,json_extract(c.usage,'$.completion_tokens')-c.reserved_tokens) ELSE 0 END),0) AS overrun
+            FROM material_calls c JOIN material_jobs j ON j.id=c.job_id JOIN teaching_blocks b ON b.round_id=j.round_id
+            WHERE b.cycle_id=? AND c.created_at>=?""", (cycle["id"], since)).fetchone()
+        extra = db.execute("""SELECT COALESCE(SUM(a.additional_calls),0) AS calls,
+            COALESCE(SUM(a.additional_output_tokens),0) AS tokens FROM material_allowances a
+            JOIN teaching_blocks b ON b.round_id=a.round_id WHERE b.cycle_id=? AND a.budget_since=?""", (cycle["id"], since)).fetchone()
+        totals["cycle"] = {"id": cycle["id"], "base_calls": calls_cap, "base_output_tokens": tokens_cap,
+            "used_calls": usage["calls"], "reserved_tokens": usage["tokens"], "reported_output_overrun_tokens": usage["overrun"],
+            "granted_calls": extra["calls"], "granted_output_tokens": extra["tokens"],
+            "supplemental_calls_remaining": max(0,calls_cap-extra["calls"]),
+            "supplemental_output_tokens_remaining": max(0,tokens_cap-extra["tokens"])}
+        totals["remaining_calls"] = min(totals["remaining_calls"], calls_cap+extra["calls"]-usage["calls"])
+        totals["remaining_output_tokens"] = min(totals["remaining_output_tokens"], tokens_cap+extra["tokens"]-usage["tokens"]-usage["overrun"])
+    return totals
 
 
 def allowance_status(store, artifacts, campaign_id, *, db=None):
@@ -42,6 +66,10 @@ def allowance_status(store, artifacts, campaign_id, *, db=None):
             return allowance_status(store, artifacts, campaign_id, db=connection)
     campaign = db.execute("SELECT * FROM campaigns WHERE id=?", (campaign_id,)).fetchone()
     current = db.execute("SELECT * FROM rounds WHERE campaign_id=? ORDER BY number DESC LIMIT 1", (campaign_id,)).fetchone()
+    if json.loads(campaign["config"]).get("teaching_cycle"):
+        current = db.execute("""SELECT r.* FROM rounds r JOIN recoveries x ON x.round_id=r.id
+            WHERE x.campaign_id=? AND x.status IN ('pending','running','waiting','decided') ORDER BY x.id DESC LIMIT 1""", (campaign_id,)).fetchone() or db.execute(
+            "SELECT * FROM rounds WHERE campaign_id=? AND status!='complete' ORDER BY number LIMIT 1", (campaign_id,)).fetchone()
     if not current or not db.execute("SELECT name FROM sqlite_master WHERE name='material_jobs'").fetchone():
         return None
     pool = AuthorPool.model_validate(json.loads(campaign["config"]).get("material_authors", {}))
@@ -59,14 +87,15 @@ def allowance_status(store, artifacts, campaign_id, *, db=None):
         needed_tokens = None
         requirements_error = f"Cannot read unfinished author request artifacts ({type(exc).__name__}); inspect saved jobs"
     totals = allowance_totals(db, current["id"], since, pool)
+    since = totals["budget_since"]
     calls_by_status = [dict(row) for row in db.execute("""SELECT c.status,COUNT(*) AS calls,
         SUM(c.reserved_tokens) AS reserved_tokens FROM material_calls c JOIN material_jobs j ON j.id=c.job_id
         WHERE j.round_id=? AND c.created_at>=? GROUP BY c.status""", (current["id"], since))]
     return {"round_id": current["id"], "budget_since": since, "round_stage": current["stage"],
             "round_status": current["status"], **totals, "needed_calls": len(pending),
             "base_calls": pool.max_calls_per_round, "base_output_tokens": pool.max_output_tokens_per_round,
-            "supplemental_calls_remaining": max(0, pool.max_calls_per_round - totals["granted_calls"]),
-            "supplemental_output_tokens_remaining": max(0, pool.max_output_tokens_per_round - totals["granted_output_tokens"]),
+            "supplemental_calls_remaining": min(max(0, pool.max_calls_per_round - totals["granted_calls"]), totals.get("cycle", {}).get("supplemental_calls_remaining", pool.max_calls_per_round)),
+            "supplemental_output_tokens_remaining": min(max(0, pool.max_output_tokens_per_round - totals["granted_output_tokens"]), totals.get("cycle", {}).get("supplemental_output_tokens_remaining", pool.max_output_tokens_per_round)),
             "calls_by_status": calls_by_status,
             "needed_output_tokens": needed_tokens,
             "requirements_error": requirements_error,

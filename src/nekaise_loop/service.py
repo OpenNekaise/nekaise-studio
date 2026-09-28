@@ -218,6 +218,20 @@ class Service:
         config.update(updates)
         config = CampaignConfig.model_validate(config)
         prior_loop = parent["config"].get("curriculum_loop")
+        prior_cycle = parent["config"].get("teaching_cycle")
+        if prior_cycle and actor != "operator":
+            if config.teaching_cycle is None or config.teaching_cycle.model_dump() != prior_cycle:
+                raise Conflict("Recovery must preserve the operator's buffered cycle and execution budgets")
+            from .artifacts import digest
+            previous = CampaignConfig.model_validate(parent["config"]).model_dump()
+            comparable = config.model_dump()
+            for field in ("student_model", "rounds", "inherit_optimizer"):
+                previous.pop(field, None)
+                comparable.pop(field, None)
+            if (parent.get("implementation_hash") == source_fingerprint()
+                    and digest(previous) == digest(comparable)
+                    and self.store.one("SELECT id FROM teaching_cycles WHERE campaign_id=? AND status!='complete'", (campaign_id,))):
+                raise Conflict("An unchanged buffered cycle must retry its saved stages; a no-op continuation cannot renew Author allowances")
         if prior_loop and actor != "operator":
             loop = config.curriculum_loop
             if (not loop or loop.projection_artifact != prior_loop["projection_artifact"]
@@ -286,6 +300,7 @@ class Service:
         from .experiments import safe_detail
         row["experiment"] = safe_detail(self.store, self.artifacts, round_id)
         row["score"] = self._score(row["evaluations"])
+        row["teaching_block"] = self.store.one("SELECT cycle_id,position,sequence,predecessor_round_id,parent_binding_artifact FROM teaching_blocks WHERE round_id=?", (round_id,))
         row["curriculum"] = None
         row["teaching_strategy"] = None
         for stage, key in (("select", "curriculum"), ("material_select", "curriculum"), ("adapt", "teaching_strategy")):
@@ -315,7 +330,8 @@ class Service:
         rounds = self.store.query("SELECT * FROM rounds WHERE campaign_id=? ORDER BY number DESC LIMIT 100", (campaign_id,))
         for row in rounds:
             row["score"] = self._score(self.store.records(row["id"], "evaluation"))
-        selected = round_id or (rounds[0]["id"] if rounds else None)
+        unfinished = sorted((r for r in rounds if r["status"] != "complete"), key=lambda r: r["number"])
+        selected = round_id or (unfinished[0]["id"] if campaign["config"].get("teaching_cycle") and unfinished else rounds[0]["id"] if rounds else None)
         if selected and selected not in {r["id"] for r in rounds}:
             older = self.store.one("SELECT * FROM rounds WHERE id=? AND campaign_id=?", (selected, campaign_id))
             if not older:
@@ -333,7 +349,17 @@ class Service:
             detail["token_ledger"] = self.artifacts.get(frozen["artifact"]).get("ledger") if frozen else None
         from .curriculum_progress import status as curriculum_status
         progression = curriculum_status(self.store, self.artifacts, campaign["config"])
-        return {"campaign": campaign, "rounds": rounds, "round": detail, "events": events, "recovery": recovery, "teacher_usage": usage, "curriculum_progress": progression, "stages": [{"id": s, "label": STAGE_LABELS[s]} for s in STAGES], "timestamp": now()}
+        from .cycle_store import snapshot as cycle_snapshot
+        cycle = cycle_snapshot(self.store, self.artifacts, campaign_id)
+        labels = {**STAGE_LABELS}
+        displayed = list(STAGES)
+        if campaign["config"].get("teaching_cycle"):
+            labels.update(draft="Forward targets · no student attempt", revise="Teacher-authored targets", material_select="Trusted Author preauthorization",
+                          evaluate="Frozen cycle assessment", grade="Cycle assessment & strategy", adapt="Record cycle strategy",
+                          cycle_research="Research upcoming curriculum units", cycle_plan="Teacher block package & assessment")
+            if not detail or (detail.get("teaching_block") or {}).get("position") == 0:
+                displayed = ["cycle_research", "cycle_plan", *displayed]
+        return {"campaign": campaign, "rounds": rounds, "round": detail, "events": events, "recovery": recovery, "teacher_usage": usage, "curriculum_progress": progression, "teaching_cycle": cycle, "stages": [{"id": s, "label": labels[s]} for s in displayed], "timestamp": now()}
 
     def readiness(self):
         settings = self.settings

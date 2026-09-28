@@ -8,7 +8,7 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 from .author_config import AuthorPool
 from .identity import StudentIdentity
-from .curriculum_types import CurriculumLoop
+from .curriculum_types import CurriculumLoop, TeachingCycle
 
 ROOT = Path(__file__).resolve().parents[2]
 STAGES = ("select", "plan", "draft", "revise", "expand", "material_select", "gate", "freeze", "train", "evaluate", "answer", "grade", "adapt")
@@ -31,6 +31,7 @@ class TokenMix(BaseModel):
 class CampaignConfig(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
     curriculum_loop: CurriculumLoop | None = Field(default=None, description="Pinned two-source progression contract; absent for historical campaigns")
+    teaching_cycle: TeachingCycle | None = Field(default=None, description="Buffered Teacher plans across independently checkpointed blocks; absent preserves historical stages")
     student_model: str = Field(default="openbmb/MiniCPM5-1B-Base", min_length=1, max_length=500)
     student_identity: StudentIdentity | None = Field(default=None, description="Immutable identity/character target and named major.minor development version; absent on legacy campaigns")
     student_format: Literal["raw_text", "chat_template"] = Field(default="raw_text", description="raw_text preserves literal continuation; chat_template uses the checkpoint's native single-user, no-thinking assistant prefix")
@@ -75,6 +76,9 @@ class CampaignConfig(BaseModel):
     def progressive_traversal(self):
         if self.curriculum_loop and self.train_steps:
             raise ValueError("Progressive curriculum requires complete passes (train_steps=0)")
+        if self.teaching_cycle and (not self.curriculum_loop or self.material_review_policy != "trusted_author_v1"
+                or self.expansion_policy != "required_v1" or self.general_material_policy != "required_v1"):
+            raise ValueError("Buffered teaching requires progressive coverage and required/trusted general Author material")
         return self
 
     @field_validator("rounds", "max_teacher_calls")

@@ -1,5 +1,5 @@
-import { escapeHTML as e, number, percent, dateLabel } from "./lib.js?v=8966e20f4ec9";
-import { ratioLabel } from "./efficiency.js?v=8966e20f4ec9";
+import { escapeHTML as e, number, percent, dateLabel } from "./lib.js?v=9d7841b9939d";
+import { ratioLabel } from "./efficiency.js?v=9d7841b9939d";
 
 const short = value => value ? value.slice(0, 10) : "—";
 const field = (label, value) => `<div class="experiment-field"><h3>${e(label)}</h3><p class="prose">${e(value)}</p></div>`;

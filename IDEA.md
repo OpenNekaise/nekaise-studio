@@ -1,5 +1,10 @@
 # Nekaise Studio
 
+September 28 throughput direction: [buffered teaching cycles](docs/TEACHING-CYCLES.md)
+amortize Teacher research, planning and review across larger saved blocks. The Teacher
+remains responsible for curriculum and online assessment; forward coverage does not
+wait for mastery. Prefetch is bounded and records preparation separately from learning.
+
 Design updated after user direction — 2026-09-14. Initial draft discussed with Claude Code (Fable 5.1).
 
 A framework for improving a small language model by adapting training to its measured

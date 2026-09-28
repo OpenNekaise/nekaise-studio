@@ -1,5 +1,10 @@
 # nekaise-studio
 
+Current throughput mode: [buffered teaching cycles](docs/TEACHING-CYCLES.md) combine
+Teacher decisions across independently saved ~128K-target blocks. Author/CPU preparation
+can overlap GPU training; verified saves advance corpus/GPC coverage. Teacher feedback
+occurs at cycle boundaries, with all Authors and compatible optimizer state preserved.
+
 **AI training AI, in a continuous research loop.**
 
 Nekaise Studio is an [OpenNekaise](https://github.com/OpenNekaise) project for autonomous

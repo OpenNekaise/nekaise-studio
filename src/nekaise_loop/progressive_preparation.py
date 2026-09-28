@@ -72,7 +72,7 @@ def prepare_progressive(rows, tokenizer, config, eos_ids=None):
         gpc += n if row.get("learning_track") == "gpc" else 0
         domain += n if row.get("learning_track") == "corpus" else 0
     share = policy["forward_corpus_share"]
-    wanted_raw = max(1, round(gpc * share / (1-share)) - domain)
+    wanted_raw = policy.get("raw_target_tokens") or max(1, round(gpc * share / (1-share)) - domain)
     consumed, raw_ids = 0, []
     for row in raw:
         result, n = serialize(row)
@@ -100,6 +100,7 @@ def prepare_progressive(rows, tokenizer, config, eos_ids=None):
         "requested_forward_corpus_share": share,
         "actual_forward_corpus_share": targets["by_track"]["corpus"]/(targets["by_track"]["corpus"]+gpc),
         "raw_targets_requested": wanted_raw, "raw_targets_prepared": consumed,
+        "raw_allocation_basis": "teacher_explicit_target" if policy.get("raw_target_tokens") else "forward_share",
         "corpus_window_exhausted": consumed < wanted_raw,
         "whole_row_targets": counts, "basis": "All generated rows and whole raw spans, once per pass"}
     return dataset

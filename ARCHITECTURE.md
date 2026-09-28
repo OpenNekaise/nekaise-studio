@@ -1,5 +1,12 @@
 # Architecture
 
+`cycle_engine` adds a campaign-selected buffered path alongside the historical engine.
+`cycle_stages` combines Teacher calls; `cycle_store` owns immutable plans, speculative
+assignments and write-once parent bindings. A bounded producer uses existing Author and
+CPU preparation stages; the sequential GPU consumer commits each verified save through
+the existing progress transaction. HTTP remains model-free. See the extension and
+recovery contracts in [TEACHING-CYCLES.md](docs/TEACHING-CYCLES.md).
+
 The control plane, worker, ML runtime, and dashboard are separate. The web server reads
 records and queues actions. The worker owns the loop and model processes. SQLite and
 immutable artifacts are the interface between them.

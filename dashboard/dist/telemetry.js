@@ -1,7 +1,7 @@
-import { escapeHTML as e, number, time, dateLabel } from "./lib.js?v=8966e20f4ec9";
+import { escapeHTML as e, number, time, dateLabel } from "./lib.js?v=9d7841b9939d";
 
 export const phases = [
-  { name: "Planning", tone: "planning", stages: ["select", "plan"] },
+  { name: "Planning", tone: "planning", stages: ["cycle_research", "cycle_plan", "select", "plan"] },
   { name: "Practice", tone: "practice", stages: ["draft", "revise", "expand", "material_select", "gate"] },
   { name: "Learning", tone: "learning", stages: ["freeze", "train"] },
   { name: "Assessment", tone: "assessment", stages: ["evaluate", "answer", "grade"] },

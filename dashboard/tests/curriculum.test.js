@@ -12,4 +12,9 @@ test("curriculum displays pending or verified exposure, never assumed mastery", 
   progress.last_receipt = { targets: {total:100, by_track:{corpus:45,gpc:40,remediation:15},forward_authors:{luna:10,deepseek:20,kimi:10}} };
   assert.match(curriculumCard(progress), /luna · deepseek · kimi/);
   assert.match(curriculumCard(progress), /15% follow-up/);
+  const buffered = curriculumCard(progress, {number:1,status:"training",blocks:[{number:1,status:"complete",prepared_targets:128000,raw_targets:98000},{number:2,status:"prepared",prepared_targets:125000,raw_targets:98000,preparation_only:true}]});
+  assert.match(buffered, /1 \/ 2 blocks complete/);
+  assert.match(buffered, /review pending/);
+  assert.match(buffered, /training parent pending/);
+  assert.match(buffered, /only after a verified save/);
 });

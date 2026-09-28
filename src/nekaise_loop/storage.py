@@ -109,6 +109,22 @@ class Store:
                     sequence INTEGER NOT NULL, artifact TEXT NOT NULL, created_at TEXT NOT NULL,
                     UNIQUE(namespace,sequence)
                 );
+                CREATE TABLE IF NOT EXISTS teaching_cycles (
+                    id TEXT PRIMARY KEY, campaign_id TEXT NOT NULL REFERENCES campaigns(id),
+                    number INTEGER NOT NULL, status TEXT NOT NULL, anchor_checkpoint TEXT NOT NULL,
+                    source_hash TEXT NOT NULL, contract TEXT NOT NULL,
+                    research_artifact TEXT, plan_artifact TEXT, review_artifact TEXT,
+                    created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
+                    UNIQUE(campaign_id,number)
+                );
+                CREATE TABLE IF NOT EXISTS teaching_blocks (
+                    round_id TEXT PRIMARY KEY REFERENCES rounds(id),
+                    cycle_id TEXT NOT NULL REFERENCES teaching_cycles(id),
+                    position INTEGER NOT NULL, namespace TEXT NOT NULL, sequence INTEGER NOT NULL,
+                    predecessor_round_id TEXT, assignment_artifact TEXT, research_artifact TEXT,
+                    parent_binding_artifact TEXT,
+                    UNIQUE(cycle_id,position)
+                );
             """)
             # executescript ends the preceding transaction. Keep every v4
             # column/backfill/version change in one crash-safe transaction.
@@ -180,7 +196,7 @@ class Store:
             row = conn.execute("SELECT operator_hold FROM campaigns WHERE id=?", (campaign_id,)).fetchone()
             return bool(row and row["operator_hold"]) or bool(conn.execute("SELECT id FROM actions WHERE campaign_id=? AND actor='operator' AND handled_at IS NULL AND kind IN ('pause','stop')", (campaign_id,)).fetchone())
 
-    def recover(self, campaign_id, kind, error, *, retry_at=None, db=None):
+    def recover(self, campaign_id, kind, error, *, retry_at=None, db=None, failed_stage_id=None):
         from .ownership import source_fingerprint
         with (nullcontext(db) if db is not None else self.connect(immediate=True)) as db:
             if self.operator_cancelled(campaign_id, db=db):
@@ -188,7 +204,12 @@ class Store:
             old = db.execute("SELECT id FROM recoveries WHERE campaign_id=? AND status IN ('pending','running','waiting','decided')", (campaign_id,)).fetchone()
             if old:
                 return old["id"]
-            stage = db.execute("SELECT s.id,s.round_id FROM stage_runs s JOIN rounds r ON s.round_id=r.id WHERE r.campaign_id=? ORDER BY s.id DESC LIMIT 1", (campaign_id,)).fetchone()
+            if failed_stage_id is not None:
+                stage = db.execute("SELECT s.id,s.round_id FROM stage_runs s JOIN rounds r ON s.round_id=r.id WHERE r.campaign_id=? AND s.id=?", (campaign_id, failed_stage_id)).fetchone()
+                if not stage:
+                    raise ValueError("Recovery stage does not belong to campaign")
+            else:
+                stage = db.execute("SELECT s.id,s.round_id FROM stage_runs s JOIN rounds r ON s.round_id=r.id WHERE r.campaign_id=? ORDER BY s.id DESC LIMIT 1", (campaign_id,)).fetchone()
             recovery_id = db.execute("INSERT INTO recoveries(campaign_id,round_id,stage_id,kind,status,error,retry_at,source_hash,created_at,updated_at) VALUES(?,?,?,?,'pending',?,?,?,?,?)", (campaign_id, stage["round_id"] if stage else None, stage["id"] if stage else None, kind, str(error)[-3000:], retry_at, source_fingerprint(), now(), now())).lastrowid
             status = "waiting" if kind in {"quota", "rate_limit", "budget"} else "recovering"
             db.execute("UPDATE campaigns SET status=?,error=?,updated_at=? WHERE id=?", (status, str(error)[-3000:], now(), campaign_id))

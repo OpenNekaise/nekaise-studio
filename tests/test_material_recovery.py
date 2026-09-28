@@ -33,6 +33,48 @@ def test_provenance_diagnostics_are_bounded_without_echoing_citations():
     assert "PRIVATE_REJECTED_VALUE" not in str(caught.value)
 
 
+@pytest.mark.parametrize("content,code", [
+    ('{"rows":[{"training_text":"PRIVATE_REJECTED_VALUE', "unterminated_string"),
+    ('{"rows":[{"rationale":"PRIVATE_REJECTED_VALUE"}, "training_text":"text"}]}',
+     "expected_comma_delimiter"),
+    ('```json\n{"rows":[]}\n```', "expected_value"),
+    ('{"rows":[{"training_text":"PRIVATE_REJECTED_VALUE\\q"}]}', "invalid_escape"),
+    ('{"rows":[{"training_text":"PRIVATE_REJECTED_VALUE\x01"}]}', "invalid_json"),
+])
+def test_json_feedback_distinguishes_syntax_without_echoing_content(content, code):
+    from types import SimpleNamespace
+    from nekaise_loop.material_jobs import CandidateValidationError, candidates
+
+    result = SimpleNamespace(content=content, complete=True)
+    with pytest.raises(json.JSONDecodeError) as parser:
+        json.loads(content)
+    with pytest.raises(CandidateValidationError) as caught:
+        candidates(result, {"sources": {}, "job": {"seed_ids": []}})
+    assert caught.value.diagnostics == [{"path": [], "type": "json_invalid", "syntax": {
+        "code": code, "offset": parser.value.pos, "line": parser.value.lineno,
+        "column": parser.value.colno}}]
+    assert "PRIVATE_REJECTED_VALUE" not in str(caught.value)
+    assert len(str(caught.value)) < 350
+    assert result.content == content
+    result.complete = False
+    with pytest.raises(CandidateValidationError) as incomplete:
+        candidates(result, {})
+    assert incomplete.value.diagnostics == [{"path": [], "type": "response_incomplete"}]
+
+
+@pytest.mark.parametrize("secondary", [lambda _: {},
+    lambda _: (_ for _ in ()).throw(RecursionError()),
+    lambda _: (_ for _ in ()).throw(ValueError())])
+def test_secondary_json_parser_cannot_change_rejection(monkeypatch, secondary):
+    from types import SimpleNamespace
+    from nekaise_loop import material_jobs
+
+    monkeypatch.setattr(material_jobs.json, "loads", secondary)
+    with pytest.raises(material_jobs.CandidateValidationError) as caught:
+        material_jobs.candidates(SimpleNamespace(content='{"rows":', complete=True), {})
+    assert caught.value.diagnostics == [{"path": [], "type": "json_invalid"}]
+
+
 def test_author_citation_schema_is_job_scoped_and_host_still_checks_provenance():
     from types import SimpleNamespace
     from nekaise_loop.material_jobs import CandidateValidationError, candidates, request_body
@@ -146,11 +188,17 @@ def interrupted_material(setup_loop, request):
                 batch["rows"][0].update(training_tokenization="chat_response", student_prompt=" ")
             elif fault == "training_text_required":
                 batch["rows"][0].update(training_tokenization="full_text", training_text=" ")
+            elif fault in {"json_delimiter", "json_unterminated"}:
+                pass  # Replace the serialized response below; keep provider stop.
             else:
                 batch["rows"][0]["territory"] = "PRIVATE_REJECTED_VALUE"
             result["choices"][0]["message"]["content"] = json.dumps(batch)
             if fault == "truncated_json":
                 result["choices"][0]["message"]["content"] = '{"rows":[{"id":"unfinished'
+            elif fault == "json_delimiter":
+                result["choices"][0]["message"]["content"] = '{"rows":[{"rationale":"PRIVATE_REJECTED_VALUE"}, "training_text":"text"}]}'
+            elif fault == "json_unterminated":
+                result["choices"][0]["message"]["content"] = '{"rows":[{"id":"PRIVATE_REJECTED_VALUE'
         import httpx
         return httpx.Response(200, json=result)
     pool = AuthorPool(authors=[author()], concurrency=1, max_calls_per_round=3, max_output_tokens_per_round=1536)
@@ -182,6 +230,35 @@ def test_incomplete_author_response_gets_completion_feedback_and_preserves_reser
     assert requests[2]["task"] == requests[1]["task"]
     assert service.store.query("SELECT * FROM material_calls ORDER BY id")[:2] == original
     assert service.store.campaign(campaign["id"])["teacher_budget_since"] == "2000-01-01"
+
+
+@pytest.mark.parametrize("interrupted_material", ["json_delimiter", "json_unterminated"], indirect=True)
+def test_json_syntax_feedback_reaches_retry_with_immutable_evidence(interrupted_material):
+    settings, service, campaign, engine, requests, recovery = interrupted_material
+    original = service.store.query("SELECT * FROM material_calls ORDER BY id")
+    completed = service.store.one("SELECT id,artifact FROM material_jobs WHERE status='complete'")
+    rejected = service.artifacts.get(original[1]["artifact"])
+    expected = rejected["validation_errors"]
+    assert expected[0]["syntax"]["code"] in {"expected_comma_delimiter", "unterminated_string"}
+    assert rejected["response"]["choices"][0]["finish_reason"] == "stop"
+    assert "PRIVATE_REJECTED_VALUE" not in original[1]["error"]
+    handle_recovery(settings, recovery["id"], agent=lambda *args: funded_decision(service, campaign))
+    apply_recovery(settings, recovery["id"])
+    engine.run(campaign["id"])
+    assert service.store.campaign(campaign["id"])["status"] == "complete"
+    assert requests[2]["retry_validation"] == expected
+    assert requests[2]["task"] == requests[1]["task"]
+    assert "PRIVATE_REJECTED_VALUE" not in json.dumps(requests[2])
+    calls = service.store.query("SELECT * FROM material_calls ORDER BY id")
+    assert calls[:2] == original
+    assert service.artifacts.get(original[1]["artifact"]) == rejected
+    assert service.store.one("SELECT id,artifact FROM material_jobs WHERE id=?", (completed["id"],)) == completed
+    saved = service.artifacts.get(calls[2]["artifact"])
+    exact = service.artifacts.get(saved["request_artifact"])
+    assert json.loads(exact["request"]["messages"][1]["content"]) == requests[2]
+    assert sum(call["reserved_tokens"] for call in calls) == 2048
+    assert service.store.campaign(campaign["id"])["teacher_budget_since"] == "2000-01-01"
+    assert len(service.snapshot(campaign["id"])["round"]["materials"]) == 3
 
 
 def funded_decision(service, campaign):

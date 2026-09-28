@@ -396,6 +396,11 @@ validator messages or source text. The next attempt on the same job receives tho
 diagnostics; its exact request has a separate immutable artifact, while the job identity
 and completed-job reuse remain stable. Candidate validation and teacher selection remain
 mandatory. Unknown historical diagnostics may be absent and are never invented.
+For provider-complete invalid JSON, diagnostics can also include a fixed syntax code,
+zero-based character offset and one-based line/column. A secondary JSON parser supplies
+only this metadata; it never repairs or accepts material. Provider-incomplete output
+keeps completion feedback instead. Parser disagreement or resource limits leave the
+original validation rejection intact, and raw responses remain immutable evidence.
 
 ### Citation identifiers
 

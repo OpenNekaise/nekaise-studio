@@ -94,6 +94,8 @@ def request_body(author, spec, schema):
         "Every candidate id must be unique within this batch. duplicate_candidate_id retry feedback means multiple rows reused an id; "
         "give each row a distinct id while preserving all requested material. This is identifier uniqueness, not content deduplication. "
         "If retry_validation is present, it contains host validation paths and error types for your previous rejected response; correct those structural errors. "
+        "json_invalid may include syntax with a fixed error code, zero-based character offset and one-based line/column in the rejected response. "
+        "Return JSON without Markdown fences; escape string contents and keep each candidate's fields inside its row object, with correct commas and closing delimiters. "
         "response_incomplete means the provider did not finish the previous response; even parseable partial JSON is not accepted. "
         "Budget for a complete JSON object, including closing all strings, rows and arrays, within max_tokens. "
         "Keep formatting and incidental metadata concise while preserving the Teacher's requested material; do not reduce the requested material unless the Teacher explicitly permits it. "
@@ -134,6 +136,31 @@ class CandidateValidationError(ValueError):
         self.diagnostics = diagnostics
         super().__init__("Material author response failed completion, schema or provenance validation: "
                          + json.dumps(diagnostics, ensure_ascii=True) + "; inspect saved call artifact")
+
+
+def _json_syntax(content):
+    """Diagnose only: never repair content or replace Pydantic's validator."""
+    try:
+        json.loads(content)
+    except json.JSONDecodeError as exc:
+        # Parser messages can contain input (e.g. a bad control character).
+        # Emit only fixed codes and coordinates, never messages or excerpts.
+        codes = {
+            "Unterminated string starting at": "unterminated_string",
+            "Expecting ',' delimiter": "expected_comma_delimiter",
+            "Expecting ':' delimiter": "expected_colon_delimiter",
+            "Expecting property name enclosed in double quotes": "expected_property_name",
+            "Expecting value": "expected_value",
+            "Extra data": "extra_data",
+            "Invalid \\escape": "invalid_escape",
+            "Invalid \\uXXXX escape": "invalid_unicode_escape",
+        }
+        return {"code": codes.get(exc.msg, "invalid_json"),
+                "offset": exc.pos, "line": exc.lineno, "column": exc.colno}
+    except (ValueError, RecursionError):
+        # Secondary-parser limits must not mask the original validation error.
+        pass
+    return None
 
 
 def candidates(result, spec):
@@ -179,6 +206,12 @@ def candidates(result, spec):
         # schema paths from parseable rejected CLI tool input, however.
         if not result.complete and any(e["type"] == "json_invalid" for e in diagnostics):
             diagnostics = [{"path": [], "type": "response_incomplete"}]
+        elif result.complete and any(e["type"] == "json_invalid" for e in diagnostics):
+            syntax = _json_syntax(result.content)
+            if syntax:
+                for error in diagnostics:
+                    if error["type"] == "json_invalid":
+                        error["syntax"] = syntax
         raise CandidateValidationError(diagnostics) from None
     except (KeyError, TypeError, ValueError):
         raise CandidateValidationError([{"path": [], "type": "completion_or_provenance"}]) from None

@@ -58,6 +58,13 @@ and compares actual tokenizer files with the pinned fingerprint. Invalidation ne
 advances coverage or deletes paid work. Retry reuses completed stages and Author jobs.
 Code changes require a fresh continuation; there is no mid-stage optimizer resume.
 
+Successful research for the current assignment is linked immediately to its exact
+namespace, sequence and assignment artifact, including before a later unit fetch fails.
+Continuations also recover references saved only on older buffered blocks with that
+same assignment identity. Artifact integrity, matching unit and nonempty retrieved
+sources are required. Original fetch evidence is reused without claiming a fresh web
+request or trained coverage; unrelated assignments and failed fetches are not reused.
+
 Per-block Author limits remain unchanged. Cumulative cycle calls and reserved output
 are capped at the lesser of the configured envelope and actual planned block count times
 per-block limits. Unknown calls and reported output overruns count. The frozen epoch

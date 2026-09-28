@@ -209,6 +209,55 @@ def test_recovery_cannot_renew_cycle_by_noop_continuation(setup_loop, monkeypatc
         service.continue_campaign(campaign["id"], {"teaching_cycle":None}, actor="orchestrator")
 
 
+@pytest.mark.parametrize("saved_reference", ["assignment", "legacy_block", "other_assignment", "wrong_unit"])
+def test_continuation_reuses_fetched_research_for_pending_assignment(setup_loop, monkeypatch, saved_reference):
+    import nekaise_loop.stages as stages
+    import nekaise_loop.curriculum_research as web
+    _, service, campaign, engine, _ = setup_cycle(setup_loop, monkeypatch, rounds=1,
+        teaching_cycle={"initial_blocks_per_cycle": 1})
+    freeze = stages.freeze
+    def fail(ctx):
+        raise ValueError("Fixture preparation interruption")
+    monkeypatch.setattr(stages, "freeze", fail)
+    engine.run(campaign["id"])
+    assert service.store.campaign(campaign["id"])["status"] == "failed"
+    block = service.store.one("SELECT * FROM teaching_blocks")
+    assignment = service.store.one("SELECT * FROM curriculum_assignments")
+    assert assignment["research_artifact"] == block["research_artifact"]
+    assert not service.store.query("SELECT * FROM curriculum_receipts")
+    if saved_reference != "assignment":
+        service.store.execute("UPDATE curriculum_assignments SET research_artifact=NULL")
+    if saved_reference == "other_assignment":
+        other = service.artifacts.get(block["assignment_artifact"])
+        other["namespace"] = "different-frontier"
+        service.store.execute("UPDATE teaching_blocks SET assignment_artifact=?",
+                              (service.artifacts.put(other),))
+    if saved_reference == "wrong_unit":
+        other = service.artifacts.get(block["research_artifact"])
+        other["unit_id"] = "different.unit"
+        service.store.execute("UPDATE teaching_blocks SET research_artifact=?",
+                              (service.artifacts.put(other),))
+    child = service.continue_campaign(campaign["id"], {"workload_guidance": "Fixture repaired preparation"}, start=False)
+    monkeypatch.setattr(stages, "freeze", freeze)
+    def unavailable(*args, **kwargs):
+        raise AssertionError("Continuation must reuse fetched references without another web request")
+    monkeypatch.setattr(web, "fetch_source", unavailable)
+    engine.run(child["id"])
+    result = service.store.campaign(child["id"])
+    if saved_reference in {"other_assignment", "wrong_unit"}:
+        assert result["status"] == "failed"
+        expected = "another web request" if saved_reference == "other_assignment" else "different unit"
+        assert expected in result["error"]
+        assert not service.store.query("SELECT * FROM curriculum_receipts")
+        return
+    assert result["status"] == "complete", result["error"]
+    assert CycleTeacher.calls.count("research") == 1
+    next_block = service.store.one("SELECT b.* FROM teaching_blocks b JOIN rounds r ON r.id=b.round_id WHERE r.campaign_id=?", (child["id"],))
+    assert next_block["assignment_artifact"] == block["assignment_artifact"]
+    assert next_block["research_artifact"] == block["research_artifact"]
+    assert len(service.store.query("SELECT * FROM curriculum_receipts")) == 1
+
+
 def test_explicit_raw_allocation_does_not_shrink_with_small_author_yield():
     from nekaise_loop.progressive_preparation import prepare_progressive
     from nekaise_loop.config import CampaignConfig

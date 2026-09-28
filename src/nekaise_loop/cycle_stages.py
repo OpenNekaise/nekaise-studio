@@ -34,9 +34,25 @@ def research(ctx):
     available = {u["unit_id"]: u for u in saved["units"]}
     existing = ctx.store.one("SELECT research_artifact FROM curriculum_assignments WHERE namespace=? AND sequence=?",
                             (work["namespace"], work["sequence"]))
+    if not existing or not existing["research_artifact"]:
+        # Older buffered blocks saved references only on the block. Recover
+        # those exact fetched bytes when a continuation reuses its assignment.
+        existing = ctx.store.one(
+            "SELECT research_artifact FROM teaching_blocks WHERE namespace=? AND sequence=? "
+            "AND assignment_artifact=? AND research_artifact IS NOT NULL ORDER BY rowid DESC LIMIT 1",
+            (work["namespace"], work["sequence"], digest(work)))
     if existing and existing["research_artifact"]:
         previous = ctx.artifacts.get(existing["research_artifact"])
+        if previous["unit_id"] != work["unit"]["id"] or not previous["sources"]:
+            raise ValueError("Saved assignment research has a different unit or no retrieved sources")
         available.setdefault(previous["unit_id"], previous)
+    def preserve_assignment_research():
+        if work["unit"]["id"] in available:
+            ctx.store.execute(
+                "UPDATE curriculum_assignments SET research_artifact=? "
+                "WHERE namespace=? AND sequence=? AND artifact=? AND research_artifact IS NULL",
+                (ctx.artifacts.put(available[work["unit"]["id"]]), work["namespace"], work["sequence"], digest(work)))
+    preserve_assignment_research()
     requested = list({u["id"]: u for u in units if u["id"] not in available}.values())
     plans = saved["plans"]
     if plans is None:
@@ -66,6 +82,7 @@ def research(ctx):
         if not sources:
             raise ValueError("No research source retrieved for cycle unit; inspect " + ctx.artifacts.put(evidence))
         available[entry["unit_id"]] = evidence
+        preserve_assignment_research()
         key = ctx.artifacts.put({"plans": plans, "units": list(available.values())})
         ctx.store.execute("UPDATE teaching_cycles SET research_artifact=? WHERE id=?", (key, cycle["id"]))
     return {"plans": plans, "units": [available[u["id"]] for u in units]}

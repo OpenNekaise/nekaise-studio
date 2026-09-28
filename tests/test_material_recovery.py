@@ -129,6 +129,8 @@ def test_general_chat_request_schema_matches_host_contract_without_changing_othe
         payload = json.loads(request_body(author(), spec, schema)["messages"][1]["content"])
         candidate = payload["output_schema"]["$defs"]["Candidate"]
         properties = candidate["properties"]
+        assert "training_tokenization" in candidate["required"]
+        assert "default" not in properties["training_tokenization"]
         if scope == "general_chat":
             assert properties["training_tokenization"]["enum"] == ["chat_response"]
             for field in ("student_prompt", "training_response"):
@@ -149,6 +151,34 @@ def test_general_chat_request_schema_matches_host_contract_without_changing_othe
             assert candidates(result, spec)[0]["training_text"] == "Original prose."
         assert payload["task"] == spec
     assert json.dumps(schema, sort_keys=True) == original
+
+
+def test_omitted_prose_mode_remains_rejected_without_rewriting_historical_material():
+    from types import SimpleNamespace
+    from nekaise_loop.material_jobs import CandidateValidationError, candidates, request_body
+    from nekaise_loop.material_types import CandidateBatch
+
+    spec = {"sources": {}, "job": {"seed_ids": [], "max_output_tokens": 512,
+                                   "material_scope": "general_prose"}}
+    row = {"id": "prose", "kind": "cpt", "concept": "fixture",
+           "training_text": "Original prose.", "rationale": "fixture"}
+    result = SimpleNamespace(content=json.dumps({"rows": [row]}), complete=True)
+    original = result.content
+    with pytest.raises(CandidateValidationError) as caught:
+        candidates(result, spec)
+    assert caught.value.diagnostics == [{"path": ["rows", 0], "type": "chat_prompt_required"}]
+    assert result.content == original
+    body = request_body(author(), spec, CandidateBatch.model_json_schema())
+    assert "omitting training_tokenization also selects chat_response" in body["messages"][0]["content"]
+    # Only an explicit Author declaration makes prose executable; no host inference.
+    row["training_tokenization"] = "full_text"
+    result.content = json.dumps({"rows": [row]})
+    assert candidates(result, spec)[0]["training_text"] == row["training_text"]
+    # Historical native chat can still use its recorded default.
+    row.pop("training_tokenization")
+    row.update(student_prompt="Explain.", training_response="An explanation.")
+    result.content = json.dumps({"rows": [row]})
+    assert candidates(result, spec)[0]["training_tokenization"] == "chat_response"
 
 
 @pytest.fixture

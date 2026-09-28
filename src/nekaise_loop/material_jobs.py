@@ -64,12 +64,17 @@ def request_body(author, spec, schema):
     # Every dispatched ExpansionJob requests positive material. Keep the shared
     # model readable for historical empty batches, but forbid new empty results.
     schema["properties"]["rows"]["minItems"] = 1
-    properties = schema["$defs"]["Candidate"]["properties"]
+    candidate_schema = schema["$defs"]["Candidate"]
+    properties = candidate_schema["properties"]
+    # Historical candidates retain their default, but new Authors must declare
+    # the mode: omitting it on prose silently selects chat and fails validation.
+    if "training_tokenization" not in candidate_schema["required"]:
+        candidate_schema["required"].append("training_tokenization")
+    properties["training_tokenization"].pop("default", None)
     if spec["job"].get("material_scope") == "general_chat":
         # Mirror the existing job-level execution contract in the request.
         # Keep the shared schema and other scopes readable in their native modes.
         properties["training_tokenization"]["enum"] = ["chat_response"]
-        candidate_schema = schema["$defs"]["Candidate"]
         for field in ("student_prompt", "training_response", "training_tokenization"):
             if field not in candidate_schema["required"]:
                 candidate_schema["required"].append(field)
@@ -108,7 +113,9 @@ def request_body(author, spec, schema):
         "Never emit teacher, seed_feedback, learning_track, curriculum_unit_id or material_scope keys in candidate rows; job.material_scope is Teacher metadata inherited by the host. Put the answer in training_response for chat_response or training_text for text modes. "
         "A general_chat job requires every candidate to use chat_response with a nonempty training_response; general_chat_requires_chat_response in retry_validation identifies this requirement. "
         "Tokenization has cross-field requirements, also identified by retry_validation error types: "
-        "chat_prompt_required means chat_response needs a nonblank student_prompt; "
+        "Always explicitly include training_tokenization in every row; never rely on a default. "
+        "chat_prompt_required means chat_response needs a nonblank student_prompt; omitting training_tokenization also selects chat_response in historical validation. "
+        "If the requested material is standalone prose, explicitly declare full_text and put the complete prose in training_text rather than inventing a chat prompt to satisfy this error. "
         "training_text_required means full_text and prompt_prefix need nonblank training_text; "
         "prompt_prefix_mismatch means prompt_prefix needs a nonempty student_prompt and training_text must begin with that exact student_prompt, including whitespace, followed by the continuation. "
         "For standalone plain-prose CPT material use full_text with the complete prose in training_text, unless the teacher specifies another mode. "

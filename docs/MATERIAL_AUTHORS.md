@@ -412,3 +412,15 @@ checks returned citations even if a transport ignores schema constraints. It nev
 rewrites a mistyped citation or drops the affected row. These are provenance checks,
 not a review of teaching content; Teacher instructions, material and dose remain
 unchanged. Historical requests and rejected responses remain immutable.
+
+### Explicit serialization mode
+
+New Author request schemas require `training_tokenization` on every candidate and
+omit its historical chat default. Authors choose the mode under Teacher instructions:
+standalone prose uses explicit `full_text` and `training_text`; native chat uses
+`chat_response` with a nonblank `student_prompt`. General-chat jobs retain their
+existing chat-only constraint. Other scopes still allow all supported modes.
+Historical candidates remain readable with their original defaults. The host never
+infers a prose mode, adds a prompt or rewrites rejected material. Retry instructions
+explain that an omitted mode can cause `chat_prompt_required`; providers may still
+ignore the request schema, so independent execution validation remains necessary.

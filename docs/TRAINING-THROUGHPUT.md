@@ -71,6 +71,32 @@ reference is a diagnostic implementation, not a saved official training result.
 ML numerical tests can run separately in an environment containing torch, transformers
 and pytest. Normal application tests never require torch in the API environment.
 
+### Larger physical batches without a new learning recipe
+
+`--headroom` compares physical batches 4, 6 and 8 with activation checkpointing off,
+then repeats batch4 to expose timing drift.
+It retains the checkpoint's exact tokens per optimizer update, sequence length,
+learning rate and Adam state. Mixed data often has more than four short rows within
+one update; grouping them can reduce forward/backward calls but also increases padding.
+The diagnostic reports useful targets, padded/unpadded input tokens and call counts
+alongside throughput and both peak allocated and reserved GPU memory (decimal GB).
+Measured update target counts and an ordered input digest establish that every variant
+uses the same examples and update boundaries. Shape accounting runs outside timing.
+
+```bash
+.venv/bin/nekaise-loop profile-training ROUND_ID --mixed --headroom --equivalence-only
+.venv/bin/nekaise-loop profile-training ROUND_ID --mixed --headroom --warmup 8 --steps 64
+.venv/bin/nekaise-loop profile-training ROUND_ID --headroom --warmup 8 --steps 64
+```
+
+Headroom numerical comparisons use the existing batch4 runtime as reference, including
+a repeated batch4 control, twelve uneven sequences, and the fullest update with the most
+rows from the frozen data. Preset tolerances remain absolute loss difference below 0.01
+and gradient relative L2 below 0.03. Failures stay visible and are not candidates for
+deployment. Throughput is not a learning score; choose a measured improvement with
+memory headroom, rather than maximizing allocated bytes. A larger effective token update
+is a separate learning-recipe change and is not enabled by this diagnostic.
+
 Only one GPU is currently installed. The trainer does not implement DDP; no multi-GPU
 speedup is claimed. A future distributed implementation must preserve update normalization,
 data accounting, optimizer compatibility and owned-process cancellation before activation.

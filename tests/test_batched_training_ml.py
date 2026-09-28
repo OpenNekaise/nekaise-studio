@@ -7,16 +7,17 @@ transformers = pytest.importorskip("transformers")
 from nekaise_loop.workers.batched_training import backward_update, collate, step_update
 
 
-@pytest.mark.parametrize("size", [1, 2, 4])
+@pytest.mark.parametrize("size", [1, 2, 4, 6, 8])
 def test_padded_causal_loss_and_gradients_match_serial_full_sequence(size):
     torch.manual_seed(11)
     torch.set_num_threads(1)
     model = transformers.LlamaForCausalLM(transformers.LlamaConfig(vocab_size=32, hidden_size=32,
         intermediate_size=48, num_hidden_layers=2, num_attention_heads=4, num_key_value_heads=2,
         attention_dropout=0., pad_token_id=1, use_cache=False))
-    rows = [{"input_ids": ids} for ids in ([0, 5, 1], [0, 9, 8, 7, 1], [0, 4], [0, 2, 3, 4, 5, 1])]
+    rows = [{"input_ids": ids} for ids in ([0, 5, 1], [0, 9, 8, 7, 1], [0, 4], [0, 2, 3, 4, 5, 1],
+        [0, 6, 1], [0, 7, 9, 1], [0, 8, 9, 4, 1], [0, 3], [0, 4, 1])]
     inputs, count = collate(rows, 1, "cpu")
-    assert count == 12
+    assert count == 24
     assert int((inputs["labels"][:, 1:] != -100).sum()) == count
     assert inputs["labels"][0, 2].item() == 1  # EOS is trained despite pad == EOS
     assert inputs["labels"][0, 3].item() == -100

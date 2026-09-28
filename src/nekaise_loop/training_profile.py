@@ -13,7 +13,19 @@ from .service import Service
 from .storage import Store, now, new_id, encode
 
 
-def run_profile(settings, round_id, *, mixed=False, warmup=8, steps=32, equivalence_only=False):
+def profile_cases(*, equivalence_only=False, headroom=False):
+    if equivalence_only:
+        return [{"equivalence": True, "headroom": headroom,
+                 **({"microbatch_size": 4, "activation_checkpointing": False} if headroom else {})}]
+    if headroom:
+        return [{"serial": False, "microbatch_size": size, "activation_checkpointing": False,
+                 "headroom": True, "baseline_repeat": index == 3} for index, size in enumerate((4, 6, 8, 4))]
+    return ([{"serial": True, "microbatch_size": 1, "activation_checkpointing": True}] +
+            [{"serial": False, "microbatch_size": size, "activation_checkpointing": ac}
+             for size in (1, 2, 4) for ac in (True, False)])
+
+
+def run_profile(settings, round_id, *, mixed=False, warmup=8, steps=32, equivalence_only=False, headroom=False):
     """Exclusive worker ownership plus shared source lock, like the live worker."""
     if not 1 <= warmup <= 100 or not 1 <= steps <= 1000:
         raise ValueError("Profiling update count is outside its bounded range")
@@ -56,10 +68,7 @@ def run_profile(settings, round_id, *, mixed=False, warmup=8, steps=32, equivale
         signal.signal(signal.SIGINT, lambda *_: cancelled.__setitem__(0, True))
         def stopping():
             return cancelled[0] or bool(service.store.one("SELECT id FROM actions WHERE handled_at IS NULL"))
-        cases = ([{"equivalence": True}] if equivalence_only else
-                 [{"serial": True, "microbatch_size": 1, "activation_checkpointing": True}] +
-                 [{"serial": False, "microbatch_size": size, "activation_checkpointing": ac}
-                  for size in (1, 2, 4) for ac in (True, False)])
+        cases = profile_cases(equivalence_only=equivalence_only, headroom=headroom)
         for index, variant in enumerate(cases):
             if stopping():
                 raise RuntimeError("Profiling cancelled; pending operator commands take precedence")

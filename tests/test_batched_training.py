@@ -62,3 +62,50 @@ def test_profile_requires_quiescent_worker_and_bounded_work(setup_loop):
     service.store.set_status(campaign["id"], "running")
     with pytest.raises(ValueError, match="Pause or stop"):
         run_profile(settings, "missing")
+
+
+def test_profile_counts_useful_targets_separately_from_padding():
+    from nekaise_loop.workers.training_profile import batch_statistics
+    rows = [{"input_ids": [0] * n} for n in (512, 6, 127, 13, 62, 3, 37, 2, 9)]
+    four, eight = (batch_statistics(rows, size) for size in (4, 8))
+    assert four["forward_backward_calls"] == 3
+    assert eight["forward_backward_calls"] == 2
+    assert four["valid_targets"] == eight["valid_targets"] == 762
+    assert four["unpadded_input_tokens"] == eight["unpadded_input_tokens"] == 771
+    assert eight["padded_input_tokens"] > four["padded_input_tokens"]
+    assert eight["max_physical_rows"] == 8
+
+
+@pytest.mark.parametrize("equivalence_only", [False, True])
+def test_headroom_profile_preserves_saved_recipe_and_official_history(setup_loop, monkeypatch, equivalence_only):
+    from pathlib import Path
+    from nekaise_loop.training_profile import run_profile
+    settings, service, campaign, engine = setup_loop
+    engine.run(campaign["id"])
+    stage = service.store.one("SELECT s.* FROM stage_runs s JOIN rounds r ON r.id=s.round_id WHERE r.campaign_id=? AND s.stage='train' ORDER BY s.id DESC LIMIT 1", (campaign["id"],))
+    trained = service.artifacts.get(stage["artifact"])
+    trained["manifest"]["config"] = campaign["config"]
+    (Path(trained["checkpoint"]) / "checkpoint.json").write_text(json.dumps(trained["manifest"]))
+    service.store.execute("UPDATE stage_runs SET artifact=? WHERE id=?", (service.artifacts.put(trained), stage["id"]))
+    before_rounds = service.store.query("SELECT * FROM rounds ORDER BY id")
+    before_stages = service.store.query("SELECT * FROM stage_runs ORDER BY id")
+    received = []
+    def fake_run(self, argv, **kwargs):
+        payload = json.loads(Path(argv[-1]).read_text())
+        received.append(payload)
+        kwargs["on_message"]({"type": "result", "data": {"kind": "test_fixture", "passed": True}})
+    monkeypatch.setattr("nekaise_loop.training_profile.ProcessRunner.run", fake_run)
+    monkeypatch.setattr("nekaise_loop.training_profile.signal.signal", lambda *args: None)
+    directory = run_profile(settings, stage["round_id"], mixed=True, headroom=True, equivalence_only=equivalence_only)
+    assert len(received) == (1 if equivalence_only else 4)
+    for payload in received:
+        assert recipe_hash(payload["config"]) == recipe_hash(campaign["config"])
+        assert payload["config"]["inherit_optimizer"] is True
+        assert payload["config"]["training_activation_checkpointing"] is False
+        assert payload["profile_case"]["headroom"] is True
+        assert "output" not in payload  # No deployable checkpoint output.
+    evidence = json.loads((Path(directory) / "evidence.json").read_text())
+    assert evidence["checkpoint_verified_after"] is True
+    assert evidence["coverage_advanced"] is False
+    assert service.store.query("SELECT * FROM rounds ORDER BY id") == before_rounds
+    assert service.store.query("SELECT * FROM stage_runs ORDER BY id") == before_stages

@@ -72,3 +72,64 @@ Ignored evidence lives in `workspace/reviews/vanilla-throughput-20260928/` and
 `training_ce585c24f964`; the extended numerical profile is `training_ee1eaa834c02`.
 `deployment.json` records the actual continuation, queued start, inherited budget epoch
 and source/optimizer bindings. Diagnostic observations are not student learning results.
+
+## Memory headroom experiment — later on 2026-09-28
+
+The first optimized campaign subsequently completed two blocks, training 115,901 and
+118,221 targets at measured GPU-loop rates of 5,000.8 and 5,213.0 targets/s. Both saved
+checkpoints verified inherited Adam. The second recorded `identical_runtime` inheritance
+from the first. The Teacher completed its cycle review before operator pause command 726.
+
+The follow-up experiment used the second checkpoint, `round_cfe0cbf7d4f8`, and its own
+frozen data. It compared physical batches 4, 6, 8 and a second batch4 control, with
+activation checkpointing off and unchanged 2,048-target updates. Each case reloaded the
+same weights and Adam; eight updates warmed up before 64 measured updates. The raw
+case measured 129,331 targets and the mixed case 130,509. Ordered input digests and
+per-update target counts matched across variants. These short diagnostics are not a
+sustained whole-corpus measurement, and their weights were never saved.
+
+| Data | Physical batch | Useful targets/s | Peak allocated GB | Peak reserved GB |
+| --- | ---: | ---: | ---: | ---: |
+| Mixed | 4, initial/repeat | 5,194 / 5,051 | 27.77 | 29.78 |
+| Mixed | 6 | 5,064 | 32.07 | 33.66 |
+| Mixed | 8 | 5,025 | 31.84 | 38.60 |
+| Raw corpus | 4, initial/repeat | 5,523 / 5,461 | 27.80 | 29.04 |
+| Raw corpus | 6 | 5,555 | 27.80 | 33.69 |
+| Raw corpus | 8 | 5,584 | 31.83 | 40.82 |
+
+GB means decimal bytes / 1e9. Allocated tensors and allocator reservations are separate
+measurements; neither is the entire process's device footprint. The batch8 measurements
+exercised the maximum configured padded shape of 8 × 512 input positions. No case OOMed.
+
+**Decision: retain batch4.** Batch8 reduced mixed forward/backward calls from 145 to 82,
+but increased padded input computation from 215,544 to 236,396 positions. Its mixed rate
+was below both batch4 controls; its raw advantage was only 1.1–2.2%. Baseline timing
+spread was about 2.8% mixed and 1.1% raw, so these runs do not establish a substantial
+benefit from consuming more VRAM. Effective batch size, learning rate and Adam remain
+unchanged. A larger effective update would be a separate recipe experiment.
+
+Numerical checks used the current batch4 runtime as reference, twelve uneven real rows
+and a full 2,048-target update with twelve rows. Batch8 passed both preset tolerances:
+gradient relative L2 differences were 1.66% and 1.50%, with loss differences below 0.001.
+The repeated batch4 gradient control differed by 0% and 0.27%. **Batch6 failed** the full
+update's preset 3% gradient threshold at 6.98%, despite passing the uneven-row check.
+The aggregate numerical diagnostic correctly exited unsuccessfully and remains saved;
+no threshold was relaxed. This is execution validation, not a learning-quality result.
+
+The reusable `profile-training --headroom` command and measurement accounting passed
+702 application tests (one ML-module skip), seven separate ML tests, and a final
+17-test integration pass after review refinements. The production training runtime and
+optimizer recipe hashes above are unchanged. Opus 5.5 high reviewed the diagnostic design.
+Checkpoint payload hashes verified again after each run, and no curriculum coverage
+advanced during profiling.
+
+Evidence: `workspace/reviews/memory-headroom-20260928/`; numerical profile
+`training_181bc939e43c`, mixed profile `training_b354e9037dd4`, and raw profile
+`training_9b68145122aa`. The local `benchmark-summary.json` binds all three to the same
+source, checkpoint and frozen dataset; `deployment.json` records automatic resumption.
+
+Continuation `campaign_0d4d50038349` resumed through command 727 from that verified second
+checkpoint. Its source fingerprint includes the new profiling tools, while its production
+runtime, batch4 configuration, Adam, Authors, curriculum namespace and Teacher budget epoch
+remain unchanged. The worker entered `cycle_research`; dashboard health and both services
+were verified active, with no recovery incident at that check.

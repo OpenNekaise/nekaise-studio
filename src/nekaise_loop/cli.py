@@ -21,6 +21,7 @@ def main():
     profile.add_argument("--warmup", type=int, default=8)
     profile.add_argument("--steps", type=int, default=32)
     profile.add_argument("--equivalence-only", action="store_true")
+    profile.add_argument("--headroom", action="store_true", help="Compare physical batches 4/6/8 without checkpointing; preserve saved token updates and use batch4 as the numerical reference")
     sub.add_parser("supervisor")
     for verb in ("recover", "apply-recovery"):
         sub.add_parser(verb).add_argument("recovery_id", type=int)
@@ -65,7 +66,7 @@ def main():
     if args.command == "profile-training":
         from .training_profile import run_profile
         run_profile(settings, args.round_id, mixed=args.mixed, warmup=args.warmup,
-                    steps=args.steps, equivalence_only=args.equivalence_only)
+                    steps=args.steps, equivalence_only=args.equivalence_only, headroom=args.headroom)
         return
     if args.command == "supervisor":
         from .supervisor import run_supervisor

@@ -79,3 +79,25 @@ must not be credited or silently deleted; the next operational storage investiga
 must identify these outputs explicitly. Diagnostic checkpoint bytes and their manifests
 are retained separately for review. No automatic retention rule or unjournaled deletion
 was introduced.
+
+## Live rollout
+
+Implementation commit `704da1c140916b09dd865c7cd83f06475f840d35` was pushed to
+`origin/main`. The dashboard and supervisor were restarted while the source lock was
+held. After release, command-queue action **808** started continuation
+`campaign_3c9a381dd023` at **2026-09-29 09:20 UTC**. It inherits the verified parent
+`round_5789117e25bf`, the exact Kai 0.1 identity, all three Authors and the original
+Teacher budget epoch `2026-09-28T10:54:26.290+00:00`.
+
+Deployment uses two windows per cycle, two-window look-ahead, a suggested 4,194,304
+targets per window, a 24,000,000-character fresh corpus assignment and a separate
+3,600-second GPU request limit. Teacher/Author timeouts and call/output reservations
+are unchanged. Teacher may choose smaller rollout windows and remains responsible
+for actual source mix and dose. Microbatch 4, 2,048 effective targets per update,
+512-token context, activation checkpointing off and learning rate 2e-5 are unchanged.
+
+The live API health check passed, and the dashboard returned the new measured
+continuous-training projection. The first source research stage entered execution.
+This startup observation alone is not evidence of a completed training window or
+sustained 90% training duty. The ignored deployment receipt records source/runtime
+fingerprints, the compatible optimizer transition and the actual command action.

@@ -28,10 +28,14 @@ def cycle_for(store, round_id):
     return row
 
 
-def open_cycle(engine, campaign):
+def open_cycle(engine, campaign, *, after_cycle=None):
     store, artifacts = engine.store, engine.artifacts
     config = CampaignConfig.model_validate(campaign["config"])
-    cycle = store.one("SELECT * FROM teaching_cycles WHERE campaign_id=? AND status!='complete' ORDER BY number LIMIT 1", (campaign["id"],))
+    if after_cycle:
+        cycle = store.one("SELECT * FROM teaching_cycles WHERE campaign_id=? AND number=?",
+                          (campaign['id'], after_cycle['number']+1))
+    else:
+        cycle = store.one("SELECT * FROM teaching_cycles WHERE campaign_id=? AND status!='complete' ORDER BY number LIMIT 1", (campaign["id"],))
     if cycle:
         contract = json.loads(cycle["contract"])
         if cycle["source_hash"] != source_fingerprint() or contract["config_hash"] != digest(config.model_dump()):
@@ -63,6 +67,17 @@ def open_cycle(engine, campaign):
         count = min(count, config.rounds-last)
     progress = store.one("SELECT sequence,state FROM curriculum_progress WHERE namespace=?", (config.curriculum_loop.namespace,))
     state = json.loads(progress["state"]) if progress else initial_state()
+    predecessor = None
+    if after_cycle:
+        predecessor = store.one('SELECT * FROM teaching_blocks WHERE cycle_id=? ORDER BY position DESC LIMIT 1', (after_cycle['id'],))
+        frozen = store.one("SELECT artifact FROM stage_runs WHERE round_id=? AND stage='freeze' AND status='complete' ORDER BY id DESC LIMIT 1", (predecessor['round_id'],))
+        if not frozen:
+            raise ValueError('Cross-cycle preparation requires its predecessor complete frozen frontier')
+        receipt = artifacts.get(frozen['artifact']).get('curriculum_progress')
+        if not receipt:
+            raise ValueError('Diagnostic cycles cannot be speculatively extended')
+        state = {**receipt['after'], 'checkpoint': None}
+        progress = {'sequence': predecessor['sequence']+1}
     if state.get("checkpoint") and state["checkpoint"] != anchor:
         raise ValueError("Cycle anchor differs from the committed curriculum lineage")
     contract = {"config_hash": digest(config.model_dump()), "tokenizer": tokenizer_identity(anchor),
@@ -79,8 +94,9 @@ def open_cycle(engine, campaign):
                    (cycle_id, campaign["id"], n, anchor, source_fingerprint(), encode(contract), now(), now()))
         db.execute("INSERT INTO rounds(id,campaign_id,number,status,model_before,created_at,updated_at) VALUES(?,?,?,'ready',?,?,?)",
                    (round_id, campaign["id"], last+1, anchor, now(), now()))
-        db.execute("INSERT INTO teaching_blocks(round_id,cycle_id,position,namespace,sequence) VALUES(?,?,0,?,?)",
-                   (round_id, cycle_id, config.curriculum_loop.namespace, contract["initial_sequence"]))
+        db.execute("INSERT INTO teaching_blocks(round_id,cycle_id,position,namespace,sequence,predecessor_round_id) VALUES(?,?,0,?,?,?)",
+                   (round_id, cycle_id, config.curriculum_loop.namespace, contract["initial_sequence"],
+                    predecessor['round_id'] if predecessor else None))
         store.event(campaign["id"], round_id, "teaching_cycle", "Preparing a bounded Teacher cycle",
                     {"cycle_id": cycle_id, "number": n, "contract": contract}, db=db)
     return store.one("SELECT * FROM teaching_cycles WHERE id=?", (cycle_id,))
@@ -162,9 +178,11 @@ def snapshot(store, artifacts, campaign_id):
                          "(SELECT artifact FROM stage_runs WHERE round_id=r.id AND stage='freeze' AND status='complete' ORDER BY id DESC LIMIT 1) AS freeze_artifact "
                          "FROM teaching_blocks b JOIN rounds r ON r.id=b.round_id WHERE b.cycle_id=? ORDER BY b.position", (cycle["id"],))
     for block in blocks:
-        prepared = artifacts.get(block["freeze_artifact"]) if block["freeze_artifact"] else {}
+        from .preparation_summary import read
+        prepared = read(store, artifacts, block["freeze_artifact"]) if block["freeze_artifact"] else {}
         block["prepared_targets"] = prepared.get("ledger", {}).get("total_tokens")
         block["raw_targets"] = prepared.get("progressive_preparation", {}).get("raw_targets_prepared")
+        block["web_targets"] = prepared.get("progressive_preparation", {}).get("web_targets_prepared")
         block["preparation_only"] = not bool(block["parent_binding_artifact"])
     return {"id": cycle["id"], "number": cycle["number"], "status": cycle["status"],
             "plan_artifact": cycle["plan_artifact"], "review_artifact": cycle["review_artifact"],

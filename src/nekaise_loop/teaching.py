@@ -72,7 +72,8 @@ class WorkPlan(Record):
 
 class Curriculum(Record):
     forward_corpus_share: float = Field(default=0.5, gt=0, lt=1, description="Under progressive_v1, choose corpus share of forward targets (corpus + GPC), excluding the capped remediation portion. Whole spans cause small deviations; no synthetic target is cropped.")
-    raw_target_tokens: int = Field(default=0, ge=0, le=2000000, description="Buffered cycles: explicit original-corpus targets to consume, independently of Author yield. 0 retains ratio-derived sizing. Whole-span rounding and window exhaustion are reported.")
+    raw_target_tokens: int = Field(default=0, ge=0, le=16000000, description="Explicit original-corpus targets to consume, independently of Author yield. 0 retains ratio-derived sizing. Whole-span rounding and window exhaustion are reported.")
+    web_target_tokens: int = Field(default=0, ge=0, le=16000000, description="Distinct GPC webpage prose targets from explicitly licensed research collections. Zero disables direct web prose for this window. Never replaces original Teacher/Author native chat. Whole spans and supply shortfalls are reported without filling with another source.")
     lessons: list[Lesson]
     readings: list[SourceRef]
     replay: list[ReplayRef]

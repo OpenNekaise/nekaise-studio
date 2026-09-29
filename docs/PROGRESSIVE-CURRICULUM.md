@@ -132,3 +132,12 @@ while quiescent (`nekaise-loop continue CAMPAIGN --updates updates.json` starts 
 preserving the source lock, identity, Author pool and compatible Adam.
 Operator stop/pause always overrides automatic execution. Independent eval remains
 asynchronous and never feeds these cursors, recipes or recovery decisions.
+
+## Direct GPC source exposure — September 29
+
+With explicit `web_training=true`, separately authorized retrieved source prose may
+join GPC training, with licensing evidence, exact hash/offset coverage and whole-span
+selection. Existing reference-only artifacts retain their original meaning. New source
+coverage advances only in the same verified save transaction as corpus/GPC progress.
+The original general Teacher/Author and all-Author requirements remain per positive
+saved window. See [continuous training and its source contract](CONTINUOUS-TRAINING.md).

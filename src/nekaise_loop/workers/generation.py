@@ -47,11 +47,7 @@ def plan_batches(lengths, groups, *, max_rows, max_tokens, max_new_tokens):
     return batches
 
 
-def main():
-    task, input_path = sys.argv[1:]
-    if task != "generate":
-        raise ValueError("The generation worker only accepts generate")
-    data = json.loads(Path(input_path).read_text())
+def generate(data, *, resident=None):
     config, rows = data["config"], data["rows"]
     if len({r["id"] for r in rows}) != len(rows):
         raise ValueError("Generation requires unique prompt IDs")
@@ -63,7 +59,7 @@ def main():
     torch.manual_seed(config["seed"])
     torch.set_num_threads(min(8, os.cpu_count() or 1))
     device = "cuda" if torch.cuda.is_available() else "cpu"
-    tokenizer = AutoTokenizer.from_pretrained(data["checkpoint"], local_files_only=True, trust_remote_code=False)
+    tokenizer = resident[1] if resident else AutoTokenizer.from_pretrained(data["checkpoint"], local_files_only=True, trust_remote_code=False)
     if tokenizer.eos_token_id is None:
         raise ValueError("The student tokenizer must have an EOS token")
     if tokenizer.pad_token_id is None:
@@ -84,12 +80,13 @@ def main():
         max_rows=config.get("generation_batch_size", 4), max_tokens=config.get("generation_batch_tokens", 8192),
         max_new_tokens=config["max_new_tokens"])
     if not batches:
-        emit("result", [])
-        return
+        if not resident:
+            emit("result", [])
+        return []
     emit("generation_plan", {"batches": batches, "prompt_lengths": {k: v[0].input_ids.shape[1] for k, v in prepared.items()},
         "max_rows": config.get("generation_batch_size", 4), "max_token_positions": config.get("generation_batch_tokens", 8192),
         "max_new_tokens": config["max_new_tokens"], "padding_side": "left"})
-    model = AutoModelForCausalLM.from_pretrained(data["checkpoint"], local_files_only=True,
+    model = resident[0] if resident else AutoModelForCausalLM.from_pretrained(data["checkpoint"], local_files_only=True,
         trust_remote_code=False, dtype=torch.float32, attn_implementation="sdpa").to(device)
     model.eval()
     eos = model.generation_config.eos_token_id
@@ -148,7 +145,17 @@ def main():
                     "generation_seconds": round(seconds, 6)}}
             results[key] = answer
             emit("answer", answer)
-    emit("result", [results[row["id"]] for row in rows])
+    result = [results[row["id"]] for row in rows]
+    if not resident:
+        emit("result", result)
+    return result
+
+
+def main():
+    task, input_path = sys.argv[1:]
+    if task != "generate":
+        raise ValueError("The generation worker only accepts generate")
+    generate(json.loads(Path(input_path).read_text()))
 
 
 if __name__ == "__main__":

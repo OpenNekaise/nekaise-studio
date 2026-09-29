@@ -15,6 +15,15 @@ class LocalModel:
         self.deadline = None
 
     def _run(self, task, payload, on_message, *, timeout=None):
+        resident = getattr(self, 'resident', None)
+        if task == 'train' and self.config.training_execution == 'resident_v1':
+            if resident is None:
+                raise ValueError('Resident training requires the continuous worker-owned session')
+            return resident.request(self, task, payload, on_message)
+        if task == 'generate' and resident and resident.latest_checkpoint == payload['checkpoint']:
+            return resident.request(self, task, payload, on_message)
+        if task in {'generate', 'score', 'train'} and resident and resident.thread:
+            resident.close()  # Explicit historical comparisons release the current GPU holder first.
         timeout = self.config.max_stage_seconds if timeout is None else timeout
         if self.deadline is not None:
             timeout = min(timeout, self.deadline - time.monotonic())
@@ -24,7 +33,14 @@ class LocalModel:
         atomic_write(path, canonical(payload))
         result = []
         def receive(message):
-            if message["type"] == "result":
+            if message["type"] == "result_file":
+                import json
+                from ..curriculum_inventory import file_hash
+                prepared = Path(message["path"])
+                if prepared.resolve() != path.with_suffix('.prepared.json').resolve() or file_hash(prepared) != message["sha256"]:
+                    raise ValueError("Preparation result file identity mismatch")
+                result.append(json.loads(prepared.read_text()))
+            elif message["type"] == "result":
                 result.append(message["data"])
             else:
                 on_message(message)
@@ -41,6 +57,8 @@ class LocalModel:
         return self._run("generate", {"checkpoint": checkpoint, "rows": rows, "config": self.config.model_dump()}, lambda m: on_answer(m["data"]) if m["type"] == "answer" else None)
 
     def compare(self, checkpoint, reference, rows, on_answer=lambda _: None, *, reference_format=None, reference_rows=None):
+        if getattr(self, 'resident', None):
+            self.resident.close()
         # Sequential owned processes release the current model before loading the
         # reference. Both loads, generations and audits share one stage budget.
         deadline = self.deadline if self.deadline is not None else time.monotonic() + self.config.max_stage_seconds

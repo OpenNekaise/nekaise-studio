@@ -39,6 +39,11 @@ def _run_worker(settings):
         signal.signal(signal.SIGINT, lambda *_: closing.__setitem__(0, True))
         from .material_jobs import recover_author_processes
         recover_author_processes(store)
+        for session in store.query("SELECT * FROM trainer_sessions WHERE status='running'"):
+            if session['process_pid']:
+                stop_owned(session['process_pid'], session['process_start'])
+            store.execute("UPDATE trainer_sessions SET status='interrupted',finished_at=?,process_pid=NULL,process_start=NULL WHERE id=?",
+                          (now(), session['id']))
         for stage in store.query("SELECT * FROM stage_runs WHERE status='running'"):
             if stage["process_pid"]:
                 stop_owned(stage["process_pid"], stage["process_start"])

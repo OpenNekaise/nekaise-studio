@@ -1,5 +1,11 @@
 # Nekaise Studio
 
+September 29 direction: [continuous windows](docs/CONTINUOUS-TRAINING.md) separate
+CPU/network production and Teacher review from a resident GPU consumer. Explicitly
+eligible GPC web prose may train directly; original Teacher/Author chat remains.
+Only verified saves advance coverage. Throughput and conversation retention are
+separate observations; the Teacher chooses their teaching tradeoffs.
+
 September 28 throughput direction: [buffered teaching cycles](docs/TEACHING-CYCLES.md)
 amortize Teacher research, planning and review across larger saved blocks. The Teacher
 remains responsible for curriculum and online assessment; forward coverage does not

@@ -1,5 +1,30 @@
 # Working on Nekaise Studio
 
+## Continuous windows and GPC web prose (authorized 2026-09-29)
+
+The operator approved using eligible GPC-fetched webpages directly for training and
+implementing the asynchronous throughput direction discussed with Opus 5.5 high.
+`continuous_v1` prepares across cycle boundaries, grades saved-checkpoint answers
+asynchronously and uses a single worker-owned resident model/Adam. Each round is a
+complete saved training window; all registered Authors and original Teacher/Author
+general chat still contribute within each positive window. Teacher chooses the actual
+mix, size and dose. Two future windows and two unreviewed cycles bound lookahead.
+Follow-up/replay remains capped at 20%; never silently replace missing sources or
+Authors. Existing provider allowances do not grow. Prefer coarse synchronous saves
+until measurements justify asynchronous checkpoint complexity. See
+[CONTINUOUS-TRAINING.md](docs/CONTINUOUS-TRAINING.md).
+
+GPC reference-only snapshots stay reference-only. New training collections require
+explicit Teacher source permission with retrieved license evidence, bounded same-origin
+acquisition, robots access, immutable text/attribution and exact fresh-span accounting.
+The named Nemotron-CC/FineWeb/DCLM/Dolma datasets and benchmark banks remain excluded.
+Prepared material is not coverage; only verified durable saves advance the existing
+corpus/GPC namespace. Keep exact Kai 0.1 and compatible Adam. A 90% training-time target
+is an empirical performance aim, never a reason to pad, replay without authorization,
+change the learning recipe or declare learning improvement. Show actual chat share and
+all elapsed waiting alongside measured training time. Resume after validation is
+authorized. Historical buffered/legacy contracts remain readable.
+
 ## GPU execution throughput (authorized 2026-09-28)
 
 The operator approved isolated performance diagnostics followed by deployment of a

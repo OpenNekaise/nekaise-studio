@@ -27,7 +27,13 @@ def units_for(ctx, cycle):
 def research(ctx):
     cycle = cycle_for(ctx.store, ctx.round["id"])
     block = ctx.store.one("SELECT * FROM teaching_blocks WHERE round_id=?", (ctx.round["id"],))
-    work = ctx.artifacts.get(block["assignment_artifact"]) if block["assignment_artifact"] else assignment(ctx)
+    if block["assignment_artifact"]:
+        work = ctx.artifacts.get(block["assignment_artifact"])
+    elif block['predecessor_round_id']:
+        work = assignment(ctx, prepared_state=cycle['contract']['initial_state'], sequence=block['sequence'],
+                          predecessor_round_id=block['predecessor_round_id'])
+    else:
+        work = assignment(ctx)
     ctx.store.execute("UPDATE teaching_blocks SET assignment_artifact=? WHERE round_id=?", (ctx.artifacts.put(work), ctx.round["id"]))
     units = units_for(ctx, cycle)
     saved = ctx.artifacts.get(cycle["research_artifact"]) if cycle["research_artifact"] else {"units": [], "plans": None}
@@ -53,6 +59,10 @@ def research(ctx):
                 "WHERE namespace=? AND sequence=? AND artifact=? AND research_artifact IS NULL",
                 (ctx.artifacts.put(available[work["unit"]["id"]]), work["namespace"], work["sequence"], digest(work)))
     preserve_assignment_research()
+    if ctx.config.curriculum_loop.web_training:
+        # A new source-use contract needs an explicit licensing decision. Preserve
+        # old reference artifacts, but do not relabel them as training permission.
+        available = {k: v for k, v in available.items() if 'training_collections' in v}
     requested = list({u["id"]: u for u in units if u["id"] not in available}.values())
     plans = saved["plans"]
     if plans is None:
@@ -85,7 +95,13 @@ def research(ctx):
         preserve_assignment_research()
         key = ctx.artifacts.put({"plans": plans, "units": list(available.values())})
         ctx.store.execute("UPDATE teaching_cycles SET research_artifact=? WHERE id=?", (key, cycle["id"]))
-    return {"plans": plans, "units": [available[u["id"]] for u in units]}
+    from .web_training import add_collections
+    for unit in units:
+        available[unit["id"]] = add_collections(ctx, available[unit["id"]])
+    result = {"plans": plans, "units": [available[u["id"]] for u in units]}
+    ctx.store.execute("UPDATE teaching_cycles SET research_artifact=? WHERE id=?",
+                      (ctx.artifacts.put(result), cycle["id"]))
+    return result
 
 
 def plan(ctx):
@@ -96,13 +112,22 @@ def plan(ctx):
     block = ctx.store.one("SELECT assignment_artifact FROM teaching_blocks WHERE round_id=?", (ctx.round["id"],))
     work = ctx.artifacts.get(block["assignment_artifact"])
     authors = required_authors(ctx)
+    references = ctx.output('cycle_research')['units']
+    for unit in references:
+        unit['training_supply'] = []
+        for key in unit.get('training_collections', []):
+            collection = ctx.artifacts.get(key)
+            unit['training_supply'].append({'artifact':key, 'pages':len(collection['pages']),
+                'source_chars':collection['collected_chars'], 'license':collection['permission']['license'],
+                'basis':'Collected supply before prior-exposure deduplication; not a tokenizer count'})
     brief = {"cycle_id": cycle["id"], "units": units, "block_target_tokens": ctx.config.teaching_cycle.block_target_tokens,
-        "maximum_blocks": len(units), "research": ctx.output("cycle_research")["units"],
+        "maximum_blocks": len(units), "research": references,
         "current_corpus_preview": [{k: v for k, v in s.items() if k != "after"} for s in work["spans"][:2]],
         "full_assignment_artifact": block["assignment_artifact"], "required_authors": authors,
         "authors": catalog(ctx.config.material_authors, ctx.engine.settings.root/".env"),
         "allowances": {k: cycle["contract"][k] for k in ("per_block_calls", "per_block_output_tokens", "cycle_calls", "cycle_output_tokens")},
         "remediation_cap": ctx.config.curriculum_loop.remediation_cap,
+        "web_training": ctx.config.curriculum_loop.web_training,
         "previous_production": production_summary(ctx, previous=True)}
     result = CyclePlan.model_validate(ctx.teacher.cycle_plan(brief)).model_dump()
     if len(result["blocks"]) > len(units) or [b["unit_id"] for b in result["blocks"]] != [u["id"] for u in units[:len(result["blocks"])]]:
@@ -222,7 +247,8 @@ def production_summary(ctx, *, previous=False):
         trained = ctx.store.one("SELECT artifact FROM stage_runs WHERE round_id=? AND stage='train' AND status='complete' ORDER BY id DESC LIMIT 1", (row["id"],))
         if not frozen:
             continue
-        dataset = ctx.artifacts.get(frozen["artifact"])
+        from .preparation_summary import read
+        dataset = read(ctx.store, ctx.artifacts, frozen["artifact"])
         training = ctx.artifacts.get(trained["artifact"]) if trained else {}
         preparation = dataset.get("progressive_preparation", {})
         from .learning_work import safe_round_work

@@ -86,3 +86,11 @@ drift before review, which is why rollout starts with two blocks.
 preparation, exact failure routing, stop/resume, no double coverage, tokenizer mismatch,
 all Authors and nonrenewing retry budgets. Live evidence belongs in ignored
 `workspace/reviews/teaching-throughput-20260928`.
+
+## Continuous successor
+
+The September 29 `continuous_v1` mode uses larger saved windows, resident Adam,
+cross-cycle preparation and asynchronous grading. It preserves this mode's immutable
+plans, Author budgets and verified coverage contract, while replacing the prohibition
+on preparing across a review boundary with bounded lookahead. `buffered_v1` retains its
+historical execution. See [continuous windows](CONTINUOUS-TRAINING.md).

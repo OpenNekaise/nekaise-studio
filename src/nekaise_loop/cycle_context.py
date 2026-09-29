@@ -41,6 +41,8 @@ def compact_inputs(inputs):
                     "preview": source["text"][:1600],
                     "complete_text": ref(source["text"], f"/task/research/{i}/sources/{j}/text")})
             compact.append({"unit_id": unit["unit_id"], "sources": sources,
+                            "training_supply": unit.get("training_supply", []),
+                            "training_admission_failures": unit.get('training_admission_failures', []),
                             "fetch_failures": unit.get("fetch_failures", [])})
         view["task"]["research"] = compact
     return view

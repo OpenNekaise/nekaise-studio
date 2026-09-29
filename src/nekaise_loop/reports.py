@@ -49,6 +49,11 @@ def current_status(service, *, campaign_id=None):
     if round_ and status == "running":
         summary += f" Iteration {round_['number']} is at {round_['stage'] or 'preparation'}."
     config = store.campaign(cid)["config"]
+    if status == 'running' and (config.get('teaching_cycle') or {}).get('policy') == 'continuous_v1':
+        active = store.one("SELECT r.id,r.number,r.status,r.stage,r.updated_at FROM rounds r JOIN stage_runs s ON s.round_id=r.id WHERE r.campaign_id=? AND s.stage='train' AND s.status='running' ORDER BY s.id DESC LIMIT 1", (cid,))
+        if active:
+            round_ = active
+            summary = f"{campaign['name']} is training window {active['number']} on the resident GPU model. {completed} windows reviewed/completed in this run. Preparation and online grading may run concurrently."
     if campaign["operator_hold"]:
         next_action = f"Your explicit {campaign['operator_hold']} remains in effect; automatic execution is suspended."
     elif recovery:

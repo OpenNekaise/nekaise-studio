@@ -65,7 +65,7 @@ def latest_snapshot(service):
     student_identity = StudentIdentity.model_validate(recorded).public_metadata() if recorded else None
     return {'id': identity, 'campaign_id': config['id'], 'run_name': config['name'],
             'round_id': row['id'], 'round_number': row['number'],
-            'completed_at': row['updated_at'], 'device': 'cpu', 'identity': student_identity,
+            'completed_at': row.get('checkpoint_completed_at') or row['updated_at'], 'device': 'cpu', 'identity': student_identity,
             'max_prompt_tokens': MAX_PROMPT_TOKENS, 'max_new_tokens': MAX_NEW_TOKENS}, result
 
 

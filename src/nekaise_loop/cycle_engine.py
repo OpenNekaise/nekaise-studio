@@ -64,6 +64,9 @@ def execute(engine, campaign, round_id, stage, cancelled):
         if stage == "train":
             verify_checkpoint(result)
         key = artifacts.put(result)
+        if stage == 'freeze' and ctx.config.teaching_cycle.policy == 'continuous_v1':
+            from .preparation_summary import save
+            save(store, artifacts, round_id, key, result)
         with store.connect(immediate=True) as db:
             db.execute("UPDATE stage_runs SET status='complete',artifact=?,finished_at=? WHERE id=?", (key, now(), stage_id))
             if stage == "train":

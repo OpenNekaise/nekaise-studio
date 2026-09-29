@@ -31,7 +31,7 @@ class Context:
         if not self.config.inherit_optimizer:
             # Diagnostic rounds retain the parent state; only a completed weight
             # update can consume the continuation's explicit optimizer reset.
-            trained = self.store.one("SELECT id FROM rounds WHERE campaign_id=? AND number<? AND status='complete' AND checkpoint!=model_before LIMIT 1", (campaign["id"], row["number"]))
+            trained = self.store.one("SELECT r.id FROM rounds r JOIN stage_runs s ON s.round_id=r.id WHERE r.campaign_id=? AND r.number<? AND s.stage='train' AND s.status='complete' AND r.checkpoint!=r.model_before LIMIT 1", (campaign["id"], row["number"]))
             runtime_config = self.config.model_copy(update={"inherit_optimizer": bool(trained)})
         if row["stage"] in {"freeze", "train"}:
             curriculum = Curriculum.model_validate(self.output("material_select")["curriculum"])
@@ -39,8 +39,11 @@ class Context:
             if runtime_config.curriculum_loop:
                 runtime_config = runtime_config.model_copy(update={"curriculum_loop": runtime_config.curriculum_loop.model_copy(
                     update={"forward_corpus_share": curriculum.forward_corpus_share,
+                            "web_target_tokens": curriculum.web_target_tokens,
                             "raw_target_tokens": curriculum.raw_target_tokens if self.config.teaching_cycle else 0})})
         local = engine.model_factory(runtime_config, engine.settings, runner, self.directory)
+        if getattr(engine, "resident_trainer", None):
+            local.resident = engine.resident_trainer
         self.student, self.trainer = local, local
 
     def output(self, stage):
@@ -70,7 +73,10 @@ class Engine:
         campaign = self.store.campaign(campaign_id)
         config = CampaignConfig.model_validate(campaign["config"])
         if config.teaching_cycle:
-            from .cycle_engine import run
+            if config.teaching_cycle.policy == "continuous_v1":
+                from .continuous_engine import run
+            else:
+                from .cycle_engine import run
             return run(self, campaign_id, controls, pause)
         self.store.set_status(campaign_id, "running")
         try:

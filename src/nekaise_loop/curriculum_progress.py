@@ -186,6 +186,12 @@ def progress_receipt(ctx, dataset):
     after = copy.deepcopy(selected[-1]["after"])
     after.update(gpc_completed=work["before"]["gpc_completed"]+1,
                  completed_rounds=work["before"]["completed_rounds"]+1)
+    if ctx.config.curriculum_loop.web_training:
+        from .web_training import coverage
+        web_key, web_chars = coverage(ctx, work, dataset["rows"])
+        if web_key:
+            after.update(web_coverage_artifact=web_key,
+                         web_chars_trained=work["before"].get("web_chars_trained", 0)+web_chars)
     return {"namespace": work["namespace"], "sequence": work["sequence"],
             "assignment_artifact": selection["assignment_artifact"], "before": work["before"], "after": after,
             "unit_id": work["unit"]["id"], "targets": measured, "corpus_spans": count,

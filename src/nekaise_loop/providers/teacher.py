@@ -121,11 +121,6 @@ class CliTeacher:
         self.deadline = time.monotonic() + config.max_stage_seconds
 
     def request(self, purpose, payload, model, *, schema=None):
-        campaign = self.store.campaign(self.campaign_id)
-        since = campaign.get("teacher_budget_since") or campaign["created_at"]
-        count = self.store.one("SELECT COUNT(*) AS n FROM teacher_calls WHERE campaign_id=? AND created_at>=?", (self.campaign_id, since))["n"]
-        if self.config.max_teacher_calls != -1 and count >= self.config.max_teacher_calls:
-            raise TeacherUnavailable("Teacher call allowance used. Resume renews the allowance and retries this stage.", "budget")
         template = (ROOT / "prompts" / f"{purpose}.txt").read_text()
         schema = model.model_json_schema() if schema is None else schema
         def strict(node):
@@ -140,7 +135,15 @@ class CliTeacher:
                 for value in node:
                     strict(value)
         strict(schema)
-        call_id = self.store.execute("INSERT INTO teacher_calls(campaign_id,round_id,purpose,status,usage,created_at) VALUES(?,?,?,'running','{}',?)", (self.campaign_id, self.round_id, purpose, now()))
+        # Planning and review may run concurrently. Reserve exactly one call
+        # atomically so both cannot pass the last remaining allowance.
+        with self.store.connect(immediate=True) as db:
+            campaign = db.execute('SELECT teacher_budget_since,created_at FROM campaigns WHERE id=?', (self.campaign_id,)).fetchone()
+            since = campaign['teacher_budget_since'] or campaign['created_at']
+            count = db.execute('SELECT COUNT(*) FROM teacher_calls WHERE campaign_id=? AND created_at>=?', (self.campaign_id,since)).fetchone()[0]
+            if self.config.max_teacher_calls != -1 and count >= self.config.max_teacher_calls:
+                raise TeacherUnavailable("Teacher call allowance used. Resume renews the allowance and retries this stage.", "budget")
+            call_id = db.execute("INSERT INTO teacher_calls(campaign_id,round_id,purpose,status,usage,created_at) VALUES(?,?,?,'running','{}',?)", (self.campaign_id, self.round_id, purpose, now())).lastrowid
         call_dir = self.directory / f"teacher-{call_id}"
         call_dir.mkdir(parents=True)
         context = {"workspace": str(self.settings.workspace), "corpus_path": str((self.settings.root/self.config.corpus_path).resolve()), "campaign_id": self.campaign_id, "round_id": self.round_id,

@@ -502,3 +502,23 @@ not freeze questions before training: online questions are still frozen before
 answers. Sequential rounds and different starting states do not establish a
 matched-start A/B comparison. Independent benchmark evidence stays outside this
 teaching record. See docs/TEACHING_EXPERIMENTS.md for the executable contract.
+
+## Continuous windows and direct GPC prose — September 29
+
+The operator now permits explicitly eligible webpages found through GPC research to
+train directly. This supersedes the assumption that every general-purpose target must
+be newly generated; original Teacher/Author material and native chat remain required.
+`continuous_v1` makes a larger saved window the positive-training unit, with all Authors,
+Teacher-chosen mixture/dose and the existing <=20% follow-up cap. Bounded preparation
+crosses cycle boundaries; actual saved-model answers are graded asynchronously. Only
+verified saves advance the existing corpus/GPC and new exact web-span coverage. No
+pending review, prepared token or repeated page is credited as new learning/coverage.
+
+The resident GPU model retains compatible Adam between windows. Coarse synchronous
+checkpoints preserve stage-boundary recovery; runtime changes require an explicit
+validated bridge, never an implicit reset. Source retrieval needs explicit permission
+and retrieved license evidence; old reference-only snapshots stay reference-only. Named
+large general datasets and benchmark banks remain excluded. Report actual composition,
+chat responsiveness, retained exposure and full wall-time duty separately. A 90% target
+cannot override teaching judgment or justify padding/repetition. The full contract and
+limitations are in [CONTINUOUS-TRAINING.md](CONTINUOUS-TRAINING.md).

@@ -18,8 +18,13 @@ class PageText(HTMLParser):
         super().__init__(convert_charrefs=True)
         self.hidden = 0
         self.parts = []
+        self.links = []
 
     def handle_starttag(self, tag, attrs):
+        if tag == "a":
+            href = dict(attrs).get("href")
+            if href:
+                self.links.append(href)
         if tag in {"script", "style", "noscript"}:
             self.hidden += 1
         if tag in {"p", "br", "div", "li", "h1", "h2", "h3", "tr"}:
@@ -34,6 +39,38 @@ class PageText(HTMLParser):
             self.parts.append(text)
 
 
+class TrainingPageText(PageText):
+    """Conservative readable-body extraction; preserve explicit preformatted text."""
+    excluded = {'script', 'style', 'noscript', 'nav', 'footer', 'header', 'aside', 'form'}
+
+    def __init__(self):
+        super().__init__()
+        self.stack = []
+        self.main_parts = []
+        self.main_depth = 0
+
+    def handle_starttag(self, tag, attrs):
+        super().handle_starttag(tag, attrs)
+        if tag in self.excluded and tag not in {'script', 'style', 'noscript'}:
+            self.hidden += 1
+        if tag in {'main', 'article'}:
+            self.main_depth += 1
+        if self.main_depth and tag in {'p', 'br', 'div', 'li', 'h1', 'h2', 'h3', 'tr', 'pre'}:
+            self.main_parts.append('\n')
+
+    def handle_endtag(self, tag):
+        super().handle_endtag(tag)
+        if tag in self.excluded and tag not in {'script', 'style', 'noscript'}:
+            self.hidden = max(0, self.hidden-1)
+        if tag in {'main', 'article'}:
+            self.main_depth = max(0, self.main_depth-1)
+
+    def handle_data(self, text):
+        super().handle_data(text)
+        if self.main_depth and not self.hidden:
+            self.main_parts.append(text)
+
+
 def public_url(url):
     parsed = urlsplit(url)
     if (parsed.scheme not in {"http", "https"} or not parsed.hostname
@@ -44,7 +81,7 @@ def public_url(url):
         raise ValueError("Research URL resolved to a non-public address")
 
 
-def fetch_source(request, *, cancelled=lambda: False, client_factory=httpx.Client):
+def fetch_source(request, *, cancelled=lambda: False, client_factory=httpx.Client, full_text=False, readable=False):
     url, deadline = request["url"], time.monotonic() + 45
     with client_factory(timeout=httpx.Timeout(15), follow_redirects=False, trust_env=False,
                         headers={"User-Agent": "Nekaise-Studio-Curriculum/1.0", "Accept": "text/html,text/plain,application/json"}) as client:
@@ -72,14 +109,16 @@ def fetch_source(request, *, cancelled=lambda: False, client_factory=httpx.Clien
                     parts.append(block)
                 raw = b"".join(parts)
                 decoded = raw.decode(response.encoding or "utf-8", errors="replace")
+                links = []
                 if content_type in {"text/html", "application/xhtml+xml"}:
-                    parser = PageText()
+                    parser = TrainingPageText() if readable else PageText()
                     parser.feed(decoded)
-                    decoded = "".join(parser.parts)
-                text = "\n".join(" ".join(line.split()) for line in decoded.splitlines() if line.strip())
+                    decoded = "".join((parser.main_parts or parser.parts) if readable else parser.parts)
+                    links = parser.links
+                text = "\n".join((line.rstrip() if readable else " ".join(line.split())) for line in decoded.splitlines() if line.strip())
                 if len(text) < 80:
                     raise ValueError("Research page contains insufficient readable text")
-                excerpt = text[:12000]
+                excerpt = text if full_text else text[:12000]
                 return {"id": "research-" + digest([url, hashlib.sha256(raw).hexdigest()])[:24],
                         "title": request["title"], "url": url, "requested_url": request["url"],
                         "purpose": request["purpose"], "retrieved_at": now(), "content_type": content_type,
@@ -87,7 +126,8 @@ def fetch_source(request, *, cancelled=lambda: False, client_factory=httpx.Clien
                         "bytes": size, "document_chars": len(text), "text": excerpt,
                         "span_start": 0, "span_length": len(excerpt), "excerpt_truncated": len(text) > len(excerpt),
                         "license": "research_reference_only", "topic": "general curriculum",
-                        "selection_reason": "Teacher web research; reference for original synthetic material", "replay": False}
+                        "selection_reason": "Teacher web research; reference for original synthetic material", "replay": False,
+                        **({"links": links} if full_text else {})}
         raise ValueError("Research redirect limit exceeded")
 
 

@@ -86,3 +86,60 @@ def test_checkpoint_round_trip_preserves_adam_and_rejects_layout_change(tmp_path
     (output / "checkpoint.json").write_text(json.dumps(manifest))
     with pytest.raises(ValueError, match="ordering"):
         load_training({**payload, "checkpoint": str(output), "config": {**config, "inherit_optimizer": True}})
+
+
+@pytest.mark.parametrize("activation_checkpointing", [False, True])
+def test_resident_two_windows_equal_save_reload_parameters_and_adam(tmp_path, activation_checkpointing):
+    """Real ML numerical proof; no fixture score or official training exposure."""
+    from tokenizers import Tokenizer
+    from tokenizers.models import WordLevel
+    from nekaise_loop.workers.batched_training import train, load_training
+    from nekaise_loop.workers.resident import compatible, generate_from_state
+    from nekaise_loop.workers.generation import generate
+    from nekaise_loop.cycle_store import tokenizer_identity
+    import json
+    from nekaise_loop.training import recipe_hash
+    torch.manual_seed(912)
+    torch.set_num_threads(1)
+    base = tmp_path/'base'
+    transformers.LlamaForCausalLM(transformers.LlamaConfig(vocab_size=32, hidden_size=32,
+        intermediate_size=48, num_hidden_layers=1, num_attention_heads=4, num_key_value_heads=2,
+        attention_dropout=0., pad_token_id=1, eos_token_id=1, use_cache=False)).save_pretrained(base)
+    tokenizer = transformers.PreTrainedTokenizerFast(tokenizer_object=Tokenizer(WordLevel(
+        {'<bos>':0,'<eos>':1,'<unk>':2},unk_token='<unk>')), bos_token='<bos>',eos_token='<eos>',unk_token='<unk>',pad_token='<eos>')
+    tokenizer.save_pretrained(base)
+    config={'seed':42,'training_execution':'resident_v1','training_microbatch_size':4,
+        'training_activation_checkpointing':activation_checkpointing,'inherit_optimizer':False,'learning_rate':2e-5,
+        'tokens_per_update':64,'max_seq_len':64,'warmup_tokens':8192,'train_epochs':1,'train_steps':0}
+    samples=[{'input_ids':[0,3+i%20,6,9,1],'stream':'corpus'} for i in range(37)]
+    a={'checkpoint':str(base),'dataset':{'samples':samples,'ledger':{'total_tokens':148}},
+        'config':config,'dataset_hash':'numerical-test-only','output':str(tmp_path/'a'),'allow_cpu':True}
+    resident=load_training(a)
+    first=train(a,state=resident)
+    b={**a,'checkpoint':first['checkpoint'],'config':{**config,'inherit_optimizer':True},'output':str(tmp_path/'b-resident')}
+    compatible({**first,'config':config,'recipe_hash':recipe_hash(config)},b)
+    reloaded=load_training(b)
+    generation={'checkpoint':first['checkpoint'], 'rows':[{'id':'fixture','prompt':'hello','format':'raw_text'}],
+        'config':{**config,'max_new_tokens':4,'generation_batch_size':2,'generation_batch_tokens':128,'student_format':'raw_text'}}
+    before_padding=resident[1].padding_side
+    answers=generate_from_state(generation,resident)
+    standalone=generate(generation)
+    assert answers[0]['generated_token_ids']==standalone[0]['generated_token_ids']
+    assert resident[1].padding_side==before_padding
+    resident_result=train(b,state=resident)
+    reloaded_result=train({**b,'output':str(tmp_path/'b-reloaded')},state=reloaded)
+    assert tokenizer_identity(resident_result['checkpoint'])==tokenizer_identity(reloaded_result['checkpoint'])
+    for name in ('config.json','generation_config.json'):
+        assert json.loads((tmp_path/'b-resident'/name).read_text())==json.loads((tmp_path/'b-reloaded'/name).read_text())
+    assert resident_result['manifest']['mean_loss']==reloaded_result['manifest']['mean_loss']
+    assert resident_result['manifest']['global_tokens']==296
+    assert resident_result['manifest']['global_step']==6
+    for left,right in zip(resident[0].parameters(),reloaded[0].parameters()):
+        assert torch.equal(left,right)
+    left,right=resident[2].state_dict(),reloaded[2].state_dict()
+    assert left['param_groups']==right['param_groups']
+    for key in left['state']:
+        for name,value in left['state'][key].items():
+            assert torch.equal(value,right['state'][key][name])
+    with pytest.raises(ValueError,match='parent'):
+        compatible({**first,'config':config,'recipe_hash':recipe_hash(config)}, {**b,'checkpoint':'different'})

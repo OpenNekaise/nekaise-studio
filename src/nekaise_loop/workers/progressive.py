@@ -18,7 +18,12 @@ def main():
     if tokenizer.eos_token_id is None:
         raise ValueError("The student tokenizer must have an EOS token")
     result = prepare_progressive(data["rows"], tokenizer, data["config"], checkpoint_eos_ids(data["checkpoint"], tokenizer))
-    print("LOOP " + json.dumps({"type": "result", "data": result}, ensure_ascii=False, allow_nan=False), flush=True)
+    # Large source windows must not become a single hundreds-of-MB stdout line.
+    from nekaise_loop.artifacts import atomic_write, canonical
+    from nekaise_loop.curriculum_inventory import file_hash
+    output = Path(path).with_suffix('.prepared.json')
+    atomic_write(output, canonical(result))
+    print("LOOP " + json.dumps({"type": "result_file", "path": str(output), "sha256": file_hash(output)}), flush=True)
 
 
 if __name__ == "__main__":

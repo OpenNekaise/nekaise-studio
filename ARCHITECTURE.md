@@ -778,3 +778,14 @@ Author contributes forward material. Verified train-stage saves advance both cur
 independently of assessment scores. Teacher web research supplies real reference
 excerpts for original general material. See [the progression contract](docs/PROGRESSIVE-CURRICULUM.md)
 for source snapshots, full-span accounting, retries and continuation semantics.
+# Continuous execution extension — September 29
+
+`continuous_engine.py` coordinates bounded cross-cycle preparation, a sequential
+resident GPU consumer and asynchronous online grading. `resident_training.py` owns
+the isolated ML process through a journaled trainer session; `workers/resident.py`
+retains model/Adam between complete saved windows and serves exact-checkpoint online
+generation. HTTP imports no ML libraries. `web_training.py` records explicitly
+licensed source collections and fresh span coverage independently of reference-only
+research. `preparation_summary.py` avoids rereading large token arrays for routine UI
+polling; full immutable datasets remain the training evidence. See the full
+[execution, durability and limitation contract](docs/CONTINUOUS-TRAINING.md).

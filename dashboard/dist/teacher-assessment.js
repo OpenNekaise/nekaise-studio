@@ -1,5 +1,5 @@
-import { escapeHTML as e, number, dateLabel } from "./lib.js?v=9d7841b9939d";
-import { scoreTrend, trendLegend } from "./score-trend.js?v=9d7841b9939d";
+import { escapeHTML as e, number, dateLabel } from "./lib.js?v=7ee8e6831e3c";
+import { scoreTrend, trendLegend } from "./score-trend.js?v=7ee8e6831e3c";
 
 const validScore = value => Number.isFinite(value) && value >= 0 && value <= 1;
 const pct = value => validScore(value) ? `${number(value * 100, 1)}%` : "—";

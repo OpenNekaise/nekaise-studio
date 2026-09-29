@@ -20,10 +20,11 @@ def latest_completed_snapshot(service, campaign_id=None):
     while campaign_id and campaign_id not in seen:
         seen.add(campaign_id)
         campaign = service.store.campaign(campaign_id)
-        row = service.store.one("""SELECT r.id,r.number,r.updated_at,s.artifact
+        continuous = (campaign['config'].get('teaching_cycle') or {}).get('policy') == 'continuous_v1'
+        row = service.store.one("""SELECT r.id,r.number,r.updated_at,s.finished_at AS checkpoint_completed_at,s.artifact
             FROM rounds r JOIN stage_runs s ON s.round_id=r.id
-            WHERE r.campaign_id=? AND r.status='complete' AND s.stage='train'
-                AND s.status='complete' ORDER BY r.number DESC,s.attempt DESC LIMIT 1""", (campaign_id,))
+            WHERE r.campaign_id=? AND (r.status='complete' OR ?) AND s.stage='train'
+                AND s.status='complete' ORDER BY r.number DESC,s.attempt DESC LIMIT 1""", (campaign_id, continuous))
         if row:
             return campaign, row, service.artifacts.get(row['artifact'])
         campaign_id = campaign.get('parent_campaign_id')

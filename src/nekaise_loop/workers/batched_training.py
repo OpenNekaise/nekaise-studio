@@ -99,7 +99,7 @@ def load_training(data, *, legacy_optimizer_loading=False):
         transition = optimizer_transition(manifest, config)
         if manifest.get("versions") != {"torch": torch.__version__, "transformers": transformers.__version__}:
             raise ValueError("Adam inheritance requires its validated torch/transformers versions")
-        if transition["policy"] == "identical_runtime" and manifest.get("parameter_layout_sha256") != layout_hash:
+        if transition["policy"] in {"identical_runtime", "batched_to_continuous_v1"} and manifest.get("parameter_layout_sha256") != layout_hash:
             raise ValueError("Adam parameter-name ordering differs from the saved runtime")
         groups = state["optimizer"]["param_groups"]
         if len(groups) != 1 or len(groups[0]["params"]) != len(parameters):
@@ -150,7 +150,7 @@ def step_update(model, optimizer, rows, config, pad_token_id, device, global_tok
     return {"loss": value, "grad_norm": grad_norm, "learning_rate": lr, "tokens": count}
 
 
-def train(data):
+def train(data, *, state=None):
     import torch
     config, dataset = data["config"], data["dataset"]
     output = Path(data["output"])
@@ -160,7 +160,12 @@ def train(data):
     samples = dataset["samples"]
     if not samples or any(len(r["input_ids"]) < 2 for r in samples):
         raise ValueError("Dataset contains no causal training targets")
-    model, tokenizer, optimizer, device, progress = load_training(data)
+    resident = state is not None
+    model, tokenizer, optimizer, device, progress = state or load_training(data)
+    random.seed(config["seed"])
+    torch.manual_seed(config["seed"])
+    model.train()
+    model.config.use_cache = False
     if device == "cuda":
         torch.cuda.synchronize()
         torch.cuda.reset_peak_memory_stats()
@@ -187,6 +192,9 @@ def train(data):
             "training_microbatch_size": config["training_microbatch_size"]})
     if not losses:
         raise ValueError("Training worker received no positive updates")
+    training_seconds = time.monotonic() - started
+    save_started = time.monotonic()
+    optimizer.zero_grad(set_to_none=True)
     temporary.mkdir(parents=True)
     model.config.use_cache = True
     model.save_pretrained(temporary, safe_serialization=True)
@@ -197,12 +205,17 @@ def train(data):
     import transformers
     manifest = {"parent": data["checkpoint"], "dataset_hash": data["dataset_hash"], "config": config,
         "steps": len(losses), "tokens": count, **progress, "training_code": code, "recipe_hash": recipe,
+        "execution_timing": {"training_seconds": training_seconds, "resident_state": resident},
         "stream_tokens": dict(streams), "mean_loss": sum(losses) / len(losses),
         "files": {p.name: file_hash(p) for p in temporary.iterdir() if p.is_file()},
         "versions": {"torch": torch.__version__, "transformers": transformers.__version__}, "device": device}
     (temporary / "checkpoint.json").write_text(json.dumps(manifest, indent=2))
     os.replace(temporary, output)
-    emit("result", {"checkpoint": str(output), "manifest": manifest})
+    result = {"checkpoint": str(output), "manifest": manifest,
+              "execution_timing": {"training_seconds": training_seconds, "save_seconds": time.monotonic()-save_started}}
+    if resident:
+        return result
+    emit("result", result)
 
 
 if __name__ == "__main__":

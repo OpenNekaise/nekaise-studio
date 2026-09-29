@@ -55,8 +55,8 @@ def file_hash(path):
 
 def log_path(workspace, relative):
     parts = PurePosixPath(relative)
-    if parts.is_absolute() or ".." in parts.parts or not parts.parts or parts.parts[0] not in {"runs", "recoveries"} or parts.suffix != ".log":
-        raise ValueError("Cleanup targets must be explicit workspace runs/recoveries .log files")
+    if parts.is_absolute() or ".." in parts.parts or not parts.parts or parts.parts[0] not in {"runs", "recoveries", "trainers"} or parts.suffix != ".log":
+        raise ValueError("Cleanup targets must be explicit workspace runs/recoveries/trainers .log files")
     path = workspace/relative
     if path.resolve() != path.absolute() or path.is_symlink():
         raise ValueError("Symlink log targets are not eligible for cleanup")
@@ -75,7 +75,8 @@ def inventory(service):
         c["retention"] = retention.get(c["id"])
         c["recoveries"] = [r for r in recoveries.values() if r["campaign_id"] == c["id"]]
     logs = []
-    for base, owners in (("runs", rounds), ("recoveries", recoveries)):
+    trainers = {r['id']:r for r in store.query('SELECT id,campaign_id,status FROM trainer_sessions')}
+    for base, owners in (("runs", rounds), ("recoveries", recoveries), ('trainers', trainers)):
         for path in sorted((workspace/base).rglob("*.log")):
             relative = path.relative_to(workspace).as_posix()
             owner = owners.get(PurePosixPath(relative).parts[1])
@@ -86,7 +87,7 @@ def inventory(service):
             except ValueError:
                 continue
             campaign = campaigns[owner["campaign_id"]]
-            protected = campaign["status"] in ACTIVE or (base == "recoveries" and owner["status"] in {"pending", "running", "waiting", "decided"})
+            protected = campaign["status"] in ACTIVE or (base == "recoveries" and owner["status"] in {"pending", "running", "waiting", "decided"}) or (base == 'trainers' and owner['status'] == 'running')
             logs.append({"path": relative, "campaign_id": campaign["id"], "bytes": path.stat().st_size,
                          "sha256": file_hash(path), "eligible": not protected,
                          "protected_reason": "Active campaign or recovery" if protected else None})

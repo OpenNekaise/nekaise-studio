@@ -49,7 +49,8 @@ def prepare_progressive(rows, tokenizer, config, eos_ids=None):
     policy = config["curriculum_loop"]
     prepared, samples, counts = [], [], {}
     raw = [r for r in rows if r.get("curriculum_span")]
-    generated = [r for r in rows if not r.get("curriculum_span")]
+    web = [r for r in rows if r.get("web_span")]
+    generated = [r for r in rows if not r.get("curriculum_span") and not r.get("web_span")]
 
     def serialize(row):
         stream = group_for(row["stream"])
@@ -71,6 +72,18 @@ def prepare_progressive(rows, tokenizer, config, eos_ids=None):
         append(result, n)
         gpc += n if row.get("learning_track") == "gpc" else 0
         domain += n if row.get("learning_track") == "corpus" else 0
+    wanted_web = policy.get("web_target_tokens", 0)
+    web_consumed, web_ids = 0, []
+    for row in web:
+        if web_consumed >= wanted_web:
+            break
+        if not policy.get("web_training"):
+            raise ValueError("Direct web training requires the operator's explicit policy")
+        result, n = serialize(row)
+        append(result, n)
+        web_consumed += n
+        gpc += n
+        web_ids.append(row["id"])
     share = policy["forward_corpus_share"]
     wanted_raw = policy.get("raw_target_tokens") or max(1, round(gpc * share / (1-share)) - domain)
     consumed, raw_ids = 0, []
@@ -97,6 +110,8 @@ def prepare_progressive(rows, tokenizer, config, eos_ids=None):
     if targets["by_row"] != counts:
         raise ValueError("Preparation lost full-row target coverage")
     dataset["progressive_preparation"] = {"corpus_row_ids": raw_ids, "targets": targets,
+        "web_row_ids": web_ids, "web_targets_requested": wanted_web,
+        "web_targets_prepared": web_consumed, "web_supply_shortfall": web_consumed < wanted_web,
         "requested_forward_corpus_share": share,
         "actual_forward_corpus_share": targets["by_track"]["corpus"]/(targets["by_track"]["corpus"]+gpc),
         "raw_targets_requested": wanted_raw, "raw_targets_prepared": consumed,

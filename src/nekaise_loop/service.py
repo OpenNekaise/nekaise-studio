@@ -220,7 +220,7 @@ class Service:
         prior_loop = parent["config"].get("curriculum_loop")
         prior_cycle = parent["config"].get("teaching_cycle")
         if prior_cycle and actor != "operator":
-            if config.teaching_cycle is None or config.teaching_cycle.model_dump() != prior_cycle:
+            if config.teaching_cycle is None or config.teaching_cycle.model_dump() != CampaignConfig.model_validate(parent['config']).teaching_cycle.model_dump():
                 raise Conflict("Recovery must preserve the operator's buffered cycle and execution budgets")
             from .artifacts import digest
             previous = CampaignConfig.model_validate(parent["config"]).model_dump()
@@ -235,6 +235,7 @@ class Service:
         if prior_loop and actor != "operator":
             loop = config.curriculum_loop
             if (not loop or loop.projection_artifact != prior_loop["projection_artifact"]
+                    or loop.web_training != prior_loop.get('web_training', False)
                     or loop.remediation_cap > prior_loop["remediation_cap"]
                     or (loop.namespace != prior_loop["namespace"] and restore_round is None)):
                 raise Conflict("Recovery must preserve forward progression, the pinned curriculum and remediation cap; only explicit Base restoration may reset its namespace")
@@ -248,8 +249,8 @@ class Service:
                 try:
                     migration = optimizer_transition(manifest, config.model_dump())
                 except ValueError as exc:
-                    if config.inherit_optimizer and (config.training_execution == "batched_v1"
-                            or manifest.get("config", {}).get("training_execution") == "batched_v1"):
+                    if config.inherit_optimizer and (config.training_execution in {"batched_v1", "resident_v1"}
+                            or manifest.get("config", {}).get("training_execution") in {"batched_v1", "resident_v1"}):
                         raise Conflict(str(exc)) from exc
                     config = config.model_copy(update={"inherit_optimizer": False})
         from .teacher_tools import latest_strategy
@@ -341,6 +342,10 @@ class Service:
             row["score"] = self._score(self.store.records(row["id"], "evaluation"))
         unfinished = sorted((r for r in rounds if r["status"] != "complete"), key=lambda r: r["number"])
         selected = round_id or (unfinished[0]["id"] if campaign["config"].get("teaching_cycle") and unfinished else rounds[0]["id"] if rounds else None)
+        if not round_id and (campaign['config'].get('teaching_cycle') or {}).get('policy') == 'continuous_v1':
+            active = self.store.one("SELECT r.id FROM rounds r JOIN stage_runs s ON s.round_id=r.id WHERE r.campaign_id=? AND s.stage='train' AND s.status='running' ORDER BY s.id DESC LIMIT 1", (campaign_id,))
+            if active:
+                selected = active['id']
         if selected and selected not in {r["id"] for r in rounds}:
             older = self.store.one("SELECT * FROM rounds WHERE id=? AND campaign_id=?", (selected, campaign_id))
             if not older:
@@ -355,7 +360,8 @@ class Service:
         recovery = self.store.one("SELECT id,kind,status,error,retry_at,attempts,decision,continuation_id FROM recoveries WHERE campaign_id=? ORDER BY id DESC LIMIT 1", (campaign_id,))
         if detail:
             frozen = self.store.one("SELECT artifact FROM stage_runs WHERE round_id=? AND stage='freeze' AND status='complete' ORDER BY attempt DESC LIMIT 1", (detail["id"],))
-            detail["token_ledger"] = self.artifacts.get(frozen["artifact"]).get("ledger") if frozen else None
+            from .preparation_summary import read
+            detail["token_ledger"] = read(self.store, self.artifacts, frozen["artifact"]).get("ledger") if frozen else None
         from .curriculum_progress import status as curriculum_status
         progression = curriculum_status(self.store, self.artifacts, campaign["config"])
         from .cycle_store import snapshot as cycle_snapshot
@@ -368,7 +374,9 @@ class Service:
                           cycle_research="Research upcoming curriculum units", cycle_plan="Teacher block package & assessment")
             if not detail or (detail.get("teaching_block") or {}).get("position") == 0:
                 displayed = ["cycle_research", "cycle_plan", *displayed]
-        return {"campaign": campaign, "rounds": rounds, "round": detail, "events": events, "recovery": recovery, "teacher_usage": usage, "curriculum_progress": progression, "teaching_cycle": cycle, "stages": [{"id": s, "label": labels[s]} for s in displayed], "timestamp": now()}
+        from .continuous_metrics import snapshot as continuous_snapshot
+        throughput = continuous_snapshot(self.store, self.artifacts, campaign)
+        return {"campaign": campaign, "rounds": rounds, "round": detail, "events": events, "recovery": recovery, "teacher_usage": usage, "curriculum_progress": progression, "teaching_cycle": cycle, "continuous_training": throughput, "stages": [{"id": s, "label": labels[s]} for s in displayed], "timestamp": now()}
 
     def readiness(self):
         settings = self.settings

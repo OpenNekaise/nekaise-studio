@@ -125,6 +125,15 @@ class Store:
                     parent_binding_artifact TEXT,
                     UNIQUE(cycle_id,position)
                 );
+                CREATE TABLE IF NOT EXISTS trainer_sessions (
+                    id TEXT PRIMARY KEY, campaign_id TEXT NOT NULL REFERENCES campaigns(id),
+                    status TEXT NOT NULL, process_pid INTEGER, process_start TEXT,
+                    created_at TEXT NOT NULL, finished_at TEXT
+                );
+                CREATE TABLE IF NOT EXISTS preparation_summaries (
+                    round_id TEXT PRIMARY KEY REFERENCES rounds(id),
+                    freeze_artifact TEXT NOT NULL UNIQUE, artifact TEXT NOT NULL
+                );
             """)
             # executescript ends the preceding transaction. Keep every v4
             # column/backfill/version change in one crash-safe transaction.

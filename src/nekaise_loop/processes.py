@@ -55,11 +55,11 @@ def stop_child(proc: subprocess.Popen) -> None:
 class ProcessRunner:
     def __init__(self, store, stage_id, cancelled=lambda: False, *, table="stage_runs"):
         self.store, self.stage_id, self.cancelled = store, stage_id, cancelled
-        if table not in {"stage_runs", "recoveries", "material_calls"}:
+        if table not in {"stage_runs", "recoveries", "material_calls", "trainer_sessions"}:
             raise ValueError("Invalid process owner table")
         self.table = table
 
-    def run(self, command: list[str], *, cwd: Path, log: Path, timeout: int, stdin: str | None = None, on_message=None, env=None, check=True, max_output_bytes=None, on_output=None) -> str:
+    def run(self, command: list[str], *, cwd: Path, log: Path, timeout: int | None, stdin: str | None = None, on_message=None, env=None, check=True, max_output_bytes=None, on_output=None) -> str:
         log.parent.mkdir(parents=True, exist_ok=True)
         with log.open("a") as log_file, tempfile.TemporaryFile() as input_file:
             if stdin is not None:
@@ -71,7 +71,7 @@ class ProcessRunner:
                 self.store.execute(f"UPDATE {self.table} SET process_pid=?,process_start=? WHERE id=?", (proc.pid, started, self.stage_id))
                 selector = selectors.DefaultSelector()
                 selector.register(proc.stdout, selectors.EVENT_READ)
-                deadline = time.monotonic() + timeout
+                deadline = time.monotonic() + timeout if timeout is not None else float('inf')
                 output, pending, received = [], b"", 0
                 while selector.get_map():
                     if self.cancelled():

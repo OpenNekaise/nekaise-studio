@@ -44,7 +44,8 @@ def round_work(store, artifacts, round_id):
         else:
             missing.append({"stage": stage["stage"], "attempt": stage["attempt"], "status": stage["status"]})
         if stage["status"] == "complete" and stage["stage"] in {"freeze", "train", "select", "material_select"}:
-            outputs[stage["stage"]] = artifacts.get(stage["artifact"])
+            from .preparation_summary import read
+            outputs[stage["stage"]] = read(store, artifacts, stage["artifact"]) if stage['stage'] == 'freeze' else artifacts.get(stage["artifact"])
         if stage["status"] == "complete" and stage["stage"] in {"draft", "answer"}:
             generations.append((stage["stage"], stage["attempt"], artifacts.get(stage["artifact"])))
     attempts = {}
@@ -90,7 +91,7 @@ def round_work(store, artifacts, round_id):
                 "optimizer_origin": manifest.get("optimizer_origin") if not diagnostic else None},
             "material_portfolio": {"preparation": frozen.get("material_portfolio"), "completed_training": trained.get("material_portfolio")},
             "prepared_targets_per_pass": frozen.get("ledger", {}).get("total_tokens"),
-            "prepared_target_coverage": prepared_coverage(frozen), "requested_passes": selected.get("train_epochs"),
+            "prepared_target_coverage": frozen.get('prepared_target_coverage') or prepared_coverage(frozen), "requested_passes": selected.get("train_epochs"),
             "teacher_work_plan": selected.get("work_plan"), "preparation": preparation,
             "update_work": {"target_capacity": capacity, "updates_with_known_size": len(update_sizes),
                 "short_updates": sum(n < capacity for n in update_sizes),
@@ -98,7 +99,7 @@ def round_work(store, artifacts, round_id):
                 "mean_fill": sum(update_sizes)/(len(update_sizes)*capacity) if update_sizes else None},
             "generation_work": generation_work(generations),
             "material_author_work": job_work(store, round_id), "material_sources": frozen.get("material_sources"),
-            "author_yield": author_yield(store, artifacts, round_id, frozen),
+            "author_yield": frozen['author_yield'] if 'author_yield' in frozen else author_yield(store, artifacts, round_id, frozen),
             "material_expansion": frozen.get("material_expansion"),
             "teacher_efficiency": {**round_efficiency(store, artifacts.root.parent, round_id, sum(a["tokens"] for a in attempts.values())),
                                    "final": row["status"] == "complete"},

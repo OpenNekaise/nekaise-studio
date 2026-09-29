@@ -293,6 +293,8 @@ def freeze(ctx):
         dataset[-1]["sources"] = [{k:d[k] for k in ("id", "source_sha256", "span_start", "span_length")} for d in row["sources"]]
     selected = {**ctx.output("select"), "curriculum": ctx.output("material_select")["curriculum"]}
     for index, document in enumerate(selected["readings"]):
+        if document.get('license') == 'research_reference_only':
+            raise ValueError('Reference-only research cannot be a direct training reading; use explicitly authorized GPC web prose')
         dataset.append({"id": f"reading-{index}", "stream": "corpus", "text": document["text"], "lesson_id": "", "document_id": document["id"], "source_sha256": document["source_sha256"], "span_start": document["span_start"], "span_length": document["span_length"], "material_scope": document.get("material_scope", "unspecified")})
         if ctx.config.curriculum_loop:
             dataset[-1]["learning_track"] = "remediation"
@@ -309,6 +311,9 @@ def freeze(ctx):
         work = ctx.artifacts.get(selected["progression"]["assignment_artifact"])
         dataset.extend({**{k: v for k, v in span.items() if k != "after"}, "curriculum_span": True}
                        for span in work["spans"])
+        from .web_training import training_rows
+        references = ctx.artifacts.get(selected["progression"]["research_artifact"])
+        dataset.extend(training_rows(ctx, work, references))
     prepared = ctx.trainer.prepare(getattr(ctx, "tokenization_checkpoint", ctx.round["model_before"]), dataset)
     from .curriculum_progress import progress_receipt
     progression = progress_receipt(ctx, prepared) if ctx.config.curriculum_loop else None

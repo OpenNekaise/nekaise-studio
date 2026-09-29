@@ -228,6 +228,7 @@ def select_materials(ctx):
 
 def source_accounting(frozen):
     origins = {r["id"]: r.get("material_origin", {}).get("author_id", "primary_teacher" if r["stream"] in {"cpt", "sft"} else r["stream"]) for r in frozen.get("rows", [])}
+    origins.update({r['id']:'gpc_web' for r in frozen.get('rows', []) if r.get('web_span')})
     targets = Counter()
     for sample in frozen.get("samples", []):
         targets[origins[sample["row_id"]]] += len(sample["input_ids"])-1

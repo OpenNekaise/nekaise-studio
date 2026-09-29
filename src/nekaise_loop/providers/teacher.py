@@ -22,6 +22,18 @@ def parse_json(text: str):
     return json.loads(text)
 
 
+def grading_schema(model, field, items):
+    schema = model.model_json_schema()
+    rows = schema["properties"][field]
+    rows["minItems"] = rows["maxItems"] = len(items)
+    ids = sorted({item["id"] for item in items})
+    # Bound schema expansion, not assessment size. Complete requests still reach
+    # the Teacher; apply_grades checks exact coverage and frozen dimensions.
+    if ids and len(ids) <= 200 and sum(map(len, ids)) <= 16000:
+        schema["$defs"]["Grade"]["properties"]["id"]["enum"] = ids
+    return schema
+
+
 def recorded_prompt(prefix: str, inputs: dict, directory: Path, *, purpose=None) -> str:
     """Keep large evidence accessible without exceeding CLI message limits."""
     if purpose is not None:
@@ -218,7 +230,8 @@ class CliTeacher:
 
     def cycle_review(self, observations):
         from ..cycle_types import CycleReview
-        return self.request("cycle_review", observations, CycleReview)
+        schema = grading_schema(CycleReview, "grades", observations["items"])
+        return self.request("cycle_review", observations, CycleReview, schema=schema)
 
     def revise(self, lessons):
         schema = Revisions.model_json_schema()
@@ -260,15 +273,7 @@ class CliTeacher:
         return self.request("evaluate", {"curriculum": curriculum, "lessons": lessons}, Evaluations)["rows"]
 
     def grade(self, items):
-        schema = Grades.model_json_schema()
-        rows = schema["properties"]["rows"]
-        rows["minItems"] = rows["maxItems"] = len(items)
-        ids = sorted({item["id"] for item in items})
-        # Bound schema expansion as in material selection, not assessment size.
-        # Complete requests still reach the Teacher; apply_grades remains the
-        # authority for exact ID coverage and frozen dimension correspondence.
-        if ids and len(ids) <= 200 and sum(map(len, ids)) <= 16000:
-            schema["$defs"]["Grade"]["properties"]["id"]["enum"] = ids
+        schema = grading_schema(Grades, "rows", items)
         return self.request("grade", {"items": items}, Grades, schema=schema)["rows"]
 
     def reflect(self, observations):

@@ -374,10 +374,12 @@ def test_live_adapter_supplies_handbook_archive_tools_and_strict_decisions(setup
 
 
 @pytest.mark.parametrize("provider", ["codex", "claude"])
-@pytest.mark.parametrize("count,width", [(0, 24), (126, 24), (201, 24), (126, 160)])
-def test_grade_adapter_binds_coverage_without_limiting_teacher_panel(setup_loop, provider, count, width):
+@pytest.mark.parametrize("purpose", ["grade", "cycle_review"])
+@pytest.mark.parametrize("count,width", [(0, 24), (10, 24), (126, 24), (201, 24), (126, 160)])
+def test_grade_adapter_binds_coverage_without_limiting_teacher_panel(setup_loop, provider, purpose, count, width):
     from nekaise_loop.providers.teacher import CliTeacher
     from nekaise_loop.teaching import Grades
+    from nekaise_loop.cycle_types import CycleReview
     settings, service, campaign, engine = setup_loop
     engine.run(campaign["id"], pause=lambda: True)
     row = service.store.one("SELECT id FROM rounds")
@@ -388,33 +390,52 @@ def test_grade_adapter_binds_coverage_without_limiting_teacher_panel(setup_loop,
                "feedback": "Fixture judgment", "gap_type": "teacher-defined",
                "needs_practice": False, "priority": .12, "dimensions": []}
               for item in reversed(items)]
+    field = "grades" if purpose == "cycle_review" else "rows"
+    response = {field: grades}
+    if purpose == "cycle_review":
+        response["reflection"] = {"student_notes": "Fixture observations",
+            "next_round_instructions": "Teacher-chosen next task", "action": "pause",
+            "reason": "Fixture Teacher choice", "experiment_review": None}
     class Runner:
         def run(self, command, **kwargs):
             saved = json.loads((kwargs["cwd"] / "input.json").read_text())
             assert saved["inputs"]["task"]["items"] == items
             schema = saved["schema"]
-            rows = schema["properties"]["rows"]
+            rows = schema["properties"][field]
             assert rows["minItems"] == rows["maxItems"] == count
             id_schema = schema["$defs"]["Grade"]["properties"]["id"]
-            if count == 126 and width == 24:
+            if count and count <= 200 and count * width <= 16000:
                 assert id_schema["enum"] == sorted(item["id"] for item in items)
                 assert "e1e5a1635d835a1c9db04489_dummy" not in id_schema["enum"]
-                assert 13 < rows["minItems"]  # Recovery 401's partial response.
+                # Recovery 578: a shortened answer ID must not be admissible.
+                assert items[0]["id"][:-2] not in id_schema["enum"]
+                if count == 126:
+                    assert 13 < rows["minItems"]  # Recovery 401's partial response.
             else:
                 assert "enum" not in id_schema
             if provider == "codex":
                 assert json.loads(Path(command[command.index("--output-schema") + 1]).read_text()) == schema
-                Path(command[command.index("--output-last-message") + 1]).write_text(json.dumps({"rows": grades}))
+                Path(command[command.index("--output-last-message") + 1]).write_text(json.dumps(response))
                 return ""
             assert json.loads(command[command.index("--json-schema") + 1]) == schema
-            return json.dumps({"structured_output": {"rows": grades}})
+            return json.dumps({"structured_output": response})
     config = CampaignConfig.model_validate({**campaign["config"], "teacher_provider": provider})
     teacher = CliTeacher(config, settings, service.store, campaign["id"], row["id"],
                          Runner(), settings.workspace / "grade-adapter")
-    assert teacher.grade(items) == grades
-    generic = Grades.model_json_schema()
-    assert "minItems" not in generic["properties"]["rows"]
+    if purpose == "cycle_review":
+        assert teacher.cycle_review({"items": items, "cycle_id": "fixture-cycle", "blocks": []}) == response
+    else:
+        assert teacher.grade(items) == grades
+    generic = (CycleReview if purpose == "cycle_review" else Grades).model_json_schema()
+    assert "minItems" not in generic["properties"][field]
     assert "enum" not in generic["$defs"]["Grade"]["properties"]["id"]
+    if count == 10:
+        from nekaise_loop.assessment import apply_grades
+        mapping = {item["id"]: (item["id"], "after") for item in items}
+        for invalid in (grades[:-1], [grades[0], *grades[:-1]],
+                        [{**grades[0], "id": grades[0]["id"][:-2]}, *grades[1:]]):
+            with pytest.raises(ValueError, match="Missing evaluation grades"):
+                apply_grades(items, invalid, mapping)
 
 
 @pytest.mark.parametrize("provider", ["codex", "claude"])

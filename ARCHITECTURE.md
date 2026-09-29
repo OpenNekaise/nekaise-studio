@@ -542,8 +542,9 @@ them; manifest identity and unexpected missing-file errors are preserved.
 
 Teacher-defined dimensions are frozen with questions. One grading call receives shuffled
 opaque answer IDs without checkpoint labels, then the host restores IDs and provenance.
-The request schema requires exactly the supplied number of grades. It also constrains
-answer IDs when their enum fits the adapter's schema budget (200 IDs / 16,000 characters).
+Both ordinary grading and buffered cycle-review request schemas require exactly the
+supplied number of grades. They also constrain answer IDs when their enum fits the
+adapter's schema budget (200 IDs / 16,000 characters).
 Larger panels still receive every answer and the exact count constraint. Host validation
 always checks unique, complete ID coverage and frozen dimensions; schema constraints do
 not assign scores, guarantee provider compliance or replace those checks.

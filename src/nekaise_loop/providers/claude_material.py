@@ -51,8 +51,11 @@ class ClaudeCodeAuthor:
             env.pop("MAX_THINKING_TOKENS", None)
         cancelled = threading.Event()
         envelope, starts, rejected_output = None, 0, None
+        assistant_events, stream_message = [], None
+        class TruncatedOutput(AuthorHTTPError):
+            pass
         def observe(line):
-            nonlocal envelope, starts, rejected_output
+            nonlocal envelope, starts, rejected_output, stream_message
             try:
                 event = json.loads(line)
             except ValueError:
@@ -62,6 +65,7 @@ class ClaudeCodeAuthor:
             if event.get("type") == "result":
                 envelope = event
             if event.get("type") == "assistant" and event.get("parent_tool_use_id") is None:
+                assistant_events.append(event)
                 message = event.get("message")
                 blocks = message.get("content") if isinstance(message, dict) else None
                 for block in blocks if isinstance(blocks, list) else []:
@@ -71,12 +75,14 @@ class ClaudeCodeAuthor:
             part = event.get("event", {}) if event.get("type") == "stream_event" else {}
             if part.get("type") == "message_start":
                 starts += 1
+                stream_message = part.get("message")
                 if starts > 1:
                     raise AuthorHTTPError("Claude Code attempted another model request; cancelled with usage unknown",
                                           {"stream_event": event, "reserved_output_tokens": reserved})
             if part.get("type") == "message_delta" and part.get("delta", {}).get("stop_reason") == "max_tokens":
-                raise AuthorHTTPError("Claude Code output was truncated; cancelled before internal continuation; usage unknown",
-                                      {"stream_event": event, "reserved_output_tokens": reserved})
+                raise TruncatedOutput("Claude Code output was truncated; cancelled before internal continuation; usage unknown",
+                                      {"stream_event": event, "reserved_output_tokens": reserved,
+                                       "assistant_events": assistant_events, "stream_message": stream_message})
         runner = ProcessRunner(store, call_id, cancelled.is_set, table="material_calls")
         task = asyncio.create_task(asyncio.to_thread(runner.run, command, cwd=directory,
             log=directory/"provider.log", timeout=author.timeout_seconds,
@@ -84,6 +90,36 @@ class ClaudeCodeAuthor:
             max_output_bytes=max_bytes, on_output=observe))
         try:
             output = await asyncio.shield(task)
+        except TruncatedOutput as exc:
+            cancelled.set()
+            await asyncio.gather(task, return_exceptions=True)
+            # The owned runner has stopped before we expose any material. Only
+            # explicit assistant text from this one pinned-model message may
+            # reach salvage; tool input, thinking and unbounded deltas may not.
+            if (execution.get("material_response_policy") != "salvage_v1" or starts != 1
+                    or not isinstance(stream_message, dict)
+                    or stream_message.get("model") != author.model
+                    or stream_message.get("role") != "assistant" or not stream_message.get("id")):
+                raise
+            texts = []
+            for event in assistant_events:
+                message = event.get("message") or {}
+                if (message.get("model") != author.model or message.get("role") != "assistant"
+                        or message.get("id") != stream_message["id"]):
+                    raise
+                for block in message.get("content", []):
+                    if block.get("type") == "text" and isinstance(block.get("text"), str):
+                        texts.append(block["text"])
+            if not any(text.strip() for text in texts):
+                raise
+            raw = {**exc.evidence, "execution": {"transport": "claude_code",
+                "requested_model": author.model, "observed_model_requests": starts,
+                "max_model_requests": 1, "reserved_output_tokens": reserved,
+                "max_output_tokens_per_message": per_message,
+                "cancelled_before_internal_continuation": True, "usage_unknown": True}}
+            # Partial stream usage is not final billing: retain the entire
+            # reservation and unknown usage, including possible cancellation races.
+            return AuthorResult("".join(texts), False, author.model, {}, raw)
         except BaseException:
             # Cancelling an asyncio waiter does not stop its thread or child.
             # Signal the owned runner and join it before releasing the worker.

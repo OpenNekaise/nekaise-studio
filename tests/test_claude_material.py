@@ -83,6 +83,29 @@ elif 'retry_validation' in payload:
         script += "print('{',flush=True)\nsys.exit(0)\n"
     elif fault == "truncated":
         script += "print(json.dumps({'type':'stream_event','event':{'type':'message_delta','delta':{'stop_reason':'max_tokens'}}}),flush=True)\ntime.sleep(30)\n"
+    elif fault.startswith("partial_"):
+        # CLI assistant events carry completed text blocks even when the JSON
+        # inside the block stops in an open answer. Thinking/tools are separate.
+        script = script.replace("'event':{'type':'message_start'}", "'event':{'type':'message_start','message':{'id':'m','role':'assistant','model':'claude-opus-5'}}")
+        script += '''partial = json.dumps({'rows':[row]})[:-2] + ',{"student_prompt":"Open question","training_response":"unfinished'
+event = {'type':'assistant','parent_tool_use_id':None,'message':{
+    'id':'m','role':'assistant','model':'claude-opus-5','content':[
+        {'type':'thinking','thinking':'PRIVATE_REASONING'},
+        {'type':'tool_use','name':'StructuredOutput','input':{'rows':[row]}},
+        {'type':'text','text':partial}]}}
+'''
+        if fault == "partial_wrong_model":
+            script += "event['message']['model']='another-model'\n"
+        elif fault == "partial_wrong_message":
+            script += "event['message']['id']='another-message'\n"
+        elif fault == "partial_nested":
+            script += "event['parent_tool_use_id']='tool-parent'\n"
+        elif fault == "partial_tools_only":
+            script += "event['message']['content'].pop()\n"
+        script += "print(json.dumps(event),flush=True)\n"
+        if fault == "partial_continuation":
+            script += "print(json.dumps({'type':'stream_event','event':{'type':'message_start'}}),flush=True)\n"
+        script += "print(json.dumps({'type':'stream_event','event':{'type':'message_delta','delta':{'stop_reason':'max_tokens'}}}),flush=True)\ntime.sleep(30)\n"
     elif fault == "continuation":
         script += "print(json.dumps({'type':'stream_event','event':{'type':'message_start'}}),flush=True)\ntime.sleep(30)\n"
     script += "print(json.dumps(result))\nsys.exit(1 if result['is_error'] else 0)\n"
@@ -184,6 +207,44 @@ def test_cli_timeout_and_output_limit_join_and_clear_owned_children(setup_loop, 
     assert time.monotonic() - started < 8
     assert service.store.campaign(campaign["id"])["status"] == "failed"
     assert all(c["process_pid"] is None for c in service.store.query("SELECT * FROM material_calls"))
+
+
+@pytest.mark.parametrize("policy,fault,accepted", [
+    ("salvage_v1", "partial_text", True),
+    ("strict_v1", "partial_text", False),
+    ("salvage_v1", "partial_wrong_model", False),
+    ("salvage_v1", "partial_wrong_message", False),
+    ("salvage_v1", "partial_nested", False),
+    ("salvage_v1", "partial_tools_only", False),
+    ("salvage_v1", "partial_continuation", False),
+])
+def test_truncated_assistant_text_preserves_bounds_and_unknown_usage(
+        setup_loop, tmp_path, policy, fault, accepted):
+    from nekaise_loop.config import CampaignConfig
+    _, service, old, engine = setup_cli(setup_loop, tmp_path, fault=fault)
+    campaign = service.create("Truncated material fixture", CampaignConfig.model_validate({
+        **old['config'], 'material_response_policy': policy,
+        'material_review_policy': 'trusted_author_v1'}))
+    started = time.monotonic()
+    engine.run(campaign['id'])
+    assert time.monotonic() - started < 8  # Reap before the fixture's 30s sleep.
+    assert service.store.campaign(campaign['id'])['status'] == ('complete' if accepted else 'failed')
+    calls = service.store.query('SELECT * FROM material_calls')
+    assert calls and all(c['process_pid'] is None and c['process_start'] is None for c in calls)
+    assert all(not json.loads(c['usage']) and c['reserved_tokens'] == 512 for c in calls)
+    if not accepted:
+        assert not service.store.query("SELECT * FROM stage_runs WHERE stage='train'")
+        return
+    assert len(calls) == 2  # One call per job, no paid rewriting/top-up.
+    for job in service.store.query('SELECT * FROM material_jobs'):
+        material = service.artifacts.get(job['artifact'])
+        assert len(material['rows']) == 1
+        assert material['rows'][0]['training_text'] == 'Doubling resistance halves heat flow.'
+        assert not material['normalization']['provider_complete']
+        raw = service.artifacts.get(material['response_artifact'])['response']
+        assert raw['execution']['usage_unknown']
+        assert raw['execution']['cancelled_before_internal_continuation']
+        assert raw['assistant_events'][0]['message']['content'][-1]['text'].endswith('unfinished')
 
 
 def test_cli_cancellation_joins_all_concurrent_owned_processes(setup_loop, tmp_path):

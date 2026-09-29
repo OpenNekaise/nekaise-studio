@@ -68,8 +68,13 @@ Reasoning, tools,
 error envelopes, deltas without a terminal and incomplete unstructured planning prose
 are not teaching targets. Completed unstructured final prose is usable full text.
 The existing CLI request/model/budget boundaries remain: Claude rejected tool input
-and CLI truncation are recovery evidence, not final material; Codex budget overruns
-still fail. Credential, acquisition, timeout and reservation limits remain enforced.
+is diagnostic only. Under `salvage_v1`, Claude assistant text emitted before a
+`max_tokens` stop reaches normalization after the owned process is cancelled and
+joined. Only text belonging to the single pinned-model assistant message is eligible;
+thinking and tool input remain excluded. The response stays incomplete, open answers
+are excluded, final usage stays unknown and the full reservation remains charged.
+Strict snapshots retain truncation failure. Codex budget overruns still fail.
+Credential, acquisition, timeout and reservation limits remain enforced.
 Zero usable text remains an orchestrator incident. There is no implicit retry, budget
 renewal, Author substitution or silent zero-pass recipe.
 

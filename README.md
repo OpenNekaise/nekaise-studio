@@ -134,9 +134,11 @@ Configure the registry in `workspace/material-authors.json` and credentials in t
 root `.env`. See [Material Authors](docs/MATERIAL_AUTHORS.md) for setup, budgets, local
 server limits, archival access and extension contracts.
 Author changes append or update named entries by default, preserving other generators.
-The Teacher chooses a subset each round; a larger pool does not increase execution budgets.
+The active progressive corpus/GPC loop includes every registered Author in positive
+rounds; the Teacher assigns their jobs without increasing execution budgets.
 Claude Code can also provide expanded material through `transport=claude_code` using
-existing CLI authentication and a pinned Opus model. Its owned processes and author
+existing CLI authentication and a pinned Claude model. Sonnet 5.5 (`claude-sonnet-5-5`)
+is registered alongside GPT-6 Luna, DeepSeek Flash and Kimi K3. Its owned processes and author
 usage remain separate from primary Teacher calls; Teacher selection still controls
 the training package.
 

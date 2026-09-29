@@ -95,8 +95,10 @@ The registry file remains a complete snapshot for new root campaigns, not a patc
 Use `author_config.merge_pool(load_pool(path), patch, remove_ids)` and atomic file writing
 when updating it; review the resulting complete pool before publication. No hot reload of
 running jobs or automatic registry synchronization is implied by a continuation update.
-The Teacher selects a subset of registered authors for each round; adding many authors
-does not require using all of them, multiply the global budget, or authorize fallback.
+Adding authors does not multiply global budgets or authorize provider fallback. The
+active progressive corpus/GPC loop requires every registered Author to contribute forward
+material in each positive round; the Teacher assigns their jobs within the existing
+allowances. Historical protocols retain their recorded author-selection behavior.
 
 Example for the user-selected DeepSeek endpoint:
 
@@ -241,6 +243,39 @@ usage is separate from primary Teacher usage and available in `by_author`; missi
 usage remains unknown. CLI `costUSD` is preserved as provider evidence, not represented
 as actual subscription spend. Teacher selection/editing and the ordinary freeze/train
 provenance checks still determine what enters training.
+
+### Claude Code Sonnet 5.5 (added 2026-09-29)
+
+The operator added `claude-sonnet` using the existing headless Claude Code transport:
+
+```json
+{
+  "id": "claude-sonnet",
+  "label": "Claude Code Sonnet 5.5",
+  "transport": "claude_code",
+  "model": "claude-sonnet-5-5",
+  "concurrency": 2,
+  "resource_pool": "claude-account",
+  "max_output_tokens": 16384,
+  "timeout_seconds": 600,
+  "options": {"effort": "medium", "thinking": false}
+}
+```
+
+Append this entry and `"claude-account": 2` with `merge_pool`; preserve Luna, DeepSeek,
+Kimi and any later entries. Global concurrency and per-round/cycle allowances do not
+increase. The existing adapter uses `claude -p`, CLI authentication and tool-free streamed
+structured output; Sonnet is an Author, while Teacher and recovery roles remain separate.
+The 16,384-token reservation permits at most 8,192 tokens in the one model response,
+including any provider reasoning; the remainder covers a possible cancellation race.
+The Teacher sees that response cap in the author catalog and plans accordingly.
+
+A real isolated adapter probe on Claude Code 2.1.284 returned two valid chat candidates
+from the exact provider-reported `claude-sonnet-5-5`, with one observed model request
+and 488 reported output tokens. This establishes transport compatibility, not student
+training or learned behavior. Evidence is in ignored
+`workspace/reviews/sonnet-author-20260929/`; registry activation uses an additive fresh
+continuation with the same checkpoint, compatible Adam and budget epoch.
 
 ### Codex authors
 

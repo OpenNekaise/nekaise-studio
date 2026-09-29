@@ -116,7 +116,8 @@ class ClaudeCodeAuthor:
             if envelope.get("subtype") == "error_max_structured_output_retries" and rejected_output is not None:
                 raw["rejected_structured_output"] = rejected_output
                 content = json.dumps(rejected_output, ensure_ascii=False)
-            return AuthorResult(content, False, author.model, normalized, raw)
+            # A CLI failure is evidence for recovery, not a final author message.
+            return AuthorResult(content, False, author.model, normalized, raw, 'nonfinal')
         models = envelope.get("modelUsage") or {}
         if models and set(models) != {author.model}:
             failure = AuthorHTTPError(f"Material author {author.id}: Claude Code used an unexpected model", raw)

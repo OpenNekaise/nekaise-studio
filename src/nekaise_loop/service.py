@@ -217,6 +217,8 @@ class Service:
                 "updated": [i for i in new if i in old and new[i] != old[i]], "reason": reason}
         config.update(updates)
         config = CampaignConfig.model_validate(config)
+        if actor != 'operator' and config.material_response_policy != parent['config'].get('material_response_policy', 'strict_v1'):
+            raise Conflict('Recovery must preserve the operator material response policy')
         prior_loop = parent["config"].get("curriculum_loop")
         prior_cycle = parent["config"].get("teaching_cycle")
         if prior_cycle and actor != "operator":

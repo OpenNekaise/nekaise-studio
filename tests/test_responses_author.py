@@ -45,7 +45,7 @@ class Chunks(httpx.AsyncByteStream):
         self.closed = True
 
 
-def generate(tmp_path, stream, *, spec=None, status=200, headers=None, cap=2000000):
+def generate(tmp_path, stream, *, spec=None, status=200, headers=None, cap=2000000, execution=None):
     seen=[]
     def handler(request):
         seen.append(request)
@@ -55,7 +55,7 @@ def generate(tmp_path, stream, *, spec=None, status=200, headers=None, cap=20000
             return await OpenAIResponsesAuthor(client).generate(spec or author(),
                 {'model':'fixture-model','messages':[{'role':'system','content':'JSON only'},{'role':'user','content':'Fixture'}],
                  'max_tokens':128,'stream':False,'response_format':{'type':'json_object'}},
-                 env_file=tmp_path/'.env',max_bytes=cap)
+                 env_file=tmp_path/'.env',max_bytes=cap,execution=execution)
     return asyncio.run(run()), seen
 
 
@@ -253,3 +253,19 @@ def test_only_supported_common_text_request_shapes_are_mapped():
         wire_request(dict(base,messages=[{'role':'user','content':[{'type':'text','text':'image later'}]}]))
     with pytest.raises(ValueError,match='json_object'):
         wire_request(dict(base,response_format={'type':'json_schema','json_schema':{}}))
+
+
+def test_salvage_admits_only_incomplete_assistant_material_after_terminal(tmp_path):
+    from nekaise_loop.material_response import normalize,NoTrainingContent
+    content='{"rows":[{"question":"Hej?","answer":"Hej!"},{"answer":"cut'
+    output=[{'type':'reasoning','summary':[{'text':'Do not train reasoning'}]},dict(message(content),status='incomplete')]
+    event=terminal(output=output,status='incomplete',incomplete_details={'reason':'max_output_tokens'})
+    event['type']='response.incomplete'
+    result,_=generate(tmp_path,Chunks(frame(event)),execution={'material_response_policy':'salvage_v1'})
+    assert result.content==content and not result.complete and result.content_kind=='final'
+    rows,_=normalize(result,{'job':{'id':'x','seed_ids':[]},'sources':{}})
+    assert len(rows)==1 and rows[0]['training_response']=='Hej!'
+    event['type']='response.failed';event['response']['status']='failed'
+    result,_=generate(tmp_path,Chunks(frame(event)),execution={'material_response_policy':'salvage_v1'})
+    with pytest.raises(NoTrainingContent):
+        normalize(result,{'job':{'id':'x','seed_ids':[]},'sources':{}})

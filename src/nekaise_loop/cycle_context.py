@@ -26,6 +26,7 @@ def compact_inputs(inputs):
                        "complete": ref(operations, "/operations")},
         "task": dict(task),
     }
+    view['config_hints']['material_response_policy'] = config.get('material_response_policy', 'strict_v1')
     review = operations.get("latest_applied_review")
     if review:
         view["operations"]["latest_applied_review"] = {

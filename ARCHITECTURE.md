@@ -653,6 +653,11 @@ usage survive the failed stage; pending jobs await recovery. Operator cancellati
 provider availability waits and execution deadlines still interrupt outstanding calls.
 Budget retry instructions respect any explicit Teacher permission to return fewer rows;
 the host never reduces material or relaxes acceptance limits itself.
+`material_response.py` implements the operator-selected `salvage_v1` execution adapter:
+usable Author text becomes strict Candidate records with immutable normalization
+receipts, while unresolved citations and actual-versus-planned serialization remain
+provenance. No content reviewer or paid rewriting is added. Historical `strict_v1`
+requests retain their contract. See [Material Authors](docs/MATERIAL_AUTHORS.md#retain-usable-author-text).
 `materials.py` prepares teacher delegation and exact final selection. The expand and
 material_select stages run after seed revision. Under required_v1, positive training requires
 expanded targets in the frozen dataset; only diagnostics can omit jobs.

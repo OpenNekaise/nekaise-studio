@@ -113,6 +113,8 @@ def expand(ctx):
                          "job_id": result["job_id"], "plan_id": result["plan_id"],
                          "author_id": result["author_id"], "model": result["model"],
                          "response_artifact": result["response_artifact"], "seed_artifact": result["seed_artifact"],
+                         **({'normalization':result['normalization']['rows'][candidate['id']],
+                             'normalization_artifact':result['normalization_artifact']} if result.get('normalization') else {}),
                          "sources": {k: result["sources"][k] for k in candidate["source_keys"]}})
     counts = Counter(digest({k: r["candidate"][k] for k in ("student_prompt", "training_text", "training_response")}) for r in rows)
     for row in rows:
@@ -191,7 +193,11 @@ def select_materials(ctx):
         item = Candidate.model_validate(edits.get(key, original["candidate"])).model_dump()
         # Edited examples may cite any source and seed provided to this job.
         task = ctx.artifacts.get(original["job_id"])["spec"]
-        if (key in selected and task["job"].get("material_scope") == "general_chat"
+        scope = task['job'].get('material_scope', 'unspecified')
+        normalized = ctx.config.material_response_policy == 'salvage_v1' and original.get('normalization_artifact')
+        if normalized and scope == 'general_chat' and item['training_tokenization'] != 'chat_response':
+            scope = 'general_prose'
+        if (key in selected and scope == "general_chat"
                 and (item["training_tokenization"] != "chat_response" or not item["training_response"].strip())):
             raise ValueError("Selected general-chat material requires chat_response and a nonempty training_response")
         if not set(item["source_keys"]) <= task["sources"].keys() or not set(item["seed_ids"]) <= set(task["job"]["seed_ids"]):
@@ -200,7 +206,7 @@ def select_materials(ctx):
         document = dict(sources[0]) if sources else {"id": "", "title": "Authored teaching material", "url": "", "license": "generated", "topic": item["concept"], "source_sha256": "", "text": ""}
         document["selection_reason"] = choice["reason"]
         material_rows.append({"id": key, "kind": item["kind"], "concept": item["concept"],
-            "material_scope": task["job"].get("material_scope", "unspecified"),
+            "material_scope": scope,
             "learning_track": task["job"].get("learning_track", "unspecified"),
             "curriculum_unit_id": task["job"].get("curriculum_unit_id", ""),
             "prompt": item["student_prompt"] or item["concept"], "student_prompt": item["student_prompt"],
@@ -214,6 +220,10 @@ def select_materials(ctx):
                 "job_id": original["job_id"], "candidate_id": original["candidate"]["id"], "response_artifact": original["response_artifact"],
                 "plan_id": original["plan_id"],
                 "seed_artifact": original["seed_artifact"], "seed_ids": item["seed_ids"], "teacher_edited": key in edits,
+                **({'normalization_artifact':original['normalization_artifact'],
+                    'normalization':original['normalization'],
+                    'unresolved_citations':original['normalization']['unresolved_citations'],
+                    'planned_material_scope':task['job'].get('material_scope','unspecified')} if normalized else {}),
                 "manifest_hash": manifest["manifest_hash"], "review_scope": choice["review_scope"]}})
     for row in lessons:
         if row["id"] in choice["seed_exclusions"]:

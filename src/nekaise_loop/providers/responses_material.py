@@ -44,8 +44,8 @@ def reported_usage(response):
     return usage
 
 
-def final_content(response):
-    """Only one completed assistant message is candidate material, never reasoning."""
+def final_content(response, *, allow_incomplete=False):
+    """Only explicit assistant text is material, never reasoning or tool output."""
     output = response.get("output")
     if not isinstance(output, list) or any(not isinstance(item, dict) for item in output):
         return None
@@ -56,7 +56,8 @@ def final_content(response):
         return None
     message = messages[0]
     parts = message.get("content")
-    if (message.get("role") != "assistant" or message.get("status") != "completed"
+    statuses = {'completed', 'incomplete'} if allow_incomplete else {'completed'}
+    if (message.get("role") != "assistant" or message.get("status") not in statuses
             or not isinstance(parts, list) or not parts
             or any(not isinstance(part, dict) or part.get("type") != "output_text"
                    or not isinstance(part.get("text"), str) for part in parts)):
@@ -171,7 +172,10 @@ class OpenAIResponsesAuthor:
                             if kind in {"response.completed", "response.done", "response.incomplete", "response.failed"}:
                                 if not isinstance(envelope, dict):
                                     raise failure("missing_terminal_envelope")
-                                content = final_content(envelope)
+                                partial = ((execution or {}).get('material_response_policy') == 'salvage_v1'
+                                           and kind == 'response.incomplete' and envelope.get('status') == 'incomplete'
+                                           and not envelope.get('error'))
+                                content = final_content(envelope, allow_incomplete=partial)
                                 checked(content)
                                 if content is not None:
                                     try:
@@ -194,7 +198,7 @@ class OpenAIResponsesAuthor:
                                 # The first terminal ends this one request; do not wait for
                                 # EOF or accept trailing generations on the same connection.
                                 return AuthorResult(content, complete, model if isinstance(model, str) else None,
-                                                    usage, raw)
+                                                    usage, raw, 'final' if complete or partial else 'nonfinal')
                     raise failure("missing_terminal_response")
         except (httpx.HTTPError, TimeoutError) as exc:
             raise failure(type(exc).__name__) from None

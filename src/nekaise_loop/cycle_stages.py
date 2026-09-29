@@ -242,7 +242,7 @@ def production_summary(ctx, *, previous=False):
     if previous:
         from .learning_work import latest_work
         work = latest_work(ctx.store, ctx.artifacts, ctx.campaign["id"])
-        return [{k: work[k] for k in ("id", "stage_seconds", "teacher_stage_seconds", "author_yield", "prepared_targets_per_pass", "retained_training", "teacher_efficiency") if k in work}] if work else []
+        return [{k: work[k] for k in ("id", "stage_seconds", "teacher_stage_seconds", "author_yield", "prepared_targets_per_pass", "retained_training", "teacher_efficiency", "material_portfolio") if k in work}] if work else []
     else:
         cycle = cycle_for(ctx.store, ctx.round["id"])
         rows = ctx.store.query("SELECT round_id AS id FROM teaching_blocks WHERE cycle_id=? ORDER BY position", (cycle["id"],))
@@ -263,7 +263,7 @@ def production_summary(ctx, *, previous=False):
             "raw_targets": preparation.get("raw_targets_prepared"), "raw_target_shortfall": preparation.get("corpus_window_exhausted"),
             "actual_forward_corpus_share": preparation.get("actual_forward_corpus_share"),
             "targets": {k:v for k,v in (preparation.get("targets") or {}).items() if k != "by_row"}, "frozen_artifact": frozen["artifact"],
-            "production": {k:work[k] for k in ("stage_seconds", "teacher_stage_seconds", "author_yield", "teacher_efficiency", "retained_training") if k in work},
+            "production": {k:work[k] for k in ("stage_seconds", "teacher_stage_seconds", "author_yield", "teacher_efficiency", "retained_training", "material_portfolio") if k in work},
             "train_artifact": trained["artifact"] if trained else None})
     return result
 

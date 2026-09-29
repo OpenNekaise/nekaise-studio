@@ -26,6 +26,50 @@ historical artifacts and full exact author text remain readable under either pol
 
 ## Configuration
 
+### Retain usable Author text
+
+The 2026-09-29 operator instruction selects `material_response_policy=salvage_v1` for
+ongoing training. This execution adapter supersedes the strict completion/schema gates
+described below; `strict_v1` is the compatibility default for absent configuration and
+keeps historical requests byte-identical. Recovery preserves the selected policy.
+
+The host accepts each usable text target once, without another Teacher/Author call.
+It handles JSON arrays, known wrappers, fenced JSON, ordinary question/answer aliases,
+and explicit user/assistant messages. Extra metadata is kept in the raw artifact;
+missing concept/rationale receive identified host defaults, never invented teaching
+content. IDs are deterministic and local to the job, with supplied IDs retained.
+Missing/mistyped citation keys remain `material_origin.unresolved_citations`; only
+exact supplied keys produce resolved links. The host never fabricates a citation.
+
+Whole fields and rows already received from incomplete JSON remain usable. A broken
+row does not discard its later well-formed neighbours. An unclosed string cannot train
+as a complete answer, since current serialization adds EOS/native assistant terminators.
+Prompt plus answer uses native chat; complete standalone prose or an answer without a
+reliable prompt uses full text. A planned general-chat row recovered as full text is
+counted as general_prose, with planned scope retained in provenance. The portfolio and
+cycle review expose actual composition; a zero-chat serialization shortfall is recorded
+instead of discarding that recovered window. Teacher still plans native general chat,
+both general origins and all required Authors; no fixed ratio or semantic filter is added.
+
+The immutable normalization receipt links request and raw response, parser, original
+IDs/fields, defaults, unresolved citations and actual serialization. Normalized Candidate
+objects remain strict executable records. Trusted authorization consumes all usable
+rows at the planned dose, including a partial batch, without paid top-ups. Report events
+carry counts and artifact references; full evidence stays available to Teacher/recovery.
+Historical failed calls used to validate this adapter are diagnostic only, never silently
+imported into training or counted as new exposure.
+
+HTTP chat material must be assistant content ending in `stop` or `length`. Responses
+requires a terminal envelope and one assistant output_text message; `salvage_v1` also
+accepts bounded teaching fields at a `response.incomplete` terminal. Reasoning, tools,
+error envelopes, deltas without a terminal and incomplete unstructured planning prose
+are not teaching targets. Completed unstructured final prose is usable full text.
+The existing CLI request/model/budget boundaries remain: Claude rejected tool input
+and CLI truncation are recovery evidence, not final material; Codex budget overruns
+still fail. Credential, acquisition, timeout and reservation limits remain enforced.
+Zero usable text remains an orchestrator incident. There is no implicit retry, budget
+renewal, Author substitution or silent zero-pass recipe.
+
 The local registry is `workspace/material-authors.json`. New campaigns snapshot it
 unless their recipe explicitly contains `material_authors`. Existing campaigns and
 continuations retain their recorded registry; an orchestrator can explicitly apply a

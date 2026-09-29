@@ -56,7 +56,7 @@ def recover_author_processes(store):
             db.execute("UPDATE material_jobs SET status='uncertain',error='Worker exited during author execution; usage may be unknown',updated_at=? WHERE id=? AND status='running'", (now(), call["job_id"]))
 
 
-def request_body(author, spec, schema):
+def request_body(author, spec, schema, *, response_policy='strict_v1'):
     # Express the existing provenance allowlists in the generation schema too.
     # Long hashes can be mistyped even after path-only retry feedback. Never
     # repair returned citations or mutate the shared schema for sibling jobs.
@@ -128,6 +128,22 @@ def request_body(author, spec, schema):
         "For standalone plain-prose CPT material use full_text with the complete prose in training_text, unless the teacher specifies another mode. "
         "Do not insert model-specific role markers or a thinking prefill: the student tokenizer will serialize accepted content."
     )
+    if response_policy == 'salvage_v1':
+        instruction = (
+            'You are a Material Author working for the primary Teacher. Write the requested original teaching material, '
+            'using supplied sources and seed demonstrations as reference data. Follow the Teacher job, scope and curriculum unit. '
+            'The student_identity describes Kai, whose assistant responses you write, not your own identity. '
+            'Express that character naturally in the user language. Do not invent student observations or scores. '
+            'Return one JSON object with a rows array using the supplied output_schema. '
+            'Each row needs a unique id, concept, kind, rationale and explicit training_tokenization. '
+            'For native chat use chat_response, student_prompt and training_response. For standalone prose use full_text and training_text. '
+            'For prompt_prefix, training_text must contain the exact student_prompt followed by its continuation. '
+            'Write actual teaching text in those fields; keep response-format explanations out of the output. '
+            'Copy source_keys and seed_ids exactly from the supplied allowlists when citing them; otherwise use empty lists. '
+            'Do not insert model-specific role tokens. Fit complete material within the existing output reservation, including reasoning and JSON. '
+            'Keep metadata compact. If retry_validation is present, the previous output contained no recoverable teaching text: '
+            'return actual requested material. Host recovery of partial output does not authorize extra calls or budget renewal.'
+        )
     # Give JSON-object transports a compact positive shape beside the task.
     # Repeated extra_forbidden feedback alone can induce renamed annotation
     # fields. Derive this projection from the same schema, without weakening
@@ -255,13 +271,15 @@ async def _execute(ctx, specs, pool, client_factory):
         author = authors[spec["job"]["author_id"]]
         if author.transport not in AUTHOR_TRANSPORTS:
             raise ValueError(f"Unsupported material-author transport: {author.transport}")
-        body = request_body(author, spec, schema)
+        body = request_body(author, spec, schema, response_policy=ctx.config.material_response_policy)
         size = len(json.dumps(body, ensure_ascii=False))
         if size > pool.max_input_chars_per_call or body["max_tokens"] > author.max_output_tokens:
             raise ValueError(f"Material job {spec['job']['id']} exceeds its request execution limits")
         if author.transport == "claude_code" and body["max_tokens"] < 256:
             raise ValueError("Claude Code jobs need at least 256 reserved output tokens")
         payload = {"version": 1, "round_id": ctx.round["id"], "author": author.model_dump(), "spec": spec, "request": body}
+        if ctx.config.material_response_policy == 'salvage_v1':
+            payload['response_policy'] = 'salvage_v1'
         key = artifacts.put(payload)
         requests.append((key, author, payload, size))
     if len(requests) > pool.max_calls_per_round or sum(p[2]["request"]["max_tokens"] for p in requests) > pool.max_output_tokens_per_round:
@@ -338,17 +356,35 @@ async def _execute(ctx, specs, pool, client_factory):
             try:
                 authored = await adapters[author.transport].generate(author, payload["request"], env_file=ctx.engine.settings.root/".env", max_bytes=pool.max_response_bytes,
                     execution={"store": store, "call_id": call_id, "claude": ctx.engine.settings.claude, "codex": ctx.engine.settings.codex,
+                               "material_response_policy": ctx.config.material_response_policy,
                                "directory": ctx.directory/f"author-{call_id}"})
                 raw = artifacts.put({"request_artifact": request_artifact, "response": authored.raw})
                 reported = authored.usage
                 usage = {k: v for k, v in (reported or {}).items() if k in {"prompt_tokens", "completion_tokens", "total_tokens", "prompt_cache_hit_tokens", "prompt_cache_miss_tokens"} and isinstance(v, int) and not isinstance(v, bool) and v >= 0} if isinstance(reported, dict) else {}
                 store.execute("UPDATE material_calls SET artifact=?,usage=? WHERE id=?", (raw, encode(usage), call_id))
-                rows = candidates(authored, payload["spec"])
+                normalization = None
+                if ctx.config.material_response_policy == 'salvage_v1':
+                    from .material_response import normalize, NoTrainingContent
+                    try:
+                        rows, normalization = normalize(authored, payload['spec'])
+                    except NoTrainingContent as exc:
+                        receipt = artifacts.put({**exc.audit, 'response_artifact':raw, 'request_artifact':request_artifact})
+                        ctx.event('material_normalization', 'Author response contains no recoverable teaching text',
+                                  {'call_id':call_id, 'artifact':receipt})
+                        raise CandidateValidationError([{'path':[], 'type':'no_recoverable_teaching_text'}]) from None
+                else:
+                    rows = candidates(authored, payload["spec"])
                 result = {"job_id": key, "plan_id": payload["spec"]["job"]["id"], "author_id": author.id,
                           "model": authored.model or author.model, "requested_model": author.model,
                           "call_id": call_id, "response_artifact": raw, "rows": rows, "usage": usage,
                           "expected_items": payload["spec"]["job"]["expected_items"], "sources": payload["spec"]["sources"],
                           "seed_artifact": payload["spec"]["seed_artifact"]}
+                if normalization is not None:
+                    receipt = artifacts.put({**normalization, 'response_artifact':raw, 'request_artifact':request_artifact})
+                    result.update(normalization=normalization, normalization_artifact=receipt)
+                    ctx.event('material_normalization', 'Author teaching text retained with recorded normalization',
+                              {'call_id':call_id, 'artifact':receipt, 'candidates':len(rows),
+                               'provider_complete':bool(authored.complete), 'parser':normalization['parser']})
                 output = artifacts.put(result)
                 with store.connect(immediate=True) as db:
                     db.execute("UPDATE material_calls SET status='complete',finished_at=? WHERE id=?", (now(), call_id))

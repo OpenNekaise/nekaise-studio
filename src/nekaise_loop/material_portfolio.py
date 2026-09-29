@@ -60,10 +60,16 @@ def portfolio(frozen, config, planned_shares=None):
                   "requested_by_origin": {origin: expected_origins[(scope, origin)] for origin in ("teacher", "author", "corpus", "replay")}}
                   for scope in SCOPES},
               "requested_updates": steps, "requested_exposure": sum(expected.values()),
-              "limitations": "Scope is a Teacher declaration, not semantic verification. Unknown historical material stays unspecified. Repetition is exposure, not distinct coverage; requested exposure is not completed training."}
+              "limitations": "Scope is a Teacher declaration, not semantic verification. Under salvage_v1, planned chat recovered as plain text is counted as general_prose with planned scope retained in provenance. Unknown historical material stays unspecified. Repetition is exposure, not distinct coverage; requested exposure is not completed training."}
     if config.get("general_material_policy", "legacy_optional") == "required_v1" and config["train_epochs"] > 0:
         if not expected["general_chat"]:
-            raise ValueError("Required general material has zero general-chat targets in the requested optimizer traversal")
+            recovered_chat = (config.get('material_response_policy') == 'salvage_v1' and any(
+                row.get('material_origin', {}).get('normalization_artifact')
+                and row.get('material_origin', {}).get('planned_material_scope') == 'general_chat' for row in rows.values()))
+            if recovered_chat:
+                result['execution_shortfalls'] = ['Planned Author chat was recovered as prose; zero native general-chat targets. Teacher must see the actual composition.']
+            else:
+                raise ValueError("Required general material has zero general-chat targets in the requested optimizer traversal")
         for origin in ("teacher", "author"):
             if not sum(expected_origins[(scope, origin)] for scope in ("general_chat", "general_prose")):
                 raise ValueError(f"Required general material has zero new {origin} general targets in the requested optimizer traversal")

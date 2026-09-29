@@ -24,6 +24,7 @@ class AuthorResult:
     model: str | None
     usage: dict
     raw: object
+    content_kind: str = "final"
 
 
 class MaterialAuthor(Protocol):
@@ -85,8 +86,12 @@ class OpenAIChatAuthor:
                     content = message.get("content") if isinstance(message, dict) else None
                     model = envelope.get("model") if isinstance(envelope, dict) else None
                     usage = envelope.get("usage") if isinstance(envelope, dict) else None
+                    final = (isinstance(message, dict) and message.get('role', 'assistant') == 'assistant'
+                             and not message.get('tool_calls') and not message.get('function_call')
+                             and choice.get('finish_reason') in {'stop', 'length'} and not envelope.get('error'))
                     return AuthorResult(content if isinstance(content, str) else None, choice.get("finish_reason") == "stop",
-                                        model if isinstance(model, str) else None, usage if isinstance(usage, dict) else {}, envelope)
+                                        model if isinstance(model, str) else None, usage if isinstance(usage, dict) else {}, envelope,
+                                        'final' if final else 'nonfinal')
         except (httpx.HTTPError, TimeoutError) as exc:
             raise RuntimeError(f"Material author {author.id}: {type(exc).__name__}; remote charge may be unknown") from None
 

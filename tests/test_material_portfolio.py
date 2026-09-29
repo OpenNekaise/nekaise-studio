@@ -186,3 +186,15 @@ def test_general_chat_author_validation_returns_actionable_retry_paths(change):
 def test_general_chat_kind_is_checked_before_paid_expansion():
     with pytest.raises(ValueError, match="kind=sft"):
         validate_expansion_plan(CampaignConfig(), {"train_epochs":1, "lessons":[{"material_scope":"general_chat", "kind":"cpt"}]})
+
+
+def test_recovered_chat_prose_is_reported_without_discarding_the_window():
+    frozen=package()
+    frozen['rows'][0]['material_scope']='general_prose'
+    frozen['rows'][1]['material_origin'].update(normalization_artifact='fixture-receipt',planned_material_scope='general_chat')
+    p=portfolio(frozen,config(material_response_policy='salvage_v1'))
+    assert p['by_scope']['general_chat']['prepared_targets']==0
+    assert p['by_scope']['general_prose']['requested_by_origin']['author']>0
+    assert p['execution_shortfalls']
+    with pytest.raises(ValueError,match='zero general-chat'):
+        portfolio(frozen,config(material_response_policy='strict_v1'))

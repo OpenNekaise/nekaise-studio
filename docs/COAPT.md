@@ -1,5 +1,18 @@
 # CoAPT Mid-training in Nekaise Studio
 
+When `material_response_policy=salvage_v1`, the 2026-09-29 operator instruction
+supersedes strict Author batch-format/completion gates below. Keep every usable
+returned teaching target; extra metadata, missing descriptions or unresolved citations
+do not discard it. Immutable raw outputs and normalization receipts preserve provenance.
+Complete fields from a partial response may train; open strings and provider/tool errors
+are not finished answers. Question/answer pairs use native chat, otherwise usable prose
+uses full text. Planned general chat recovered as prose is counted as general_prose with
+the original planned scope retained. Actual portfolio counts and serialization shortfalls
+are in cycle production feedback; adapt teaching from these observations without another
+content review or fixed ratio. Continue planning native general chat and all required
+Authors. Nonempty partial batches need no paid rewrite; zero usable output goes to the
+orchestrator under existing budgets. See [the adapter contract](MATERIAL_AUTHORS.md#retain-usable-author-text).
+
 For `teaching_cycle.policy=buffered_v1`, the operator-approved
 [buffered cycle contract](TEACHING-CYCLES.md) supersedes the per-round draft/revise/review
 sequence below. One Teacher package authors forward seeds, plans Author jobs and freezes

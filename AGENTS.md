@@ -1,5 +1,22 @@
 # Working on Nekaise Studio
 
+## Retain usable Author text (authorized 2026-09-29)
+
+Use `material_response_policy=salvage_v1` in the continuing workload. Receive Author
+material per item: extra fields, absent metadata, duplicate IDs, unresolvable citations
+and partial batches must not discard usable teaching text or trigger paid rewriting.
+Preserve exact raw outputs and host normalization receipts. Only resolved citations
+become source links; unresolved claims remain explicit provenance. Complete bounded
+targets from truncated JSON may train; never label an open string as a finished answer.
+Usable prose without a reliable question/answer boundary trains as full text and counts
+as prose, retaining the planned scope. This narrowly supersedes prior format/completion
+gates; Teacher still plans native general chat and sees actual targets and shortfalls.
+No semantic grading or separate selection call is added. Truly empty/nonfinal/provider
+failures retain orchestrator recovery and cumulative budgets. Keep all Authors, source
+policies, exact Kai identity, forward loops and compatible Adam. Strict historical
+snapshots stay readable; recovery cannot silently change this selected response policy.
+See [Material Authors](docs/MATERIAL_AUTHORS.md#retain-usable-author-text).
+
 ## GPC source admission and Teacher mix (authorized 2026-09-29, superseding license gate)
 
 The operator explicitly directed ignoring all license checks for GPC webpage training.

@@ -1,5 +1,18 @@
 # Working on Nekaise Studio
 
+## GPC source admission and Teacher mix (authorized 2026-09-29, superseding license gate)
+
+The operator explicitly directed ignoring all license checks for GPC webpage training.
+Use `curriculum_loop.web_training_policy=teacher_selected_v1`: research-nominated pages
+are available as raw training prose without license evidence, allowlists or license-page
+requests. Teacher selects the actual web quantity, corpus/general/chat mix and dose;
+do not impose a chat percentage. Original Teacher/Author general chat remains required.
+Record this as an operator source-use policy, never verified licensing. Preserve source
+URLs, immutable bytes/hashes, exact fresh coverage, acquisition bounds and benchmark/
+excluded-dataset isolation. Historical `license_evidence_v1` snapshots remain readable
+and retain their original meaning. Source repairs/continuations preserve this selected
+policy, all Authors, budgets, Kai identity and compatible Adam. Resume after validation.
+
 ## Continuous windows and GPC web prose (authorized 2026-09-29)
 
 The operator approved using eligible GPC-fetched webpages directly for training and
@@ -14,9 +27,10 @@ Authors. Existing provider allowances do not grow. Prefer coarse synchronous sav
 until measurements justify asynchronous checkpoint complexity. See
 [CONTINUOUS-TRAINING.md](docs/CONTINUOUS-TRAINING.md).
 
-GPC reference-only snapshots stay reference-only. New training collections require
-explicit Teacher source permission with retrieved license evidence, bounded same-origin
-acquisition, robots access, immutable text/attribution and exact fresh-span accounting.
+GPC reference-only snapshots stay immutable. New training collections follow the selected
+web_training_policy; the later operator instruction above removes license admission.
+Keep bounded same-origin acquisition, robots access, immutable text/attribution and exact
+fresh-span accounting.
 The named Nemotron-CC/FineWeb/DCLM/Dolma datasets and benchmark banks remain excluded.
 Prepared material is not coverage; only verified durable saves advance the existing
 corpus/GPC namespace. Keep exact Kai 0.1 and compatible Adam. A 90% training-time target

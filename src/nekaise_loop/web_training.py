@@ -1,7 +1,7 @@
 """Teacher-authorized web prose: immutable sources, bounded collection, exact coverage.
 
-Fetching a reference never grants training permission. The permission is a separate
-Teacher decision with retrieved licensing evidence. No benchmark feed is consulted.
+Teacher-selected prose follows the campaign's recorded admission policy. License
+checks apply only to historical license_evidence_v1. No benchmark feed is consulted.
 """
 from concurrent.futures import ThreadPoolExecutor
 import hashlib
@@ -13,7 +13,7 @@ import httpx
 
 from .artifacts import atomic_write, canonical, digest
 from .curriculum_research import fetch_source
-from .curriculum_types import WebTrainingPermission
+from .curriculum_types import WebTrainingPermission, WebTrainingSelection
 from .processes import Cancelled
 from .storage import now
 from .web_access import AGENT, permitted_source_url, robots, wait_turn
@@ -63,28 +63,35 @@ def in_collection(url, prefix):
 
 def collect(ctx, request):
     """One immutable bounded collection, with paid/fetched work reused after failure."""
-    permission = WebTrainingPermission.model_validate(request['training']).model_dump()
+    policy = ctx.config.curriculum_loop.web_training_policy
+    licensed = policy == 'license_evidence_v1'
+    selection_type = WebTrainingPermission if licensed else WebTrainingSelection
+    permission = selection_type.model_validate(request.get('training') or {}).model_dump()
     url, prefix = normalized(request['url']), permission['collection_prefix']
     permitted_source_url(url)
     if prefix and not in_collection(url, prefix):
         raise ValueError('Training collection prefix must contain its same-origin seed URL')
     if not prefix and permission['max_pages'] != 1:
-        raise ValueError('Multi-page training collection requires an explicit licensed path prefix')
-    identity = digest({'url':url, 'permission':permission, 'contract':'web_training_v1'})
+        raise ValueError('Multi-page training collection requires an explicit selected path prefix')
+    identity = digest({'url':url, 'permission':permission, 'contract':'web_training_v1',
+                       **({} if licensed else {'admission_policy':policy})})
     path = ctx.engine.settings.workspace/'curriculum'/'web'/f'{identity}.json'
     if path.exists():
         import json
         journal = json.loads(path.read_text())
     else:
-        evidence = fetch_source({'url': permission['license_url'], 'title': 'Source license evidence',
-            'purpose': permission['scope_reason']}, cancelled=ctx.cancelled, full_text=True)
-        evidence.pop('links', None)
-        evidence_key = ctx.artifacts.put(evidence)
-        try:
-            verify_permission(permission, evidence, url)
-        except SourceAdmissionError as exc:
-            raise SourceAdmissionError(str(exc)+'; evidence artifact '+evidence_key) from exc
+        evidence_key = None
+        if licensed:
+            evidence = fetch_source({'url': permission['license_url'], 'title': 'Source license evidence',
+                'purpose': permission['scope_reason']}, cancelled=ctx.cancelled, full_text=True)
+            evidence.pop('links', None)
+            evidence_key = ctx.artifacts.put(evidence)
+            try:
+                verify_permission(permission, evidence, url)
+            except SourceAdmissionError as exc:
+                raise SourceAdmissionError(str(exc)+'; evidence artifact '+evidence_key) from exc
         journal = {'format': 'web_training_collection_v1', 'permission': permission,
+            'admission_policy': policy, 'license_checked': licensed,
             'license_evidence_artifact': evidence_key, 'pages': [],
             'pending': [url], 'visited': [], 'failures': [], 'collected_chars': 0,
             'created_at': now(), 'complete': False}
@@ -133,7 +140,8 @@ def collect(ctx, request):
                     continue
                 permitted_source_url(source['url'])
                 links = source.pop('links', [])
-                source.update(license=permission['license'], training_permission=permission,
+                source.update(license=permission['license'] if licensed else 'not_assessed', training_permission=permission,
+                    admission_policy=policy, license_checked=licensed,
                     license_evidence_artifact=journal['license_evidence_artifact'],
                     extractor='readable_body_v1', robots_artifact=journal['robots_artifact'],
                     selection_reason=request['purpose'], training_eligible=True)
@@ -168,7 +176,9 @@ def add_collections(ctx, research):
     """Original research snapshots remain reference-only; attach distinct authorization."""
     if not ctx.config.curriculum_loop.web_training:
         return research
-    requests = [r for r in research['plan']['sources'] if r.get('training')]
+    policy = ctx.config.curriculum_loop.web_training_policy
+    requests = [r for r in research['plan']['sources']
+                if policy == 'teacher_selected_v1' or r.get('training')]
     collections, failures = [], []
     for request in requests:
         try:
@@ -180,8 +190,10 @@ def add_collections(ctx, research):
             # explicit admission/supply failure and chooses its actual recipe;
             # the host never backfills, changes a planned ratio or invents text.
             failures.append({'url':request['url'], 'error':str(exc)[:1500],
-                             'status':'reference_only; no direct training permission admitted'})
-    return {**research, 'training_collections':collections, 'training_admission_failures':failures}
+                             'status':'reference_only; source acquisition failed' if policy == 'teacher_selected_v1'
+                                      else 'reference_only; no direct training permission admitted'})
+    return {**research, 'training_collections':collections, 'training_admission_failures':failures,
+            'web_training_policy':policy}
 
 
 def training_rows(ctx, work, references):

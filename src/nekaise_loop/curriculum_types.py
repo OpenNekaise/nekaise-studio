@@ -17,6 +17,7 @@ class CurriculumLoop(BaseModel):
     span_chars: int = Field(default=2400, ge=128, le=12000)
     raw_target_tokens: int = Field(default=0, ge=0, le=16000000, description="Runtime Teacher window allocation; 0 retains the legacy ratio-derived amount")
     web_training: bool = False
+    web_training_policy: Literal["license_evidence_v1", "teacher_selected_v1"] = Field(default="license_evidence_v1", description="Historical license admission or operator-authorized Teacher source selection without license checks")
     web_target_tokens: int = Field(default=0, ge=0, le=16000000)
 
 
@@ -32,7 +33,18 @@ class TeachingCycle(BaseModel):
     train_timeout_seconds: int = Field(default=3600, ge=60, le=7200, description="Continuous GPU window deadline only; Teacher/Author deadlines and usage budgets remain unchanged")
 
 
-class WebTrainingPermission(BaseModel):
+class WebTrainingSelection(BaseModel):
+    """Bounded source selection; optional license metadata never grants permission."""
+    model_config = ConfigDict(extra="forbid")
+    collection_prefix: str = Field(default="", max_length=2048)
+    max_pages: int = Field(default=1, ge=1, le=256)
+    license: str = Field(default="", max_length=500)
+    license_url: str = Field(default="", max_length=2048)
+    evidence_quote: str = Field(default="", max_length=1000)
+    scope_reason: str = Field(default="", max_length=2000)
+
+
+class WebTrainingPermission(WebTrainingSelection):
     """Teacher's explicit source eligibility decision, backed by retrieved evidence."""
     model_config = ConfigDict(extra="forbid")
     license: Literal["CC0-1.0", "CC-BY-4.0", "CC-BY-SA-4.0", "CC-BY-3.0", "CC-BY-SA-3.0", "public-domain", "MIT", "Apache-2.0", "PSF-2.0"]
@@ -47,7 +59,7 @@ class ResearchSource(BaseModel):
     url: str = Field(min_length=10, max_length=2048)
     title: str = Field(min_length=1, max_length=500)
     purpose: str = Field(min_length=1, max_length=2000)
-    training: WebTrainingPermission | None = Field(default=None, description="Null means reference-only. Supply a verified reuse license and its actual evidence before selecting source prose for training. Never select excluded general datasets or benchmark collections.")
+    training: WebTrainingSelection | None = Field(default=None, description="Under teacher_selected_v1, every nominated source is available as training prose; null uses a single page, or supply collection_prefix/max_pages. License metadata is optional and not checked. Historical license_evidence_v1 requires the full permission evidence. Excluded datasets and benchmarks remain excluded.")
 
 
 class ResearchPlan(BaseModel):

@@ -81,16 +81,21 @@ requests orchestration. Independent benchmark scores remain outside every decisi
 
 ## GPC web prose
 
-`curriculum_loop.web_training=true` enables a separate explicit source-use contract.
-A research source may carry `training` permission: an accepted license identifier,
-license URL, exact evidence quote, scope rationale, and optionally a same-origin path
-prefix with a bounded page count. Public accessibility alone is not admission. The host
-retrieves and snapshots the licensing evidence and checks that the supplied quote is
-present; Teacher is responsible for accurately interpreting its scope and third-party
-exceptions. No legal determination is inferred from a domain's historical reputation.
+`curriculum_loop.web_training=true` enables direct source prose. The later September 29
+operator instruction selects `web_training_policy=teacher_selected_v1`, removing every
+license admission check and license-evidence fetch. Research-nominated pages are available
+for the Teacher's recipe even when `training` is null (single page). An optional `training`
+object selects a bounded same-origin `collection_prefix` and `max_pages`; license fields
+are optional historical metadata and do not affect admission. The Teacher chooses actual
+web/corpus/general/chat targets and dose without a fixed percentage.
+
+Collections record the actual admission policy and `license_checked=false`; source
+licensing is `not_assessed`, never a fabricated grant. Historical `license_evidence_v1`
+remains readable with its original publisher-evidence checks. Policy-specific cache keys
+prevent earlier reference-only failures or licensing snapshots from being relabeled.
 
 Collection retrieval honors snapshotted robots instructions and per-host pacing, public
-HTTP(S)/DNS restrictions, redirect/content/time/byte bounds, the licensed path boundary
+HTTP(S)/DNS restrictions, redirect/content/time/byte bounds, the selected path boundary
 and excluded dataset locations. The initial path supports HTML/text pages and bounded
 ordinary page-link traversal (up to 256 visited pages per nominated collection, with a
 64M-character collection bound). It is not a PDF, JavaScript-rendering, sitemap or bulk
@@ -101,7 +106,7 @@ source work survives retries; sources are not refetched on every plan.
 Readable-body extraction removes navigation/footers and retains main/article text and
 preformatted indentation. It is deliberately simple and does not promise semantic
 cleaning or near-duplicate removal. Exact extracted-text hashes deduplicate pages. Full
-text, extractor version, URL, source/content hashes, license evidence and robots snapshots
+text, extractor version, URL, source/content hashes, admission policy and robots snapshots
 are retained separately from the short Author reference excerpts. Existing
 `research_reference_only` artifacts are never relabeled or retroactively trained.
 
@@ -128,7 +133,7 @@ utilization, GPU allocation or learning quality.
 
 90% is a measurement target. It requires sustained source and Author supply as well as
 an efficient consumer. A finite queue does not prove sustainable utilization. Website
-supply is bounded, licenses vary, and generated chat can remain the limiting input.
+supply is bounded, retrieval may fail, and generated chat can remain the limiting input.
 Teacher sees actual chat proportions and student responsiveness and can choose smaller
 windows or another teaching mix. No automatic quality-score gate is added. Long-term
 claims require an observed continuous interval that includes starvation and recovery;
@@ -146,5 +151,5 @@ The GPU window has a separate `train_timeout_seconds` execution budget. Increasi
 does not extend Teacher/Author deadlines or call/token allowances. Teacher call reservations
 are atomic across planning and grading. Source admission failures are recorded before
 planning so the Teacher can select a valid recipe explicitly; no failure is disguised as
-successful ingestion. Publisher evidence must identify the claimed license, and NC/ND
-prefix matches or unrelated generic license deeds do not grant training permission.
+successful ingestion. In historical license_evidence_v1 only, publisher evidence must
+identify the claimed license; teacher_selected_v1 does not run those checks or fetches.

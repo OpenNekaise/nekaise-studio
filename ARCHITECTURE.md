@@ -785,7 +785,7 @@ resident GPU consumer and asynchronous online grading. `resident_training.py` ow
 the isolated ML process through a journaled trainer session; `workers/resident.py`
 retains model/Adam between complete saved windows and serves exact-checkpoint online
 generation. HTTP imports no ML libraries. `web_training.py` records explicitly
-licensed source collections and fresh span coverage independently of reference-only
+policy-recorded source collections and fresh span coverage independently of reference-only
 research. `preparation_summary.py` avoids rereading large token arrays for routine UI
 polling; full immutable datasets remain the training evidence. See the full
 [execution, durability and limitation contract](docs/CONTINUOUS-TRAINING.md).

@@ -60,9 +60,11 @@ def research(ctx):
                 (ctx.artifacts.put(available[work["unit"]["id"]]), work["namespace"], work["sequence"], digest(work)))
     preserve_assignment_research()
     if ctx.config.curriculum_loop.web_training:
-        # A new source-use contract needs an explicit licensing decision. Preserve
-        # old reference artifacts, but do not relabel them as training permission.
-        available = {k: v for k, v in available.items() if 'training_collections' in v}
+        # License-mode activation needs a new permission decision. Teacher-selected
+        # mode can reuse saved research and acquire new training snapshots without
+        # reinterpreting immutable reference bytes as already trained material.
+        if ctx.config.curriculum_loop.web_training_policy == 'license_evidence_v1':
+            available = {k: v for k, v in available.items() if 'training_collections' in v}
     requested = list({u["id"]: u for u in units if u["id"] not in available}.values())
     plans = saved["plans"]
     if plans is None:
@@ -118,7 +120,10 @@ def plan(ctx):
         for key in unit.get('training_collections', []):
             collection = ctx.artifacts.get(key)
             unit['training_supply'].append({'artifact':key, 'pages':len(collection['pages']),
-                'source_chars':collection['collected_chars'], 'license':collection['permission']['license'],
+                'source_chars':collection['collected_chars'],
+                'admission_policy':collection.get('admission_policy', 'license_evidence_v1'),
+                'license_checked':collection.get('license_checked', True),
+                'license':collection['permission']['license'] if collection.get('license_checked', True) else 'not_assessed',
                 'basis':'Collected supply before prior-exposure deduplication; not a tokenizer count'})
     brief = {"cycle_id": cycle["id"], "units": units, "block_target_tokens": ctx.config.teaching_cycle.block_target_tokens,
         "maximum_blocks": len(units), "research": references,

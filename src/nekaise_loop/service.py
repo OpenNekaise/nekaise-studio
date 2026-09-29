@@ -236,6 +236,7 @@ class Service:
             loop = config.curriculum_loop
             if (not loop or loop.projection_artifact != prior_loop["projection_artifact"]
                     or loop.web_training != prior_loop.get('web_training', False)
+                    or loop.web_training_policy != prior_loop.get('web_training_policy', 'license_evidence_v1')
                     or loop.remediation_cap > prior_loop["remediation_cap"]
                     or (loop.namespace != prior_loop["namespace"] and restore_round is None)):
                 raise Conflict("Recovery must preserve forward progression, the pinned curriculum and remediation cap; only explicit Base restoration may reset its namespace")

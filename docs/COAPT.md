@@ -516,8 +516,14 @@ pending review, prepared token or repeated page is credited as new learning/cove
 
 The resident GPU model retains compatible Adam between windows. Coarse synchronous
 checkpoints preserve stage-boundary recovery; runtime changes require an explicit
-validated bridge, never an implicit reset. Source retrieval needs explicit permission
-and retrieved license evidence; old reference-only snapshots stay reference-only. Named
+validated bridge, never an implicit reset. The operator's later September 29 instruction
+selects web_training_policy=teacher_selected_v1: ignore license metadata for GPC admission,
+do not retrieve license evidence, and make research-selected webpage prose available to
+the Teacher's recipe. training=null means that source page alone; collection settings
+may request a bounded related path. Teacher decides corpus/general/chat mix and dose;
+no fixed percentage is imposed. Original Teacher/Author general chat is still required.
+Historical license_evidence_v1 retains its old checks; old reference snapshots stay
+immutable and new acquisition records the actual policy without claiming a license. Named
 large general datasets and benchmark banks remain excluded. Report actual composition,
 chat responsiveness, retained exposure and full wall-time duty separately. A 90% target
 cannot override teaching judgment or justify padding/repetition. The full contract and

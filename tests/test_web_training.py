@@ -70,8 +70,10 @@ def test_missing_license_evidence_never_admits_training(tmp_path, monkeypatch):
         collect(ctx,req)
 
 
-def test_web_targets_are_fresh_full_spans_and_never_teacher_generated(tmp_path, monkeypatch):
+@pytest.mark.parametrize('policy', ['license_evidence_v1', 'teacher_selected_v1'])
+def test_web_targets_are_fresh_full_spans_and_never_teacher_generated(tmp_path, monkeypatch, policy):
     ctx=context(tmp_path)
+    ctx.config.curriculum_loop=ctx.config.curriculum_loop.model_copy(update={'web_training_policy':policy})
     configure(monkeypatch)
     key=collect(ctx,request())
     work={'before':{},'unit':{'id':'science'}}
@@ -148,3 +150,60 @@ def test_single_page_redirect_cannot_inherit_another_publishers_permission(tmp_p
     req=request();req['training'].update(collection_prefix='',max_pages=1)
     with pytest.raises(ValueError,match='no usable pages'):
         collect(ctx,req)
+
+
+def test_teacher_selected_sources_need_no_license_or_training_object(tmp_path, monkeypatch):
+    from nekaise_loop.web_training import add_collections
+    ctx=context(tmp_path)
+    ctx.config.curriculum_loop=ctx.config.curriculum_loop.model_copy(update={'web_training_policy':'teacher_selected_v1'})
+    calls=configure(monkeypatch)
+    req=request();req['training']=None
+    original={'plan':{'sources':[req]},'sources':[{'id':'reference','license':'research_reference_only'}],
+              'training_collections':[], 'training_admission_failures':[{'error':'old license rejection'}]}
+    result=add_collections(ctx,original)
+    assert len(result['training_collections'])==1 and not result['training_admission_failures']
+    assert calls==[req['url']]
+    assert original['training_collections']==[] and original['training_admission_failures']
+    collection=ctx.artifacts.get(result['training_collections'][0])
+    assert collection['admission_policy']=='teacher_selected_v1'
+    assert not collection['license_checked'] and collection['license_evidence_artifact'] is None
+    source=ctx.artifacts.get(collection['pages'][0]['artifact'])
+    assert source['license']=='not_assessed' and source['training_eligible']
+    assert source['text_sha256']==hashlib.sha256(source['text'].encode()).hexdigest()
+    assert result['sources']==original['sources']
+
+
+def test_teacher_selection_ignores_restrictive_metadata_and_unreachable_license_url(tmp_path, monkeypatch):
+    ctx=context(tmp_path)
+    ctx.config.curriculum_loop=ctx.config.curriculum_loop.model_copy(update={'web_training_policy':'teacher_selected_v1'})
+    calls=configure(monkeypatch);req=request()
+    req['training'].update(license='CC-BY-NC-ND-4.0',license_url='https://unreachable.invalid/terms',
+                          evidence_quote='Not verified and not used for admission')
+    key=collect(ctx,req);collection=ctx.artifacts.get(key)
+    assert collection['pages'] and not collection['license_checked']
+    assert all('unreachable' not in url for url in calls)
+    assert collection['permission']['license']=='CC-BY-NC-ND-4.0'
+    assert ctx.artifacts.get(collection['pages'][0]['artifact'])['license']=='not_assessed'
+
+
+def test_admission_policy_has_distinct_cache_and_preserves_license_history(tmp_path, monkeypatch):
+    ctx=context(tmp_path);calls=configure(monkeypatch);req=request()
+    old_key=collect(ctx,req);old=ctx.artifacts.get(old_key)
+    ctx.config.curriculum_loop=ctx.config.curriculum_loop.model_copy(update={'web_training_policy':'teacher_selected_v1'})
+    new_key=collect(ctx,req)
+    assert new_key!=old_key and ctx.artifacts.get(old_key)==old
+    assert old['license_checked'] and not ctx.artifacts.get(new_key)['license_checked']
+    assert calls.count(req['training']['license_url'])==1
+
+
+def test_recovery_preserves_operator_web_admission_policy(tmp_path):
+    from nekaise_loop.config import Settings
+    from nekaise_loop.service import Service, Conflict
+    service=Service(Settings(tmp_path))
+    loop=context(tmp_path).config.curriculum_loop.model_copy(update={'web_training_policy':'teacher_selected_v1'})
+    parent=service.create('web policy',CampaignConfig(curriculum_loop=loop))
+    updates={'curriculum_loop':loop.model_copy(update={'web_training_policy':'license_evidence_v1'}).model_dump()}
+    with pytest.raises(Conflict,match='preserve forward progression'):
+        service.continue_campaign(parent['id'],updates,actor='orchestrator')
+    child=service.continue_campaign(parent['id'],reason='Verified source repair',actor='orchestrator')
+    assert child['config']['curriculum_loop']['web_training_policy']=='teacher_selected_v1'

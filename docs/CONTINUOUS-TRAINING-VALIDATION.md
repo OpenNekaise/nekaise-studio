@@ -101,3 +101,33 @@ continuous-training projection. The first source research stage entered executio
 This startup observation alone is not evidence of a completed training window or
 sustained 90% training duty. The ignored deployment receipt records source/runtime
 fingerprints, the compatible optimizer transition and the actual command action.
+
+## Operator-selected GPC admission — later September 29
+
+The operator subsequently removed all GPC license checks and explicitly left source/
+general/chat proportions to the Teacher. `teacher_selected_v1` makes research-nominated
+pages available for direct prose training, without fetching or checking license evidence.
+Legacy licensed-policy artifacts and checks retain their meaning. Acquisition bounds,
+source hashes, exact fresh coverage, excluded datasets and independent benchmark isolation
+remain; the policy does not claim a verified license.
+
+Before editing, the fifth window's verified save, `round_80e9ffc8fe68`, was allowed to
+finish at **27,624,423** global targets. Command-queue pause **814** and the exclusive
+source lock followed that save.
+The ML runtime and recipe hashes remain unchanged, and continuation preflight confirms
+`identical_runtime` Adam inheritance. No unsaved GPU work was cancelled for this change.
+
+- Full application suite: **762 passed, 1 ML-module skip**. No ML arithmetic changed.
+- Web-policy regression suite: **14 passed**, covering absent metadata, restrictive or
+  unreachable license metadata being ignored, source/cache provenance, whole fresh-span
+  preparation and preservation of the selected policy during automatic recovery.
+- Actual source diagnostic retried three previously rejected page nominations. Two
+  LibreTexts pages supplied **12,112 characters** across six spans, with no license
+  fetches. The third page could not be acquired because robots retrieval returned HTTP
+  403; that remains a retrieval failure, not a license admission rejection.
+- Kai's actual tokenizer prepared **2,664 web targets** from those pages. After simulated
+  source-offset coverage, the same collection exposed zero fresh rows. These are isolated
+  retrieval/tokenization checks, not official student updates or claimed training exposure.
+
+Evidence is in ignored `workspace/reviews/web-source-policy-20260929/`. Current source
+admission and Teacher instructions are described in `docs/CONTINUOUS-TRAINING.md`.

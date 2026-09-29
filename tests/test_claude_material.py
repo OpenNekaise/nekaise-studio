@@ -83,6 +83,45 @@ elif 'retry_validation' in payload:
         script += "print('{',flush=True)\nsys.exit(0)\n"
     elif fault == "truncated":
         script += "print(json.dumps({'type':'stream_event','event':{'type':'message_delta','delta':{'stop_reason':'max_tokens'}}}),flush=True)\ntime.sleep(30)\n"
+    elif fault.startswith("native_"):
+        script = script.replace("'event':{'type':'message_start'}", "'event':{'type':'message_start','message':{'id':'m','role':'assistant','model':'claude-opus-5'}}")
+        script += "assert '--json-schema' not in args\nassert payload['output_schema']\n"
+        script += '''text = json.dumps({'rows':[row]})
+result.pop('structured_output')
+result.update(stop_reason='end_turn', result='SYNTHETIC_ENVELOPE_TEXT')
+event = {'type':'assistant','parent_tool_use_id':None,'message':{
+    'id':'m','role':'assistant','model':'claude-opus-5','content':[
+        {'type':'thinking','thinking':'PRIVATE_REASONING'},
+        {'type':'tool_use','name':'OtherTool','input':{'rows':[row]}},
+        {'type':'text','text':text}]}}
+'''
+        if fault == "native_wrong_model":
+            script += "event['message']['model']='another-model'\n"
+        elif fault == "native_wrong_message":
+            script += "event['message']['id']='another-message'\n"
+        elif fault == "native_wrong_role":
+            script += "event['message']['role']='user'\n"
+        elif fault == "native_nested":
+            script += "event['parent_tool_use_id']='tool-parent'\n"
+        elif fault == "native_tools_only":
+            script += "event['message']['content'].pop()\n"
+        elif fault == "native_overrun":
+            script += "result['modelUsage']['claude-opus-5']['outputTokens']=513\n"
+        elif fault == "native_missing_usage":
+            script += "result.pop('modelUsage')\n"
+        elif fault == "native_usage_model":
+            script += "result['modelUsage']['another-model']=result['modelUsage'].pop('claude-opus-5')\n"
+        elif fault == "native_quota":
+            script += "result.update(is_error=True,subtype='error_during_execution',result='usage limit; retry-after: 61 seconds')\n"
+        elif fault == "native_tool_stop":
+            script += "result['stop_reason']='tool_use'\n"
+        script += "print(json.dumps(event),flush=True)\n"
+        if fault != "native_no_delta":
+            script += "print(json.dumps({'type':'stream_event','event':{'type':'message_delta','delta':{'stop_reason':result['stop_reason']}}}),flush=True)\n"
+        if fault != "native_no_stop":
+            script += "print(json.dumps({'type':'stream_event','event':{'type':'message_stop'}}),flush=True)\n"
+        if fault == "native_continuation":
+            script += "print(json.dumps({'type':'stream_event','event':{'type':'message_start'}}),flush=True)\n"
     elif fault.startswith("ended_"):
         script = script.replace("'event':{'type':'message_start'}", "'event':{'type':'message_start','message':{'id':'m','role':'assistant','model':'claude-opus-5'}}")
         script += '''text = json.dumps({'rows':[row]})[:-2] + ',{"student_prompt":"Open question","training_response":"unfinished'
@@ -143,6 +182,8 @@ event = {'type':'assistant','parent_tool_use_id':None,'message':{
         script += "print(json.dumps({'type':'stream_event','event':{'type':'message_delta','delta':{'stop_reason':'max_tokens'}}}),flush=True)\ntime.sleep(30)\n"
     elif fault == "continuation":
         script += "print(json.dumps({'type':'stream_event','event':{'type':'message_start'}}),flush=True)\ntime.sleep(30)\n"
+    if not fault.startswith(("native_", "partial_", "ended_")):
+        script += "assert '--json-schema' in args\n"
     script += "print(json.dumps(result))\nsys.exit(1 if result['is_error'] else 0)\n"
     pool = AuthorPool(authors=[cli_author(timeout_seconds=timeout)])
     settings, service, campaign, engine = configured(setup_loop, pool=pool)
@@ -367,3 +408,35 @@ def test_cli_configuration_rejects_unbounded_or_ambiguous_overrides(changes):
     data.update(changes)
     with pytest.raises(ValueError):
         AuthorSpec.model_validate(data)
+
+
+@pytest.mark.parametrize("fault,status", [
+    ("text", "complete"), ("missing_usage", "complete"), ("quota", "waiting"),
+    *[(fault, "failed") for fault in ("wrong_model", "wrong_message", "wrong_role",
+        "nested", "tools_only", "overrun", "usage_model", "tool_stop", "no_delta",
+        "no_stop", "continuation")],
+])
+def test_salvage_native_assistant_delivery(setup_loop, tmp_path, fault, status):
+    from nekaise_loop.config import CampaignConfig
+    _, service, old, engine = setup_cli(setup_loop, tmp_path, fault="native_" + fault)
+    campaign = service.create("Native Author text fixture", CampaignConfig.model_validate({
+        **old['config'], 'material_response_policy': 'salvage_v1',
+        'material_review_policy': 'trusted_author_v1'}))
+    engine.run(campaign['id'])
+    assert service.store.campaign(campaign['id'])['status'] == status
+    calls = service.store.query('SELECT * FROM material_calls')
+    assert calls and all(c['process_pid'] is None and c['reserved_tokens'] == 512 for c in calls)
+    if status != 'complete':
+        assert not service.store.query("SELECT * FROM stage_runs WHERE stage='train'")
+        return
+    assert len(calls) == 2
+    if fault == 'missing_usage':
+        assert all(not json.loads(c['usage']) for c in calls)
+    for job in service.store.query('SELECT * FROM material_jobs'):
+        material = service.artifacts.get(job['artifact'])
+        assert len(material['rows']) == 1
+        assert material['rows'][0]['training_text'] == 'Doubling resistance halves heat flow.'
+        assert material['normalization']['provider_complete']
+        raw = service.artifacts.get(material['response_artifact'])['response']
+        assert raw['execution']['output_mode'] == 'assistant_text'
+        assert raw['assistant_events'][0]['message']['content'][-1]['text']

@@ -81,6 +81,16 @@ a complete end-turn stream, exactly one model request and known within-reservati
 The CLI error, raw assistant events and incomplete delivery marker remain recorded;
 open answers, thinking, tool input and synthetic enforcement messages never train.
 Other CLI failures and strict snapshots retain their failure behavior.
+For new `salvage_v1` Claude calls, the output schema stays in the recorded prompt
+as guidance, but the CLI `--json-schema` enforcement is omitted. Ordinary assistant
+text avoids the StructuredOutput channel that buffered empty truncated responses
+and demanded additional turns after usable answers. Successful delivery requires
+one pinned-model assistant message, matching message identities, an `end_turn` and
+completed stream boundary. Exact assistant events and the CLI envelope are retained;
+the envelope's summary, thinking and tool input never become teaching text. The same
+partial-text normalization, cancellation reserve and usage ceilings still apply.
+Strict historical calls retain CLI schema enforcement. This changes delivery, not
+Teacher content, Author registration, required expansion or semantic review.
 Credential, acquisition, timeout and reservation limits remain enforced.
 Zero usable text remains an orchestrator incident. There is no implicit retry, budget
 renewal, Author substitution or silent zero-pass recipe.

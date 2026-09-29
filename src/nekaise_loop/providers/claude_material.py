@@ -32,13 +32,18 @@ class ClaudeCodeAuthor:
         # API stream, stop on truncation/another request, and reserve a second
         # message for a continuation already accepted before local cancellation.
         per_message = reserved // 2
+        native_text = execution.get("material_response_policy") == "salvage_v1"
         command = [execution["claude"], "-p", "--model", author.model,
             "--effort", author.options.get("effort", "medium"), "--max-turns", "1",
             "--tools", "", "--safe-mode", "--setting-sources", "",
             "--strict-mcp-config", "--no-session-persistence", "--output-format", "stream-json",
             "--verbose", "--include-partial-messages",
-            "--system-prompt", request["messages"][0]["content"],
-            "--json-schema", json.dumps(payload["output_schema"])]
+            "--system-prompt", request["messages"][0]["content"]]
+        # Salvage receives ordinary assistant text. The schema remains in the
+        # request as format guidance, without CLI StructuredOutput enforcement
+        # buffering the answer or demanding a further model turn.
+        if not native_text:
+            command += ["--json-schema", json.dumps(payload["output_schema"])]
         env = dict(os.environ)
         for key in ("ANTHROPIC_MODEL", "CLAUDE_CODE_RETRY_WATCHDOG", "CLAUDE_CODE_RESUME_INTERRUPTED_TURN",
                     "CLAUDE_CODE_RESUME_PROMPT", "CLAUDE_CODE_FALLBACK_MODEL"):
@@ -202,6 +207,29 @@ class ClaudeCodeAuthor:
             failure = AuthorHTTPError(f"Material author {author.id}: Claude Code exceeded its recorded output reservation", raw)
             failure.usage = normalized
             raise failure
+        if native_text:
+            raw.update(assistant_events=assistant_events, stream_message=stream_message)
+            raw["execution"]["output_mode"] = "assistant_text"
+            valid = (envelope.get("stop_reason") == stream_stop == "end_turn"
+                     and message_stopped and isinstance(stream_message, dict)
+                     and stream_message.get("model") == author.model
+                     and stream_message.get("role") == "assistant" and bool(stream_message.get("id")))
+            texts = []
+            for event in assistant_events:
+                message = event.get("message") or {}
+                if (not valid or message.get("model") != author.model
+                        or message.get("role") != "assistant"
+                        or message.get("id") != stream_message["id"]):
+                    valid = False
+                    break
+                for block in message.get("content", []):
+                    if block.get("type") == "text" and isinstance(block.get("text"), str):
+                        texts.append(block["text"])
+            if not valid or not any(text.strip() for text in texts):
+                failure = AuthorHTTPError("Claude Code did not expose a complete pinned assistant text message", raw)
+                failure.usage = normalized
+                raise failure
+            return AuthorResult("".join(texts), True, author.model, normalized, raw)
         content = envelope.get("structured_output")
         return AuthorResult(json.dumps(content, ensure_ascii=False) if isinstance(content, dict) else None,
                             isinstance(content, dict), author.model, normalized, raw)

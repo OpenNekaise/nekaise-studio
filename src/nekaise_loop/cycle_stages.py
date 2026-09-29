@@ -217,12 +217,37 @@ def last_block(ctx):
     return cycle["position"] == len(ctx.artifacts.get(cycle["plan_artifact"])["blocks"])-1
 
 
+def assessment_sources(ctx, cycle, assessments):
+    """Resolve exact historical research IDs for Teacher-selected follow-up checks.
+
+    Only recorded research artifacts are searched, never arbitrary files or model
+    output. Artifact hashes and the ordinary source-span checks remain mandatory.
+    This supplies assessment references, not training admission or fresh coverage.
+    """
+    sources = [s for u in ctx.artifacts.get(cycle["research_artifact"])["units"] for s in u["sources"]]
+    missing = {r["document_id"] for item in assessments for r in item["sources"]
+               if r["document_id"].startswith("research-")} - {s["id"] for s in sources}
+    if missing:
+        rows = ctx.store.query("SELECT DISTINCT research_artifact FROM teaching_cycles "
+                               "WHERE research_artifact IS NOT NULL ORDER BY research_artifact")
+        for saved in rows:
+            key = saved["research_artifact"]
+            for unit in ctx.artifacts.get(key)["units"]:
+                for source in unit["sources"]:
+                    if source["id"] in missing:
+                        sources.append({**source, "research_artifact": key})
+                        missing.remove(source["id"])
+            if not missing:
+                break
+    return sources
+
+
 def evaluate(ctx):
     if not last_block(ctx):
         return {"items": [], "reference_hash": digest([]), "comparison_pair": None, "review_pending": True}
     cycle = cycle_for(ctx.store, ctx.round["id"])
     plan = ctx.artifacts.get(cycle["plan_artifact"])
-    ctx.additional_sources = [s for u in ctx.artifacts.get(cycle["research_artifact"])["units"] for s in u["sources"]]
+    ctx.additional_sources = assessment_sources(ctx, cycle, plan["assessments"])
     items = []
     for value in plan["assessments"]:
         row = Evaluation.model_validate(value).model_dump()

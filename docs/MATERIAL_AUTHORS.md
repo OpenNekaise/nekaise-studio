@@ -74,6 +74,13 @@ joined. Only text belonging to the single pinned-model assistant message is elig
 thinking and tool input remain excluded. The response stays incomplete, open answers
 are excluded, final usage stays unknown and the full reservation remains charged.
 Strict snapshots retain truncation failure. Codex budget overruns still fail.
+Claude may also finish one assistant message with `end_turn`, then fail the CLI's
+structured-output enforcement at `error_max_turns`. Under `salvage_v1`, its explicit
+assistant text reaches bounded normalization only with matching message/model identity,
+a complete end-turn stream, exactly one model request and known within-reservation usage.
+The CLI error, raw assistant events and incomplete delivery marker remain recorded;
+open answers, thinking, tool input and synthetic enforcement messages never train.
+Other CLI failures and strict snapshots retain their failure behavior.
 Credential, acquisition, timeout and reservation limits remain enforced.
 Zero usable text remains an orchestrator incident. There is no implicit retry, budget
 renewal, Author substitution or silent zero-pass recipe.

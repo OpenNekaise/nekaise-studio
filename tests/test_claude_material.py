@@ -83,6 +83,41 @@ elif 'retry_validation' in payload:
         script += "print('{',flush=True)\nsys.exit(0)\n"
     elif fault == "truncated":
         script += "print(json.dumps({'type':'stream_event','event':{'type':'message_delta','delta':{'stop_reason':'max_tokens'}}}),flush=True)\ntime.sleep(30)\n"
+    elif fault.startswith("ended_"):
+        script = script.replace("'event':{'type':'message_start'}", "'event':{'type':'message_start','message':{'id':'m','role':'assistant','model':'claude-opus-5'}}")
+        script += '''text = json.dumps({'rows':[row]})[:-2] + ',{"student_prompt":"Open question","training_response":"unfinished'
+event = {'type':'assistant','parent_tool_use_id':None,'message':{
+    'id':'m','role':'assistant','model':'claude-opus-5','content':[
+        {'type':'thinking','thinking':'PRIVATE_REASONING'},
+        {'type':'tool_use','name':'StructuredOutput','input':{'rows':[row]}},
+        {'type':'text','text':text}]}}
+result.pop('structured_output')
+result.update(is_error=True, subtype='error_max_turns', terminal_reason='max_turns', stop_reason='end_turn')
+'''
+        if fault == "ended_wrong_model":
+            script += "event['message']['model']='another-model'\n"
+        elif fault == "ended_wrong_message":
+            script += "event['message']['id']='another-message'\n"
+        elif fault == "ended_nested":
+            script += "event['parent_tool_use_id']='tool-parent'\n"
+        elif fault == "ended_tools_only":
+            script += "event['message']['content'].pop()\n"
+        elif fault == "ended_overrun":
+            script += "result['modelUsage']['claude-opus-5']['outputTokens']=513\n"
+        elif fault == "ended_usage_model":
+            script += "result['modelUsage']['another-model']=result['modelUsage'].pop('claude-opus-5')\n"
+        elif fault == "ended_missing_usage":
+            script += "result.pop('modelUsage')\n"
+        elif fault == "ended_other_error":
+            script += "result['subtype']='error_during_execution'\n"
+        elif fault == "ended_quota":
+            script += "result['result']='usage limit; retry-after: 61 seconds'\n"
+        script += "print(json.dumps(event),flush=True)\n"
+        if fault != "ended_no_stop":
+            script += "print(json.dumps({'type':'stream_event','event':{'type':'message_delta','delta':{'stop_reason':'end_turn'}}}),flush=True)\n"
+            script += "print(json.dumps({'type':'stream_event','event':{'type':'message_stop'}}),flush=True)\n"
+        if fault == "ended_continuation":
+            script += "print(json.dumps({'type':'stream_event','event':{'type':'message_start'}}),flush=True)\n"
     elif fault.startswith("partial_"):
         # CLI assistant events carry completed text blocks even when the JSON
         # inside the block stops in an open answer. Thinking/tools are separate.
@@ -244,6 +279,42 @@ def test_truncated_assistant_text_preserves_bounds_and_unknown_usage(
         raw = service.artifacts.get(material['response_artifact'])['response']
         assert raw['execution']['usage_unknown']
         assert raw['execution']['cancelled_before_internal_continuation']
+        assert raw['assistant_events'][0]['message']['content'][-1]['text'].endswith('unfinished')
+
+
+@pytest.mark.parametrize("policy,fault,status", [
+    ("salvage_v1", "ended_text", "complete"),
+    ("strict_v1", "ended_text", "failed"),
+    *[("salvage_v1", "ended_"+fault, "failed") for fault in (
+        "wrong_model", "wrong_message", "nested", "tools_only", "overrun",
+        "usage_model", "missing_usage", "other_error", "no_stop", "continuation")],
+    ("salvage_v1", "ended_quota", "waiting"),
+])
+def test_finished_assistant_text_survives_cli_structured_turn_limit(
+        setup_loop, tmp_path, policy, fault, status):
+    from nekaise_loop.config import CampaignConfig
+    _, service, old, engine = setup_cli(setup_loop, tmp_path, fault=fault)
+    campaign = service.create("CLI turn limit fixture", CampaignConfig.model_validate({
+        **old['config'], 'material_response_policy': policy,
+        'material_review_policy': 'trusted_author_v1'}))
+    engine.run(campaign['id'])
+    assert service.store.campaign(campaign['id'])['status'] == status
+    calls = service.store.query('SELECT * FROM material_calls')
+    assert calls and all(c['process_pid'] is None for c in calls)
+    assert all(c['reserved_tokens'] == 512 for c in calls)
+    if status != 'complete':
+        assert not service.store.query("SELECT * FROM stage_runs WHERE stage='train'")
+        return
+    assert len(calls) == 2  # No paid rewriting for a CLI format failure.
+    assert all(json.loads(c['usage'])['completion_tokens'] == 40 for c in calls)
+    for job in service.store.query('SELECT * FROM material_jobs'):
+        material = service.artifacts.get(job['artifact'])
+        assert len(material['rows']) == 1  # The open answer is excluded.
+        assert material['rows'][0]['training_text'] == 'Doubling resistance halves heat flow.'
+        assert not material['normalization']['provider_complete']
+        raw = service.artifacts.get(material['response_artifact'])['response']
+        assert raw['execution']['salvaged_after_structured_output_turn_limit']
+        assert raw['envelope']['is_error']
         assert raw['assistant_events'][0]['message']['content'][-1]['text'].endswith('unfinished')
 
 

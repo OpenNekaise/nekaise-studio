@@ -52,10 +52,11 @@ class ClaudeCodeAuthor:
         cancelled = threading.Event()
         envelope, starts, rejected_output = None, 0, None
         assistant_events, stream_message = [], None
+        stream_stop, message_stopped = None, False
         class TruncatedOutput(AuthorHTTPError):
             pass
         def observe(line):
-            nonlocal envelope, starts, rejected_output, stream_message
+            nonlocal envelope, starts, rejected_output, stream_message, stream_stop, message_stopped
             try:
                 event = json.loads(line)
             except ValueError:
@@ -73,6 +74,11 @@ class ClaudeCodeAuthor:
                             and block.get("name") == "StructuredOutput" and isinstance(block.get("input"), dict)):
                         rejected_output = block["input"]
             part = event.get("event", {}) if event.get("type") == "stream_event" else {}
+            if event.get("parent_tool_use_id") is None:
+                if part.get("type") == "message_delta":
+                    stream_stop = part.get("delta", {}).get("stop_reason")
+                elif part.get("type") == "message_stop":
+                    message_stopped = True
             if part.get("type") == "message_start":
                 starts += 1
                 stream_message = part.get("message")
@@ -146,6 +152,35 @@ class ClaudeCodeAuthor:
                                         kind, retry_seconds(error), raw)
                 waiting.usage = normalized
                 raise waiting
+            # The CLI can demand StructuredOutput after a finished assistant
+            # message, then exhaust max-turns without another model request.
+            # Preserve bounded text under salvage, not the synthetic demand or
+            # tool input. The unsuccessful CLI envelope remains immutable.
+            if (execution.get("material_response_policy") == "salvage_v1"
+                    and runner.returncode in (0, 1)
+                    and envelope.get("subtype") == "error_max_turns"
+                    and envelope.get("terminal_reason") == "max_turns"
+                    and envelope.get("stop_reason") == stream_stop == "end_turn"
+                    and message_stopped and starts == 1
+                    and set(envelope.get("modelUsage") or {}) == {author.model}
+                    and usage is not None and normalized["completion_tokens"] <= reserved
+                    and isinstance(stream_message, dict)
+                    and stream_message.get("model") == author.model
+                    and stream_message.get("role") == "assistant" and stream_message.get("id")):
+                texts, valid = [], True
+                for event in assistant_events:
+                    message = event.get("message") or {}
+                    if (message.get("model") != author.model or message.get("role") != "assistant"
+                            or message.get("id") != stream_message["id"]):
+                        valid = False
+                        break
+                    for block in message.get("content", []):
+                        if block.get("type") == "text" and isinstance(block.get("text"), str):
+                            texts.append(block["text"])
+                if valid and any(text.strip() for text in texts):
+                    raw.update(assistant_events=assistant_events, stream_message=stream_message)
+                    raw["execution"]["salvaged_after_structured_output_turn_limit"] = True
+                    return AuthorResult("".join(texts), False, author.model, normalized, raw)
             # Preserve rejected tool input solely for local structural diagnostics.
             # It is never a successful completion, even if our schema accepts it.
             content = None

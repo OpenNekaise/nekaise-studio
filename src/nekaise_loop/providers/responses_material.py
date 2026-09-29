@@ -4,6 +4,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import json
+import re
 
 import httpx
 
@@ -101,7 +102,7 @@ class OpenAIResponsesAuthor:
         if key:
             headers["Authorization"] = f"Bearer {key}"
         body = wire_request(request)
-        evidence = {"transport": "openai_responses", "adapter_version": 1,
+        evidence = {"transport": "openai_responses", "adapter_version": 2,
                     "request_sha256": hashlib.sha256(json.dumps(body, ensure_ascii=False, sort_keys=True).encode()).hexdigest(),
                     "event_count": 0, "event_types": [], "received_bytes": 0}
 
@@ -165,6 +166,28 @@ class OpenAIResponsesAuthor:
                             envelope = event.get("response")
                             if isinstance(envelope, dict) and isinstance(envelope.get("id"), str):
                                 if response_id is not None and response_id != envelope["id"]:
+                                    # Keep attribution ambiguous and usage unknown, but
+                                    # distinguish gateway failures from completed-ID
+                                    # rewrites on the next operational review. Never
+                                    # copy arbitrary IDs, output or error messages into
+                                    # these bounded diagnostics.
+                                    conflict = {
+                                        "event_type": kind,
+                                        "previous_id_sha256": hashlib.sha256(response_id.encode()).hexdigest(),
+                                        "incoming_id_sha256": hashlib.sha256(envelope["id"].encode()).hexdigest(),
+                                    }
+                                    remote_error = envelope.get("error")
+                                    if isinstance(remote_error, dict):
+                                        conflict["error_sha256"] = hashlib.sha256(
+                                            json.dumps(remote_error, ensure_ascii=False, sort_keys=True).encode()).hexdigest()
+                                    for label, value in (
+                                        ("response_status", envelope.get("status")),
+                                        ("error_code", remote_error.get("code") if isinstance(remote_error, dict) else None),
+                                        ("error_type", remote_error.get("type") if isinstance(remote_error, dict) else None),
+                                    ):
+                                        if isinstance(value, str) and re.fullmatch(r"[A-Za-z0-9_.-]{1,96}", value):
+                                            conflict[label] = value
+                                    evidence["response_id_conflict"] = checked(conflict)
                                     raise failure("conflicting_response_ids")
                                 response_id = envelope["id"]
                             if kind == "error":

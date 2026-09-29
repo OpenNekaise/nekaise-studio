@@ -1,5 +1,6 @@
 """Protocol/worker fixtures; no network calls or student learning claims."""
 import asyncio
+import hashlib
 import json
 
 import httpx
@@ -116,6 +117,42 @@ def test_protocol_errors_are_durable(tmp_path,data,expected):
     with pytest.raises(AuthorHTTPError,match=expected) as error:
         generate(tmp_path,Chunks(data))
     assert error.value.evidence
+
+
+@pytest.mark.parametrize('kind,status', [('response.completed', 'completed'), ('response.failed', 'failed')])
+def test_conflicting_ids_record_bounded_diagnostics_without_accepting_material(tmp_path, kind, status):
+    event = terminal(status=status, error={'code': 'upstream_error', 'type': 'server_error',
+                                         'message': 'private provider detail'})
+    event['type'] = kind
+    stream = Chunks(frame({'type': 'response.created', 'response': {'id': 'initial-private-id'}})
+                    + frame(event), error=AssertionError('must close at conflict'))
+    with pytest.raises(AuthorHTTPError, match='conflicting_response_ids') as error:
+        generate(tmp_path, stream, execution={'material_response_policy': 'salvage_v1'})
+    evidence = error.value.evidence
+    conflict = evidence['response_id_conflict']
+    assert conflict['previous_id_sha256'] == hashlib.sha256(b'initial-private-id').hexdigest()
+    assert conflict['incoming_id_sha256'] == hashlib.sha256(b'response-1').hexdigest()
+    assert conflict['event_type'] == kind and conflict['response_status'] == status
+    assert conflict['error_code'] == 'upstream_error' and conflict['error_type'] == 'server_error'
+    assert len(conflict['error_sha256']) == 64
+    assert evidence['adapter_version'] == 2 and stream.closed
+    assert 'private provider detail' not in json.dumps(evidence)
+    assert 'initial-private-id' not in json.dumps(evidence)
+    assert 'usage' not in evidence and 'response' not in evidence
+
+
+def test_conflict_diagnostic_fields_are_bounded_and_credential_checked(tmp_path, monkeypatch):
+    start = frame({'type': 'response.created', 'response': {'id': 'initial'}})
+    event = terminal(status='x' * 97, error={'code': 'x' * 97, 'type': 'free form text'})
+    with pytest.raises(AuthorHTTPError) as error:
+        generate(tmp_path, Chunks(start + frame(event)))
+    conflict = error.value.evidence['response_id_conflict']
+    assert not {'response_status', 'error_code', 'error_type'} & conflict.keys()
+    monkeypatch.setenv('FIXTURE_SECRET', 'fixture-secret')
+    event = terminal(error={'code': 'fixture-secret'})
+    with pytest.raises(AuthorHTTPError, match='credential') as error:
+        generate(tmp_path, Chunks(start + frame(event)), spec=author(api_key_env='FIXTURE_SECRET'))
+    assert 'fixture-secret' not in json.dumps(error.value.evidence)
 
 
 @pytest.mark.parametrize('status,expected',[(402,AuthorWaiting),(429,AuthorWaiting),(401,AuthorHTTPError),(500,AuthorHTTPError)])

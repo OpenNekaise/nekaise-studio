@@ -1,4 +1,4 @@
-import { escapeHTML as e, number, dateLabel } from "./lib.js?v=30d66fdc235c";
+import { escapeHTML as e, number, dateLabel } from "./lib.js?v=480205a6b79a";
 
 const pct = value => Number.isFinite(value) ? `${number(value * 100, 1)}%` : "—";
 // Exact original MiniCPM5-1B-SFT inference-file identity from verified lineage.

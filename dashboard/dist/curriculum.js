@@ -1,4 +1,4 @@
-import { escapeHTML as e, number, percent } from "./lib.js?v=30d66fdc235c";
+import { escapeHTML as e, number, percent } from "./lib.js?v=480205a6b79a";
 
 export function curriculumCard(progress, cycle = null, throughput = null) {
   if (!progress) return "";

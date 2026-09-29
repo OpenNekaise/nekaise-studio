@@ -292,17 +292,32 @@ def test_only_supported_common_text_request_shapes_are_mapped():
         wire_request(dict(base,response_format={'type':'json_schema','json_schema':{}}))
 
 
-def test_salvage_admits_only_incomplete_assistant_material_after_terminal(tmp_path):
+@pytest.mark.parametrize('kind', ['response.incomplete', 'response.completed', 'response.done'])
+@pytest.mark.parametrize('message_status', ['completed', 'incomplete'])
+def test_salvage_admits_only_incomplete_assistant_material_after_terminal(tmp_path, kind, message_status):
     from nekaise_loop.material_response import normalize,NoTrainingContent
     content='{"rows":[{"question":"Hej?","answer":"Hej!"},{"answer":"cut'
-    output=[{'type':'reasoning','summary':[{'text':'Do not train reasoning'}]},dict(message(content),status='incomplete')]
+    output=[{'type':'reasoning','summary':[{'text':'Do not train reasoning'}]},dict(message(content),status=message_status)]
     event=terminal(output=output,status='incomplete',incomplete_details={'reason':'max_output_tokens'})
-    event['type']='response.incomplete'
+    event['type']=kind
     result,_=generate(tmp_path,Chunks(frame(event)),execution={'material_response_policy':'salvage_v1'})
     assert result.content==content and not result.complete and result.content_kind=='final'
     rows,_=normalize(result,{'job':{'id':'x','seed_ids':[]},'sources':{}})
     assert len(rows)==1 and rows[0]['training_response']=='Hej!'
-    event['type']='response.failed';event['response']['status']='failed'
-    result,_=generate(tmp_path,Chunks(frame(event)),execution={'material_response_policy':'salvage_v1'})
+    assert result.raw['response']==event['response'] and result.raw['terminal_event']==kind
+    assert result.usage['completion_tokens']==20
+    result,_=generate(tmp_path,Chunks(frame(event)))
     with pytest.raises(NoTrainingContent):
         normalize(result,{'job':{'id':'x','seed_ids':[]},'sources':{}})
+    for error in (None, {'code':'upstream_error'}):
+        rejected=json.loads(json.dumps(event))
+        if error:
+            rejected['response']['error']=error
+        else:
+            rejected['type']='response.failed'
+        result,_=generate(tmp_path,Chunks(frame(rejected)),execution={'material_response_policy':'salvage_v1'})
+        with pytest.raises(NoTrainingContent):
+            normalize(result,{'job':{'id':'x','seed_ids':[]},'sources':{}})
+    event['response']['usage']['output_tokens']=129
+    with pytest.raises(AuthorHTTPError,match='exceeded its reservation'):
+        generate(tmp_path,Chunks(frame(event)),execution={'material_response_policy':'salvage_v1'})

@@ -61,7 +61,10 @@ imported into training or counted as new exposure.
 
 HTTP chat material must be assistant content ending in `stop` or `length`. Responses
 requires a terminal envelope and one assistant output_text message; `salvage_v1` also
-accepts bounded teaching fields at a `response.incomplete` terminal. Reasoning, tools,
+accepts bounded teaching fields from an incomplete envelope at a `response.incomplete`,
+`response.completed` or `response.done` terminal. Some compatible gateways use the
+latter event names for incomplete output; the recorded envelope remains incomplete.
+Reasoning, tools,
 error envelopes, deltas without a terminal and incomplete unstructured planning prose
 are not teaching targets. Completed unstructured final prose is usable full text.
 The existing CLI request/model/budget boundaries remain: Claude rejected tool input

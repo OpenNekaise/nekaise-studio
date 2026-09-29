@@ -196,7 +196,11 @@ class OpenAIResponsesAuthor:
                                 if not isinstance(envelope, dict):
                                     raise failure("missing_terminal_envelope")
                                 partial = ((execution or {}).get('material_response_policy') == 'salvage_v1'
-                                           and kind == 'response.incomplete' and envelope.get('status') == 'incomplete'
+                                           # Compatible gateways can close an incomplete
+                                           # envelope with a completed/done event. Preserve
+                                           # bounded assistant text without claiming completion.
+                                           and kind in {'response.incomplete', 'response.completed', 'response.done'}
+                                           and envelope.get('status') == 'incomplete'
                                            and not envelope.get('error'))
                                 content = final_content(envelope, allow_incomplete=partial)
                                 checked(content)

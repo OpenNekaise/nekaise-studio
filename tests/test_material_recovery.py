@@ -402,6 +402,16 @@ def test_orchestrator_funds_retry_once_and_training_consumes_valid_expansion(int
     assert [r["task"]["job"]["id"] for r in requests] == ["one", "two", "two", "three"]
     assert requests[2]["retry_validation"] == expected
     assert "PRIVATE_REJECTED_VALUE" not in json.dumps(requests[2])
+    # The actual transport sees a positive shape on first dispatch and retry;
+    # it stays tied to the job schema, never to a rejected property name.
+    for request in requests:
+        contract = request["response_contract"]
+        candidate = request["output_schema"]["$defs"]["Candidate"]
+        assert contract["top_level_keys"] == ["rows"]
+        assert contract["allowed_row_keys"] == list(candidate["properties"])
+        assert contract["required_row_keys"] == candidate["required"]
+        assert "territory" not in contract["allowed_row_keys"]
+        assert "training_tokenization" in contract["required_row_keys"]
     assert service.store.one("SELECT id,artifact FROM material_jobs WHERE id=?", (completed["id"],)) == completed
     calls = service.store.query("SELECT * FROM material_calls ORDER BY id")
     assert calls[1]["job_id"] == calls[2]["job_id"]

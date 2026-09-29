@@ -128,7 +128,19 @@ def request_body(author, spec, schema):
         "For standalone plain-prose CPT material use full_text with the complete prose in training_text, unless the teacher specifies another mode. "
         "Do not insert model-specific role markers or a thinking prefill: the student tokenizer will serialize accepted content."
     )
-    payload = {"task": spec, "output_schema": schema}
+    # Give JSON-object transports a compact positive shape beside the task.
+    # Repeated extra_forbidden feedback alone can induce renamed annotation
+    # fields. Derive this projection from the same schema, without weakening
+    # host validation or repairing any returned material.
+    payload = {"task": spec, "output_schema": schema, "response_contract": {
+        "top_level_keys": list(schema["properties"]),
+        "allowed_row_keys": list(properties),
+        "required_row_keys": list(candidate_schema["required"]),
+        "instruction": "Build each row using only allowed_row_keys and include required_row_keys. "
+            "The output is one object containing rows. Keep validation checks private; "
+            "return only teaching material and its declared metadata. "
+            "The full output_schema still governs values, citations and tokenization.",
+    }}
     if author.transport == "claude_code":
         payload["execution_limits"] = {"max_response_output_tokens": spec["job"]["max_output_tokens"] // 2,
             "max_model_requests": 1, "instruction": "Return complete schema-valid JSON within the response cap; no continuation is available."}

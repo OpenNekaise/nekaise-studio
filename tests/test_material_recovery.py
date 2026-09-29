@@ -33,6 +33,31 @@ def test_provenance_diagnostics_are_bounded_without_echoing_citations():
     assert "PRIVATE_REJECTED_VALUE" not in str(caught.value)
 
 
+@pytest.mark.parametrize("value", [True, "", None, False])
+def test_undeclared_author_property_is_rejected_even_with_empty_value(value):
+    from types import SimpleNamespace
+    from nekaise_loop.material_jobs import CandidateValidationError, candidates
+
+    row = {"id": "fixture", "kind": "sft", "concept": "fixture",
+           "student_prompt": "Explain.", "training_response": "An explanation.",
+           "training_tokenization": "chat_response", "rationale": "fixture"}
+    spec = {"sources": {}, "job": {"seed_ids": [], "material_scope": "general_chat"}}
+    # A deletion marker remains an extra property regardless of its value.
+    invalid = {**row, "training_tokenization_note_removed": value}
+    content = json.dumps({"rows": [invalid]})
+    result = SimpleNamespace(content=content, complete=True)
+    with pytest.raises(CandidateValidationError) as caught:
+        candidates(result, spec)
+    assert caught.value.diagnostics == [{"path": ["rows", 0, "training_tokenization_note_removed"],
+                                        "type": "extra_forbidden"}]
+    assert result.content == content
+    # Only a separate Author response omitting the property can be accepted.
+    corrected = SimpleNamespace(content=json.dumps({"rows": [row]}), complete=True)
+    accepted = candidates(corrected, spec)
+    assert accepted[0]["training_response"] == row["training_response"]
+    assert result.content == content
+
+
 @pytest.mark.parametrize("content,code", [
     ('{"rows":[{"training_text":"PRIVATE_REJECTED_VALUE', "unterminated_string"),
     ('{"rows":[{"rationale":"PRIVATE_REJECTED_VALUE"}, "training_text":"text"}]}',
@@ -114,6 +139,41 @@ def test_author_citation_schema_is_job_scoped_and_host_still_checks_provenance()
     row["source_keys"], row["seed_ids"] = [], []
     result.content = json.dumps({"rows": [row]})
     assert candidates(result, empty)[0]["source_keys"] == []
+
+
+@pytest.mark.parametrize("mutation", ["delete", "insert", "transpose", "metadata"])
+def test_citation_copy_errors_remain_rejected_without_rewriting_rows(mutation):
+    from types import SimpleNamespace
+    from nekaise_loop.material_jobs import CandidateValidationError, candidates, request_body
+    from nekaise_loop.material_types import CandidateBatch
+
+    key = "0123456789abcdef" * 4
+    metadata_id = "research-fixture"
+    spec = {"sources": {key: {"id": metadata_id}},
+            "job": {"seed_ids": [], "max_output_tokens": 512}}
+    body = request_body(author(), spec, CandidateBatch.model_json_schema())
+    assert "copy them character-for-character" in body["messages"][0]["content"]
+    assert "including rows beyond the bounded retry diagnostics" in body["messages"][0]["content"]
+    bad = {"delete": key[:7] + key[8:],
+           "insert": key[:7] + "a" + key[7:],
+           "transpose": key[:7] + key[8] + key[7] + key[9:],
+           "metadata": metadata_id}[mutation]
+    rows = [{"id": f"row-{i}", "kind": "cpt", "concept": "fixture",
+             "training_text": "Original material.", "training_tokenization": "full_text",
+             "source_keys": [key], "rationale": "fixture"} for i in range(12)]
+    rows[-1]["source_keys"] = [bad]
+    original = json.dumps({"rows": rows})
+    rejected = SimpleNamespace(content=original, complete=True)
+    with pytest.raises(CandidateValidationError) as caught:
+        candidates(rejected, spec)
+    assert caught.value.diagnostics == [
+        {"path": ["rows", 11, "source_keys", 0], "type": "unprovided_source_key"}]
+    assert rejected.content == original
+    # Only a new exact Author citation passes; rejected evidence stays untouched.
+    rows[-1]["source_keys"] = [key]
+    corrected = SimpleNamespace(content=json.dumps({"rows": rows}), complete=True)
+    assert len(candidates(corrected, spec)) == 12
+    assert rejected.content == original
 
 
 def test_general_chat_request_schema_matches_host_contract_without_changing_other_scopes():

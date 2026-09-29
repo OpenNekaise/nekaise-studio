@@ -82,7 +82,7 @@ test("iteration navigation, previous runs and stale requests keep the correct ru
     assert.match(get("content").innerHTML, /Usage unavailable/);
     assert.match(get("content").innerHTML, /Evaluation unavailable/);
     assert.match(get("content").innerHTML, /data-round="a1"/);
-    assert.equal((get("content").innerHTML.match(/class="panel usage-card /g) || []).length, 6);
+    assert.equal((get("content").innerHTML.match(/class="panel usage-card /g) || []).length, 7);
     failUsage = false;
     const beforeExperiments = requests.length;
     await click({ studioSection: "experiments" });

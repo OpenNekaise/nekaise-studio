@@ -1,5 +1,5 @@
-import { escapeHTML as e, number } from "./lib.js?v=7ee8e6831e3c";
-import { scoreTrend } from "./score-trend.js?v=7ee8e6831e3c";
+import { escapeHTML as e, number } from "./lib.js?v=30d66fdc235c";
+import { scoreTrend } from "./score-trend.js?v=30d66fdc235c";
 
 export const ratioLabel = value => Number.isFinite(value) && value >= 0
   ? `${new Intl.NumberFormat("en-GB", { maximumSignificantDigits: 3 }).format(value)}×` : "—";

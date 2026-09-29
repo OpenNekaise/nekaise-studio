@@ -180,3 +180,7 @@ Author contributes forward material. Verified train-stage saves advance both cur
 independently of assessment scores. Teacher web research supplies real reference
 excerpts for original general material. See [the progression contract](docs/PROGRESSIVE-CURRICULUM.md)
 for source snapshots, full-span accounting, retries and continuation semantics.
+
+**MMLU-Pro** appears beside GPQA, with a full 12,032-question answer-choice likelihood
+run each week and the same original SFT reference model. See
+[MMLU-Pro display](docs/MMLU-PRO-DISPLAY.md).

@@ -1,11 +1,11 @@
-import { createModelChat } from "./model-chat.js?v=7ee8e6831e3c";
-import { escapeHTML as e, time, modelLabel, readAPIResponse } from "./lib.js?v=7ee8e6831e3c";
-import { overview, iterationView, historyView, reportsView, emptyStudio, badge, recoveryNotice, studioScope, studioNavigation } from "./views.js?v=7ee8e6831e3c";
-import { elapsedLabel } from "./telemetry.js?v=7ee8e6831e3c";
+import { createModelChat } from "./model-chat.js?v=30d66fdc235c";
+import { escapeHTML as e, time, modelLabel, readAPIResponse } from "./lib.js?v=30d66fdc235c";
+import { overview, iterationView, historyView, reportsView, emptyStudio, badge, recoveryNotice, studioScope, studioNavigation } from "./views.js?v=30d66fdc235c";
+import { elapsedLabel } from "./telemetry.js?v=30d66fdc235c";
 
-import { createAssessmentHistory } from "./teacher-assessment.js?v=7ee8e6831e3c";
-import { createBenchmarkBrowser } from "./benchmark-browser.js?v=7ee8e6831e3c";
-import { createExperimentBrowser } from "./experiment-browser.js?v=7ee8e6831e3c";
+import { createAssessmentHistory } from "./teacher-assessment.js?v=30d66fdc235c";
+import { createBenchmarkBrowser } from "./benchmark-browser.js?v=30d66fdc235c";
+import { createExperimentBrowser } from "./experiment-browser.js?v=30d66fdc235c";
 
 const $ = id => document.getElementById(id);
 const state = {
@@ -15,7 +15,7 @@ const state = {
   signature: "", headerSignature: "", contentScope: "", busy: false, refreshing: false,
   expandedActivity: false, selectionVersion: 0,
   reports: null, reportDetail: null, reportId: null, reportBefore: null,
-  benchmark: null, gpqa: null, teacherAssessment: null, telemetry: null, telemetryReceived: 0, online: false,
+  benchmark: null, gpqa: null, mmluPro: null, teacherAssessment: null, telemetry: null, telemetryReceived: 0, online: false,
   studioSection: "overview", historyQuery: "", historyFilter: "all",
 };
 let timer, clockTimer, toastTimer;
@@ -83,7 +83,7 @@ function render(force = false) {
   }
   modelChat.unmount();
   const s = state.data;
-  const signature = JSON.stringify([s, state.iterations, state.snapshots, state.campaigns, state.view, state.studioSection, state.historyQuery, state.historyFilter, state.selectedRound, state.lessonId, state.diff, state.expandedActivity, state.reports, state.reportDetail, state.reportId, state.reportBefore, state.telemetry, state.benchmark, state.gpqa, state.teacherAssessment, benchmarkBrowser.state, experimentBrowser.state]);
+  const signature = JSON.stringify([s, state.iterations, state.snapshots, state.campaigns, state.view, state.studioSection, state.historyQuery, state.historyFilter, state.selectedRound, state.lessonId, state.diff, state.expandedActivity, state.reports, state.reportDetail, state.reportId, state.reportBefore, state.telemetry, state.benchmark, state.gpqa, state.mmluPro, state.teacherAssessment, benchmarkBrowser.state, experimentBrowser.state]);
   if (!force && (signature === state.signature || window.getSelection()?.toString())) return;
   state.signature = signature;
   const content = $("content"), detailState = new Map();
@@ -96,7 +96,7 @@ function render(force = false) {
   const focused = document.activeElement;
   const focusKey = focused?.id || focused?.dataset?.benchmarkPoint || focused?.dataset?.benchmarkMetric || focused?.dataset?.experimentRound || focused?.dataset?.experimentSelect || focused?.dataset?.experimentPage || focused?.dataset?.experimentStrategy || focused?.dataset?.scoreRound || focused?.dataset?.report || focused?.dataset?.round || focused?.dataset?.campaign || focused?.dataset?.studioSection || focused?.id;
   const selection = typeof focused?.selectionStart === "number" ? [focused.selectionStart, focused.selectionEnd] : null;
-  const data = s ? { ...s, gpqa: state.gpqa, experiments: experimentBrowser.state, currentCampaign: currentCampaign(), iterations: state.iterations, teacherAssessment: state.teacherAssessment?.campaign_id === s.campaign.id ? state.teacherAssessment : null, expandedActivity: state.expandedActivity, benchmark: state.benchmark?.campaign_id === s.campaign.id ? state.benchmark : null, benchmarkBrowser: benchmarkBrowser.state.snapshot?.campaign_id === s.campaign.id ? benchmarkBrowser.state : {}, telemetry: state.telemetry?.campaign_id === s.campaign.id ? state.telemetry : null } : null;
+  const data = s ? { ...s, gpqa: state.gpqa, mmluPro: state.mmluPro, experiments: experimentBrowser.state, currentCampaign: currentCampaign(), iterations: state.iterations, teacherAssessment: state.teacherAssessment?.campaign_id === s.campaign.id ? state.teacherAssessment : null, expandedActivity: state.expandedActivity, benchmark: state.benchmark?.campaign_id === s.campaign.id ? state.benchmark : null, benchmarkBrowser: benchmarkBrowser.state.snapshot?.campaign_id === s.campaign.id ? benchmarkBrowser.state : {}, telemetry: state.telemetry?.campaign_id === s.campaign.id ? state.telemetry : null } : null;
   if (state.view === "reports") content.innerHTML = reportsView(state.reports, state.reportDetail, state.reportId, state.reportBefore);
   else if (state.view === "history") content.innerHTML = historyView(state.campaigns, { query: state.historyQuery, filter: state.historyFilter });
   else if (!s) content.innerHTML = state.campaigns.length ? '<div class="empty-inline" role="status">Loading run…</div>' : emptyStudio();
@@ -131,6 +131,12 @@ async function fillGPQA(version) {
   try { value = await api("/benchmarks/gpqa-diamond"); }
   catch { value = { status: "unavailable", runs: [] }; }
   if (version === state.selectionVersion) state.gpqa = value;
+}
+async function fillMMLU(version) {
+  let value;
+  try { value = await api('/benchmarks/mmlu-pro'); }
+  catch { value = { status: 'unavailable', runs: [] }; }
+  if (version === state.selectionVersion) state.mmluPro = value;
 }
 async function fillBenchmark(id, version) {
   let evaluation;
@@ -182,7 +188,7 @@ async function refresh(force = false) {
     }
     if (state.campaignId) {
       const id = state.campaignId;
-      const [snapshot] = await Promise.all([api(`/campaigns/${encodeURIComponent(id)}`), ...(state.studioSection === "overview" && state.view !== "iteration" ? [fillTelemetry(id, version), fillBenchmark(id, version), fillGPQA(version)] : [])]);
+      const [snapshot] = await Promise.all([api(`/campaigns/${encodeURIComponent(id)}`), ...(state.studioSection === "overview" && state.view !== "iteration" ? [fillTelemetry(id, version), fillBenchmark(id, version), fillGPQA(version), fillMMLU(version)] : [])]);
       if (version !== state.selectionVersion || id !== state.campaignId) return;
       state.data = snapshot;
       remember(snapshot);

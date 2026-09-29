@@ -1,11 +1,12 @@
-import { curriculumCard } from "./curriculum.js?v=7ee8e6831e3c";
-import { gpqaCard } from "./gpqa.js?v=7ee8e6831e3c";
-import { efficiencyCard, ratioLabel } from "./efficiency.js?v=7ee8e6831e3c";
-import { escapeHTML as e, number, duration, time, percent, safeURL, diffWords, lossChart, iterationMetrics, dateLabel, modelLabel } from "./lib.js?v=7ee8e6831e3c";
-import { usageCharts, elapsedLabel, phaseFor, phases } from "./telemetry.js?v=7ee8e6831e3c";
-import { benchmarkCard, benchmarkHistory } from "./benchmark.js?v=7ee8e6831e3c";
-import { teacherAssessmentCard } from "./teacher-assessment.js?v=7ee8e6831e3c";
-import { experimentCard, experimentsView } from "./experiments.js?v=7ee8e6831e3c";
+import { curriculumCard } from "./curriculum.js?v=30d66fdc235c";
+import { mmluCard } from "./mmlu-pro.js?v=30d66fdc235c";
+import { gpqaCard } from "./gpqa.js?v=30d66fdc235c";
+import { efficiencyCard, ratioLabel } from "./efficiency.js?v=30d66fdc235c";
+import { escapeHTML as e, number, duration, time, percent, safeURL, diffWords, lossChart, iterationMetrics, dateLabel, modelLabel } from "./lib.js?v=30d66fdc235c";
+import { usageCharts, elapsedLabel, phaseFor, phases } from "./telemetry.js?v=30d66fdc235c";
+import { benchmarkCard, benchmarkHistory } from "./benchmark.js?v=30d66fdc235c";
+import { teacherAssessmentCard } from "./teacher-assessment.js?v=30d66fdc235c";
+import { experimentCard, experimentsView } from "./experiments.js?v=30d66fdc235c";
 
 export const badge = (status, small = false) => `<span class="status ${e(status)} ${small ? "small" : ""}">${e(status || "pending")}</span>`;
 const empty = (text) => `<div class="empty-inline">${e(text)}</div>`;
@@ -103,7 +104,7 @@ export function overview(s, section = "overview") {
   const preview = lessons.find(row => row.teacher) || lessons[0];
   const iterations = `<section class="panel teaching-room"><div class="panel-heading"><h2>Iterations</h2><span class="quiet">${count(s.rounds.length, "iteration")} in this run</span></div>${iterationList(s)}</section>`;
   if (section === "teaching") return heading + studioNavigation(section) + recoveryNotice(s) + currentIteration(s) + (preview ? `<div class="section-heading"><h2>Inside the lesson</h2><button class="text-button" data-round="${e(round.id)}">All lessons & materials →</button></div>${lessonCard(preview, 0, false)}` : `<div class="teaching-placeholder"><h2>Teaching material</h2><p>Lessons and student attempts appear here when they are recorded.</p></div>`) + iterations;
-  return heading + sessionStrip(s) + `<div class="usage-grid studio-charts" aria-label="Training charts">${usageCharts(s.telemetry)}${efficiencyCard(s.telemetry)}${teacherAssessmentCard(s.teacherAssessment, s.round)}${benchmarkCard(s.benchmark, s.benchmarkBrowser)}${gpqaCard(s.gpqa)}</div><div class="chart-scope"><span>${s.telemetry ? `Usage across ${count(s.telemetry.campaign_count, "run")} in this continuation lineage` : "Loading recorded session usage"}</span><span>Independent eval observes checkpoints separately</span></div>${benchmarkHistory(s.benchmarkBrowser?.snapshot || s.benchmark, s.benchmarkBrowser)}${curriculumCard(s.curriculum_progress, s.teaching_cycle, s.continuous_training)}${studioNavigation(section)}${recoveryNotice(s)}<div class="studio-detail-grid">${currentIteration(s)}${chartPanel(s)}</div>${iterations}${learningWork(s.round?.learning_work)}`;
+  return heading + sessionStrip(s) + `<div class="usage-grid studio-charts" aria-label="Training charts">${usageCharts(s.telemetry)}${efficiencyCard(s.telemetry)}${teacherAssessmentCard(s.teacherAssessment, s.round)}${benchmarkCard(s.benchmark, s.benchmarkBrowser)}${gpqaCard(s.gpqa)}${mmluCard(s.mmluPro)}</div><div class="chart-scope"><span>${s.telemetry ? `Usage across ${count(s.telemetry.campaign_count, "run")} in this continuation lineage` : "Loading recorded session usage"}</span><span>Independent eval observes checkpoints separately</span></div>${benchmarkHistory(s.benchmarkBrowser?.snapshot || s.benchmark, s.benchmarkBrowser)}${curriculumCard(s.curriculum_progress, s.teaching_cycle, s.continuous_training)}${studioNavigation(section)}${recoveryNotice(s)}<div class="studio-detail-grid">${currentIteration(s)}${chartPanel(s)}</div>${iterations}${learningWork(s.round?.learning_work)}`;
 }
 
 function lessonCard(row, index, diff, selected) {

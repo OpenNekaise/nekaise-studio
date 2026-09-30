@@ -70,6 +70,36 @@ def test_partial_batch_uses_closed_fields_and_never_invents_eos_for_open_answer(
     assert rows[0]['training_response']=='one.'
 
 
+def test_full_text_alias_preserves_prose_and_normalization_provenance():
+    item = {'id':'prose', 'kind':'cpt', 'student_prompt':'', 'training_text':'',
+            'training_response':'', 'training_tokenization':'full_text',
+            'full_text':'  Exact prose.\nNästa stycke. ', 'source_keys':['source','unknown']}
+    rows,audit = recover({'rows':[item]})
+    CandidateBatch(rows=rows)
+    assert len(rows)==1 and rows[0]['training_text']==item['full_text']
+    assert rows[0]['training_tokenization']=='full_text' and rows[0]['training_response']==''
+    receipt = audit['rows'][rows[0]['id']]
+    assert receipt['text_field']=='full_text' and 'full_text' not in receipt['ignored_fields']
+    assert receipt['planned_material_scope']=='general_chat'
+    assert receipt['material_scope']=='general_prose'
+    assert rows[0]['source_keys']==['source']
+    assert receipt['unresolved_citations']=={'source_keys':['unknown']}
+    # Alternate copies of the same target remain one target.
+    item['training_text'] = item['full_text']
+    assert len(recover({'rows':[item]})[0])==1
+
+
+def test_full_text_alias_recovers_closed_targets_but_never_an_open_string():
+    text = '{"rows":[{"full_text":"Complete prose."},{"full_text":"Unfinished'
+    rows,audit = recover(text,complete=False,scope='general_prose')
+    assert [r['training_text'] for r in rows]==['Complete prose.']
+    assert audit['parser']=='row_fragments' and not audit['provider_complete']
+    for kind,content in [('final','{"rows":[{"full_text":"Unfinished'),
+                         ('nonfinal','{"rows":[{"full_text":"Provider error"}]}')]:
+        with pytest.raises(NoTrainingContent):
+            recover(content,complete=False,kind=kind)
+
+
 def test_broken_middle_row_does_not_discard_later_whole_rows_or_train_a_false_prefix():
     text='{"rows":[{"question":"one?","answer":"one."},{"question":"two?","answer":"wrong "quotes" here"},{"question":"three?","answer":"three."}]}'
     rows,audit=recover(text)
@@ -100,7 +130,7 @@ def test_empty_rows_do_not_discard_neighbours_and_distinct_targets_are_preserved
     assert [r['training_tokenization'] for r in rows]==['chat_response','full_text']
 
 
-@pytest.mark.parametrize('plain',[False,True])
+@pytest.mark.parametrize('plain',[False,True,'full_text'])
 def test_worker_freezes_partial_batch_once_with_exact_provenance(setup_loop,plain):
     requests=[]
     class Teacher(AuthorTeacher):
@@ -111,7 +141,9 @@ def test_worker_freezes_partial_batch_once_with_exact_provenance(setup_loop,plai
             return p
     original={'rows':[{}, {'id':'bad id', 'student_prompt':'Hej?', 'training_response':'  Hej, hur går det?\n',
                           'source_keys':['unresolved-source'], 'note':False}]}
-    content='Actual returned prose.' if plain else json.dumps(original)
+    content = (json.dumps({'rows':[{'training_text':'', 'training_response':'',
+                                   'full_text':'Actual returned prose.'}]}) if plain=='full_text'
+               else 'Actual returned prose.' if plain else json.dumps(original))
     def handler(req):
         requests.append(json.loads(req.content))
         return httpx.Response(200,json={'choices':[{'finish_reason':'stop','message':{'content':content}}],

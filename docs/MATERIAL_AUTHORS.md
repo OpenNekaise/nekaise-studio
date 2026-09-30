@@ -35,7 +35,10 @@ keeps historical requests byte-identical. Recovery preserves the selected policy
 
 The host accepts each usable text target once, without another Teacher/Author call.
 It handles JSON arrays, known wrappers, fenced JSON, ordinary question/answer aliases,
-and explicit user/assistant messages. Extra metadata is kept in the raw artifact;
+explicit user/assistant messages, and prose in `full_text` as well as `training_text`.
+The receipt records the actual source field; an empty canonical field does not hide
+usable alias text. Closed-string and response-boundary checks also apply to aliases.
+Extra metadata is kept in the raw artifact;
 missing concept/rationale receive identified host defaults, never invented teaching
 content. IDs are deterministic and local to the job, with supplied IDs retained.
 Missing/mistyped citation keys remain `material_origin.unresolved_citations`; only

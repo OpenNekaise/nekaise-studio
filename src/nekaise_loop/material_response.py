@@ -12,7 +12,7 @@ from .material_types import Candidate
 WRAPPERS = ('rows', 'candidates', 'examples', 'materials', 'data')
 PROMPTS = ('student_prompt', 'question', 'prompt', 'user_prompt', 'input')
 ANSWERS = ('training_response', 'answer', 'response', 'completion', 'output')
-TEXTS = ('training_text', 'text', 'content', 'prose')
+TEXTS = ('training_text', 'full_text', 'text', 'content', 'prose')
 
 
 class NoTrainingContent(ValueError):

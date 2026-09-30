@@ -18,6 +18,16 @@ from .providers.material import AUTHOR_TRANSPORTS, AuthorHTTPError
 from .storage import encode, now
 
 
+# These acquisition records remain in the immutable job spec and candidate
+# provenance. Authors need the exact reference text, not the fetch machinery.
+# Use a denylist so new educational/source fields are retained by default.
+AUTHOR_ACQUISITION_FIELDS = frozenset({
+    "raw_response_artifact", "robots_artifact", "redirect_chain", "bytes",
+    "content_type", "extractor", "license_evidence_artifact",
+    "reference_from_collection", "training_permission",
+})
+
+
 def initialize_jobs(store):
     # The normal workspace worker lock owns dispatch. No independent scheduler
     # or lease timeout may steal a still-running request from that worker.
@@ -148,7 +158,14 @@ def request_body(author, spec, schema, *, response_policy='strict_v1'):
     # Repeated extra_forbidden feedback alone can induce renamed annotation
     # fields. Derive this projection from the same schema, without weakening
     # host validation or repairing any returned material.
-    payload = {"task": spec, "output_schema": schema, "response_contract": {
+    # Keys still identify the ORIGINAL source objects. Never digest the view,
+    # mutate the spec, truncate text or select sources to fit an execution cap.
+    task = {**spec, "sources": {
+        key: {field: value for field, value in source.items()
+              if field not in AUTHOR_ACQUISITION_FIELDS}
+        for key, source in spec["sources"].items()
+    }}
+    payload = {"task": task, "output_schema": schema, "response_contract": {
         "top_level_keys": list(schema["properties"]),
         "allowed_row_keys": list(properties),
         "required_row_keys": list(candidate_schema["required"]),
@@ -274,7 +291,10 @@ async def _execute(ctx, specs, pool, client_factory):
         body = request_body(author, spec, schema, response_policy=ctx.config.material_response_policy)
         size = len(json.dumps(body, ensure_ascii=False))
         if size > pool.max_input_chars_per_call or body["max_tokens"] > author.max_output_tokens:
-            raise ValueError(f"Material job {spec['job']['id']} exceeds its request execution limits")
+            raise ValueError(
+                f"Material job {spec['job']['id']} exceeds its request execution limits: "
+                f"input_chars={size}/{pool.max_input_chars_per_call}, "
+                f"output_tokens={body['max_tokens']}/{author.max_output_tokens}")
         if author.transport == "claude_code" and body["max_tokens"] < 256:
             raise ValueError("Claude Code jobs need at least 256 reserved output tokens")
         payload = {"version": 1, "round_id": ctx.round["id"], "author": author.model_dump(), "spec": spec, "request": body}

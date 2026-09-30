@@ -398,6 +398,17 @@ exact training text and response, and source provenance remain intact. This avoi
 demonstrating an invalid output field; it does not guarantee that a provider will
 follow the schema or finish within the teacher's chosen output allowance.
 
+Provider-facing source views retain every citation key, exact reference text,
+title, URL, span/hash identity and educational context. They omit only acquisition
+fields `raw_response_artifact`, `robots_artifact`, `redirect_chain`, `bytes`,
+`content_type`, `extractor`, `license_evidence_artifact`,
+`reference_from_collection` and `training_permission`. The immutable job spec and
+candidate provenance retain the complete original source objects; citation keys
+continue to identify those originals. This avoids repeating fetch machinery in
+every GPC Author request. It does not select or shorten source text, increase
+budgets or change source admission. Preflight measures the actual serialized
+request and reports measured input/output limits before any jobs are dispatched.
+
 Complete jobs are keyed by round, immutable plan/seeds/sources, provider configuration
 and exact request content. Retry reuses only complete matching results. Responses are
 saved before successful completion is recorded; crashes before completion can still

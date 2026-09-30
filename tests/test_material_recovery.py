@@ -141,6 +141,56 @@ def test_author_citation_schema_is_job_scoped_and_host_still_checks_provenance()
     assert candidates(result, empty)[0]["source_keys"] == []
 
 
+def test_author_reference_view_preserves_text_keys_and_original_provenance():
+    from copy import deepcopy
+    from nekaise_loop.artifacts import digest
+    from nekaise_loop.material_jobs import request_body
+    from nekaise_loop.material_types import CandidateBatch
+
+    source = {"id": "reference", "text": "Å precise excerpt.\n" * 6000,
+              "url": "https://fixture.invalid/source", "title": "Reference",
+              "source_sha256": "a" * 64, "span_start": 42,
+              "selection_reason": "Teacher-selected context", "excerpt_truncated": True,
+              "future_educational_field": "Preserve unknown context",
+              "robots_artifact": "b" * 64, "raw_response_artifact": "c" * 64,
+              "redirect_chain": ["https://fixture.invalid/original"],
+              "training_permission": {"scope_reason": "saved admission evidence"}}
+    key = digest(source)
+    spec = {"sources": {key: source}, "job": {"seed_ids": [], "max_output_tokens": 512}}
+    original = deepcopy(spec)
+    body = request_body(author(), spec, CandidateBatch.model_json_schema(), response_policy="salvage_v1")
+    payload = json.loads(body["messages"][1]["content"])
+    view = payload["task"]["sources"][key]
+    assert spec == original and digest(source) == key
+    assert view == {k: v for k, v in source.items() if k not in {
+        "robots_artifact", "raw_response_artifact", "redirect_chain", "training_permission"}}
+    assert payload["output_schema"]["$defs"]["Candidate"]["properties"]["source_keys"]["items"]["enum"] == [key]
+    assert digest(view) != key  # citations refer to the saved original, not this view
+
+
+def test_oversized_author_text_still_fails_before_dispatch(setup_loop, monkeypatch):
+    from nekaise_loop import materials
+    from nekaise_loop.material_jobs import run_jobs
+
+    def oversized(ctx, specs):
+        for spec in specs:
+            spec["sources"] = {"fixture": {"text": "x" * 120001,
+                                             "robots_artifact": "b" * 64}}
+        return run_jobs(ctx, specs)
+
+    def forbidden(request):
+        pytest.fail("Oversized text must fail before any provider request")
+
+    monkeypatch.setattr(materials, "run_jobs", oversized)
+    _, service, campaign, engine = configured(setup_loop, handler=forbidden)
+    engine.run(campaign["id"])
+    failed = service.store.campaign(campaign["id"])
+    assert "input_chars=" in failed["error"] and "/120000" in failed["error"]
+    assert "output_tokens=512/" in failed["error"]
+    assert service.store.one("SELECT COUNT(*) AS n FROM material_jobs")["n"] == 0
+    assert service.store.one("SELECT COUNT(*) AS n FROM material_calls")["n"] == 0
+
+
 @pytest.mark.parametrize("mutation", ["delete", "insert", "transpose", "metadata"])
 def test_citation_copy_errors_remain_rejected_without_rewriting_rows(mutation):
     from types import SimpleNamespace

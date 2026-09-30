@@ -145,7 +145,7 @@ def test_fault_wakes_distinct_orchestrator_and_decision_is_applied_once(setup_lo
     assert tick(service) == ["recover", str(incident["id"])]
     def agent(settings, row, campaign, directory, runner):
         assert campaign["config"]["orchestrator_model"] == "gpt-6-astra"
-        assert campaign["config"]["teacher_model"] == "gpt-5.6-terra"
+        assert campaign["config"]["teacher_model"] == "gpt-6.1-sol"
         assert runner.table == "recoveries"
         with pytest.raises(BlockingIOError):
             with source_lock():

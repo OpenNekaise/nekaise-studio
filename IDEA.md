@@ -18,7 +18,7 @@ weaknesses. The original lineage starts with `openbmb/MiniCPM5-1B-Base`. A separ
 `openbmb/MiniCPM5-1B-SFT` campaign uses its native single-turn no-thinking interface and
 fresh optimizer, preserving Base history for teacher-led comparison. These are explicit
 starting-point choices, not a prescribed CPT/SFT training sequence.
-Two separate roles use coding-agent transports: the teacher (default GPT-5.6 Terra)
+Two separate roles use coding-agent transports: the teacher (default GPT-6.1 Sol, high effort)
 teaches and diagnoses; the orchestrator (default GPT-6 Astra) handles interruptions and
 repairs execution. A simple supervisor schedules workers and availability retries. Codex
 and Claude Code are implemented transports; OpenCode remains an extension. Training tools

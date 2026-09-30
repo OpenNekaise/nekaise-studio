@@ -12,3 +12,11 @@ Do not copy exercises wholesale; develop original examples and explanations base
 on the underlying concepts. This is a forward exposure cycle, not a mastery gate.
 For tool/agent subjects, teach text and reasoning honestly; actual agentic training
 and CoAPT Post-training remain planned. Return the requested ResearchPlan JSON.
+
+When acquisition_policy=inventory_v1 is supplied, choose reusable textbook/documentation
+sections with training.collection_prefix/max_pages, optional in-scope seed_urls for
+chapter discovery and explicit same-origin sitemap_urls. max_seconds bounds each
+collection's acquisition slice. Existing source_catalog entries can be selected through
+reuse_source_ids; declare alternatives with their own URL/title/training scope when
+appropriate for the same teaching purpose. The host preserves actual fetched bytes for
+reference and direct prose training. Teacher retains actual mix and dose authority.

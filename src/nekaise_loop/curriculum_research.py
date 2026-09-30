@@ -132,6 +132,7 @@ def fetch_source(request, *, cancelled=lambda: False, client_factory=httpx.Clien
 
 
 def research(ctx, work):
+    from . import web_inventory
     keys = (work["namespace"], work["sequence"])
     saved = ctx.store.one("SELECT research_artifact FROM curriculum_assignments WHERE namespace=? AND sequence=?", keys)
     if saved["research_artifact"]:
@@ -144,9 +145,23 @@ def research(ctx, work):
     if path.exists():
         plan = ResearchPlan.model_validate_json(path.read_text()).model_dump()
     else:
-        plan = ResearchPlan.model_validate(ctx.teacher.research({"unit": work["unit"],
-            "gpc_cycle": work["gpc_cycle"], "instruction": "Search the live web for this unit; choose a few accessible primary HTML/text pages. Generate no benchmark items or benchmark feedback."})).model_dump()
+        brief={"unit":work['unit'],"gpc_cycle":work['gpc_cycle'],
+            'instruction':'Search the live web for this unit; choose accessible primary HTML/text sources. Generate no benchmark items or benchmark feedback.'}
+        if web_inventory.enabled(ctx):
+            key=work['before'].get('web_coverage_artifact')
+            positions=ctx.artifacts.get(key)['positions'] if key else {}
+            brief['source_catalog']=web_inventory.catalog(ctx,[work['unit']['id']],positions)
+            brief['acquisition_policy']='inventory_v1'
+        plan = ResearchPlan.model_validate(ctx.teacher.research(brief)).model_dump()
         atomic_write(path, canonical(plan))
+    if web_inventory.enabled(ctx):
+        result=web_inventory.research_sources(ctx,plan,work['unit']['id'])
+        artifact=ctx.artifacts.put(result)
+        if not result['sources']:
+            raise ValueError('No research source could be retrieved; inspect '+artifact)
+        ctx.store.execute('UPDATE curriculum_assignments SET research_artifact=? WHERE namespace=? AND sequence=?',
+                          (artifact,*keys))
+        return result
     sources, failures = [], []
     from .processes import Cancelled
     for request in plan["sources"]:

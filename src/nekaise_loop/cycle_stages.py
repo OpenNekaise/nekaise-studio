@@ -25,6 +25,7 @@ def units_for(ctx, cycle):
 
 
 def research(ctx):
+    from . import web_inventory
     cycle = cycle_for(ctx.store, ctx.round["id"])
     block = ctx.store.one("SELECT * FROM teaching_blocks WHERE round_id=?", (ctx.round["id"],))
     if block["assignment_artifact"]:
@@ -68,7 +69,13 @@ def research(ctx):
     requested = list({u["id"]: u for u in units if u["id"] not in available}.values())
     plans = saved["plans"]
     if plans is None:
-        plans = CycleResearch.model_validate(ctx.teacher.cycle_research({"units": requested})).model_dump()["units"] if requested else []
+        brief={"units":requested}
+        if web_inventory.enabled(ctx):
+            coverage=work['before'].get('web_coverage_artifact')
+            positions=ctx.artifacts.get(coverage)['positions'] if coverage else {}
+            brief['source_catalog']=web_inventory.catalog(ctx,[u['id'] for u in units],positions)
+            brief['acquisition_policy']='inventory_v1'
+        plans = CycleResearch.model_validate(ctx.teacher.cycle_research(brief)).model_dump()["units"] if requested else []
         if len(plans) != len(requested) or {u["unit_id"] for u in plans} != {u["id"] for u in requested}:
             raise ValueError("Cycle research must cover every requested unit exactly once")
         key = ctx.artifacts.put({"plans": plans, "units": list(available.values())})
@@ -78,6 +85,15 @@ def research(ctx):
     from .curriculum_research import fetch_source
     for entry in plans:
         if entry["unit_id"] in available:
+            continue
+        if web_inventory.enabled(ctx):
+            evidence=web_inventory.research_sources(ctx,entry['plan'],entry['unit_id'])
+            if not evidence['sources']:
+                raise ValueError('No research source retrieved for cycle unit; inspect '+ctx.artifacts.put(evidence))
+            available[entry['unit_id']]=evidence
+            preserve_assignment_research()
+            ctx.store.execute('UPDATE teaching_cycles SET research_artifact=? WHERE id=?',
+                (ctx.artifacts.put({'plans':plans,'units':list(available.values())}),cycle['id']))
             continue
         sources, failures = [], []
         for request in entry["plan"]["sources"]:
@@ -107,6 +123,7 @@ def research(ctx):
 
 
 def plan(ctx):
+    from . import web_inventory
     cycle = cycle_for(ctx.store, ctx.round["id"])
     if cycle["plan_artifact"]:
         return ctx.artifacts.get(cycle["plan_artifact"])
@@ -115,7 +132,12 @@ def plan(ctx):
     work = ctx.artifacts.get(block["assignment_artifact"])
     authors = required_authors(ctx)
     references = ctx.output('cycle_research')['units']
+    coverage=work['before'].get('web_coverage_artifact')
+    positions=ctx.artifacts.get(coverage)['positions'] if coverage else {}
     for unit in references:
+        if web_inventory.enabled(ctx):
+            unit['training_supply']=web_inventory.fresh_supply(ctx,unit,positions)
+            continue
         unit['training_supply'] = []
         for key in unit.get('training_collections', []):
             collection = ctx.artifacts.get(key)

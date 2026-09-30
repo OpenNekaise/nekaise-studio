@@ -18,7 +18,7 @@ _NEXT = {}
 
 def permitted_source_url(url):
     value = unquote(url).casefold()
-    excluded = ('nemotron-cc', 'fineweb', 'dclm', 'dolma', '/datasets/gpqa', '/gpqa/',
+    excluded = ('nemotron-cc', 'fineweb', 'dclm', 'dolma', 'gpqa', 'mmlu-pro', 'mmlu_pro',
                 'commoncrawl.org', 'data.commoncrawl.org')
     if any(name in value for name in excluded):
         raise ValueError('Source belongs to an excluded general dataset or benchmark collection')
@@ -53,12 +53,14 @@ def robots(url):
                           'text':bytes(raw).decode('utf-8', errors='replace'), 'retrieved_at':now()}
 
 
-def wait_turn(url, delay, cancelled):
+def wait_turn(url, delay, cancelled, *, deadline=None):
     host = urlsplit(url).netloc
     with _LOCK:
-        deadline = max(time.monotonic(), _NEXT.get(host, 0))
-        _NEXT[host] = deadline+delay
-    while time.monotonic() < deadline:
+        turn = max(time.monotonic(), _NEXT.get(host, 0))
+        if deadline is not None and turn >= deadline:
+            raise TimeoutError('Host pacing exceeds the acquisition deadline')
+        _NEXT[host] = turn+delay
+    while time.monotonic() < turn:
         if cancelled():
             raise Cancelled('Web collection cancelled during host pacing')
-        time.sleep(max(0, min(.1, deadline-time.monotonic())))
+        time.sleep(max(0, min(.1, turn-time.monotonic())))

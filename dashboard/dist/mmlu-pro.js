@@ -1,7 +1,7 @@
-import { escapeHTML as e, number, dateLabel } from "./lib.js?v=480205a6b79a";
+import { escapeHTML as e, number, dateLabel } from "./lib.js?v=54fd9ba1f414";
 
 const pct = value => Number.isFinite(value) ? `${number(value * 100, 1)}%` : "—";
-import { SFT_BASELINE_ID } from "./gpqa.js?v=480205a6b79a";
+import { SFT_BASELINE_ID } from "./gpqa.js?v=54fd9ba1f414";
 const isBaseline = row => row?.model_id === SFT_BASELINE_ID;
 const model = row => `${isBaseline(row) ? "MiniCPM5-1B-SFT · starting point" : row.model_label}${row.round_number ? ` · iteration ${row.round_number}` : ""} · ${row.model_id?.slice(0, 8) || "pending identity"}`;
 const compatible = (a, b) => a.protocol_id === b.protocol_id && a.dataset_sha256 === b.dataset_sha256 &&

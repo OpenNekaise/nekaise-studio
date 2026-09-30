@@ -81,6 +81,12 @@ requests orchestration. Independent benchmark scores remain outside every decisi
 
 ## GPC web prose
 
+September 30 adds opt-in [reusable source inventory](WEB-INVENTORY.md): Teacher-selected
+catalog reuse, chapter/index and sitemap discovery, declared alternative sources,
+cached raw responses and exact fresh-character supply. It uses `web_crawl_policy=inventory_v1`
+without increasing the existing training lookahead or Author budgets. The following
+single-collection description also documents the historical `bounded_v1` path.
+
 `curriculum_loop.web_training=true` enables direct source prose. The later September 29
 operator instruction selects `web_training_policy=teacher_selected_v1`, removing every
 license admission check and license-evidence fetch. Research-nominated pages are available

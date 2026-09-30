@@ -176,6 +176,16 @@ def add_collections(ctx, research):
     """Original research snapshots remain reference-only; attach distinct authorization."""
     if not ctx.config.curriculum_loop.web_training:
         return research
+    from . import web_inventory
+    if web_inventory.enabled(ctx):
+        if research.get('acquisition_policy')=='inventory_v1':
+            return research
+        # Legacy reference snapshots remain immutable; acquire separate full-text
+        # inventory under the same saved Teacher plan when the new policy activates.
+        result=web_inventory.research_sources(ctx,research['plan'],research['unit_id'])
+        if not result['sources']:
+            raise ValueError('No source inventory retrieved; inspect '+ctx.artifacts.put(result))
+        return result
     policy = ctx.config.curriculum_loop.web_training_policy
     requests = [r for r in research['plan']['sources']
                 if policy == 'teacher_selected_v1' or r.get('training')]

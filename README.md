@@ -1,5 +1,10 @@
 # nekaise-studio
 
+GPC web acquisition supports [reusable source inventory](docs/WEB-INVENTORY.md):
+Teacher-selected textbook sections, explicit index/sitemap discovery, cached source
+bytes, declared alternatives and fresh coverage accounting. GPT-6.1 Sol at high effort
+is the primary Teacher; Authors remain additive and the recovery orchestrator is separate.
+
 Current throughput direction: [continuous training windows](docs/CONTINUOUS-TRAINING.md)
 prepare the next corpus/GPC window while a resident model trains, and grade saved
 student answers asynchronously. Eligible GPC web prose joins original Teacher/Author

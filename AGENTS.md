@@ -1,5 +1,20 @@
 # Working on Nekaise Studio
 
+## Reusable web sources and Teacher upgrade (authorized 2026-09-30)
+
+Use `gpt-6.1-sol` at high effort as the primary Teacher. Preserve the separate
+orchestrator, all four Authors, existing provider budgets, Kai identity and compatible
+Adam. The operator approved the crawler expansion assessed with Claude Opus 5.5 high:
+`curriculum_loop.web_crawl_policy=inventory_v1`, Teacher-selected reusable source
+catalogs, chapter/index and explicit sitemap discovery, scoped alternative sources,
+verified same-host HTTPS links, bounded robots redirects/retries and cached source
+bytes. No license checks. Teacher chooses actual web/corpus/generated mix and dose;
+more available prose does not impose a ratio or increase Author reservations.
+See [WEB-INVENTORY.md](docs/WEB-INVENTORY.md) for bounds and provenance. Preserve two
+future training windows, two unreviewed cycles and exact durable coverage. PDF and
+rendered JavaScript remain deferred. Validate, publish and resume automatically through
+a verified continuation, carrying outstanding assessments and operational findings.
+
 ## Retain usable Author text (authorized 2026-09-29)
 
 Use `material_response_policy=salvage_v1` in the continuing workload. Receive Author

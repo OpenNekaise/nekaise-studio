@@ -36,7 +36,7 @@ class CampaignConfig(BaseModel):
     student_identity: StudentIdentity | None = Field(default=None, description="Immutable identity/character target and named major.minor development version; absent on legacy campaigns")
     student_format: Literal["raw_text", "chat_template"] = Field(default="raw_text", description="raw_text preserves literal continuation; chat_template uses the checkpoint's native single-user, no-thinking assistant prefix")
     teacher_provider: Literal["claude", "codex"] = "codex"
-    teacher_model: str = Field(default="gpt-5.6-terra", min_length=1, max_length=150)
+    teacher_model: str = Field(default="gpt-6.1-sol", min_length=1, max_length=150)
     expansion_policy: Literal["required_v1", "legacy_optional"] = Field(default="required_v1", description="Operator requirement: positive training must consume teacher-selected expanded material. legacy_optional preserves explicitly selected historical/test behavior.")
     material_review_policy: Literal["teacher_review_v1", "trusted_author_v1"] = Field(default="teacher_review_v1", description="Operator workflow: trusted_author_v1 preauthorizes complete author batches through the teacher curriculum, without a post-generation Teacher review call. Default preserves historical review behavior.")
     material_response_policy: Literal["strict_v1", "salvage_v1"] = Field(default="strict_v1", description="Historical strict parsing or operator-authorized recovery of all usable Author teaching text with immutable normalization evidence")

@@ -1,11 +1,11 @@
-import { createModelChat } from "./model-chat.js?v=480205a6b79a";
-import { escapeHTML as e, time, modelLabel, readAPIResponse } from "./lib.js?v=480205a6b79a";
-import { overview, iterationView, historyView, reportsView, emptyStudio, badge, recoveryNotice, studioScope, studioNavigation } from "./views.js?v=480205a6b79a";
-import { elapsedLabel } from "./telemetry.js?v=480205a6b79a";
+import { createModelChat } from "./model-chat.js?v=54fd9ba1f414";
+import { escapeHTML as e, time, modelLabel, readAPIResponse } from "./lib.js?v=54fd9ba1f414";
+import { overview, iterationView, historyView, reportsView, emptyStudio, badge, recoveryNotice, studioScope, studioNavigation } from "./views.js?v=54fd9ba1f414";
+import { elapsedLabel } from "./telemetry.js?v=54fd9ba1f414";
 
-import { createAssessmentHistory } from "./teacher-assessment.js?v=480205a6b79a";
-import { createBenchmarkBrowser } from "./benchmark-browser.js?v=480205a6b79a";
-import { createExperimentBrowser } from "./experiment-browser.js?v=480205a6b79a";
+import { createAssessmentHistory } from "./teacher-assessment.js?v=54fd9ba1f414";
+import { createBenchmarkBrowser } from "./benchmark-browser.js?v=54fd9ba1f414";
+import { createExperimentBrowser } from "./experiment-browser.js?v=54fd9ba1f414";
 
 const $ = id => document.getElementById(id);
 const state = {
@@ -406,7 +406,7 @@ document.addEventListener("change", event => {
   if (event.target.id === "history-filter") { state.historyFilter = event.target.value; return render(true); }
   if (event.target.id === "campaign-picker") return changeCampaign(event.target.value);
   if (event.target.id === "round-picker") return openIteration(event.target.value);
-  if (event.target.name === "teacher_provider") $("campaign-form").elements.teacher_model.value = event.target.value === "claude" ? "claude-fable-5-1" : "gpt-5.6-terra";
+  if (event.target.name === "teacher_provider") $("campaign-form").elements.teacher_model.value = event.target.value === "claude" ? "claude-fable-5-1" : "gpt-6.1-sol";
   if (event.target.name === "orchestrator_provider") $("campaign-form").elements.orchestrator_model.value = event.target.value === "claude" ? "claude-fable-5-1" : "gpt-6-astra";
 });
 document.addEventListener("input", event => {

@@ -1,0 +1,433 @@
+{
+  "version": "0.1",
+  "purpose": "Operator-requested offline energy and physical modeling dataset preparation; never starts training",
+  "version_policy": "Pin every resolved Git commit. Explicit tags are release snapshots; HEAD is a labeled development snapshot, never claimed to be a release.",
+  "repositories": [
+    {
+      "repo": "modelica/ModelicaStandardLibrary",
+      "ref": "refs/tags/v4.1.0",
+      "categories": [
+        "modelica",
+        "thermal_fluid",
+        "numerics_coupling"
+      ]
+    },
+    {
+      "repo": "modelica/ModelicaSpecification",
+      "categories": [
+        "modelica",
+        "numerics_coupling"
+      ]
+    },
+    {
+      "repo": "lbl-srg/modelica-buildings",
+      "ref": "refs/tags/v13.0.0",
+      "categories": [
+        "modelica",
+        "energyplus_bes",
+        "thermal_fluid",
+        "controls_calibration"
+      ]
+    },
+    {
+      "repo": "ibpsa/modelica-ibpsa",
+      "categories": [
+        "modelica",
+        "thermal_fluid",
+        "controls_calibration"
+      ]
+    },
+    {
+      "repo": "RWTH-EBC/AixLib",
+      "categories": [
+        "modelica",
+        "thermal_fluid",
+        "energyplus_bes"
+      ]
+    },
+    {
+      "repo": "open-ideas/IDEAS",
+      "categories": [
+        "modelica",
+        "thermal_fluid",
+        "controls_calibration"
+      ]
+    },
+    {
+      "repo": "UdK-VPT/BuildingSystems",
+      "categories": [
+        "modelica",
+        "thermal_fluid",
+        "solar_daylight"
+      ]
+    },
+    {
+      "repo": "RWTH-EBC/BESMod",
+      "categories": [
+        "modelica",
+        "energyplus_bes",
+        "controls_calibration"
+      ]
+    },
+    {
+      "repo": "EDF-TREE/BuildSysPro",
+      "categories": [
+        "modelica",
+        "thermal_fluid",
+        "energyplus_bes"
+      ]
+    },
+    {
+      "repo": "casella/ThermoPower",
+      "categories": [
+        "modelica",
+        "thermal_fluid"
+      ]
+    },
+    {
+      "repo": "DLR-SR/ThermofluidStream",
+      "categories": [
+        "modelica",
+        "thermal_fluid"
+      ]
+    },
+    {
+      "repo": "xogeny/ModelicaBook",
+      "categories": [
+        "modelica",
+        "numerics_coupling"
+      ]
+    },
+    {
+      "repo": "OpenModelica/OpenModelica-doc",
+      "prefixes": [
+        "UsersGuide/",
+        "README"
+      ],
+      "categories": [
+        "modelica",
+        "numerics_coupling"
+      ]
+    },
+    {
+      "repo": "NREL/EnergyPlus",
+      "prefixes": [
+        "doc/",
+        "src/EnergyPlus/",
+        "testfiles/",
+        "datasets/",
+        "idd/",
+        "README"
+      ],
+      "categories": [
+        "energyplus_bes",
+        "thermal_fluid",
+        "controls_calibration"
+      ]
+    },
+    {
+      "repo": "NREL/OpenStudio",
+      "prefixes": [
+        "src/",
+        "doc/",
+        "resources/model/",
+        "README"
+      ],
+      "categories": [
+        "energyplus_bes"
+      ]
+    },
+    {
+      "repo": "modelica/fmi-standard",
+      "categories": [
+        "numerics_coupling"
+      ]
+    },
+    {
+      "repo": "lbl-srg/BuildingsPy",
+      "categories": [
+        "modelica",
+        "controls_calibration"
+      ]
+    },
+    {
+      "repo": "RWTH-EBC/TEASER",
+      "categories": [
+        "modelica",
+        "energyplus_bes"
+      ]
+    },
+    {
+      "repo": "RWTH-EBC/ebcpy",
+      "categories": [
+        "modelica",
+        "controls_calibration"
+      ]
+    },
+    {
+      "repo": "RWTH-EBC/AixCaliBuHA",
+      "categories": [
+        "modelica",
+        "controls_calibration"
+      ]
+    },
+    {
+      "repo": "ibpsa/project1-boptest",
+      "categories": [
+        "modelica",
+        "controls_calibration"
+      ]
+    },
+    {
+      "repo": "oemof/tespy",
+      "categories": [
+        "thermal_fluid"
+      ]
+    },
+    {
+      "repo": "CoolProp/CoolProp",
+      "prefixes": [
+        "Web/",
+        "doc/",
+        "src/",
+        "include/",
+        "examples/",
+        "README"
+      ],
+      "categories": [
+        "thermal_fluid"
+      ]
+    },
+    {
+      "repo": "ladybug-tools/honeybee-energy",
+      "categories": [
+        "energyplus_bes",
+        "solar_daylight"
+      ]
+    },
+    {
+      "repo": "santoshphilip/eppy",
+      "categories": [
+        "energyplus_bes"
+      ]
+    },
+    {
+      "repo": "pvlib/pvlib-python",
+      "categories": [
+        "solar_daylight",
+        "thermal_fluid"
+      ]
+    },
+    {
+      "repo": "NatLabRockies/Spawn",
+      "categories": [
+        "modelica",
+        "energyplus_bes",
+        "numerics_coupling"
+      ]
+    },
+    {
+      "repo": "LLNL/sundials",
+      "prefixes": [
+        "doc/",
+        "examples/",
+        "README"
+      ],
+      "categories": [
+        "numerics_coupling"
+      ]
+    },
+    {
+      "repo": "LBNL-ETA/Radiance",
+      "ref": "refs/heads/master",
+      "categories": [
+        "solar_daylight"
+      ]
+    },
+    {
+      "repo": "usnistgov/fipy",
+      "prefixes": [
+        "documentation/",
+        "examples/",
+        "fipy/",
+        "README"
+      ],
+      "categories": [
+        "numerics_coupling",
+        "thermal_fluid"
+      ]
+    }
+  ],
+  "web_sources": [
+    {
+      "id": "modelica-specification-3.7",
+      "url": "https://specification.modelica.org/maint/3.7/",
+      "prefix": "https://specification.modelica.org/maint/3.7/",
+      "categories": [
+        "modelica",
+        "numerics_coupling"
+      ]
+    },
+    {
+      "id": "openmodelica-user-guide",
+      "url": "https://openmodelica.org/doc/OpenModelicaUsersGuide/latest/",
+      "prefix": "https://openmodelica.org/doc/OpenModelicaUsersGuide/latest/",
+      "categories": [
+        "modelica",
+        "numerics_coupling"
+      ]
+    },
+    {
+      "id": "energyplus-26.2-docs",
+      "url": "https://energyplus.readthedocs.io/en/latest/",
+      "prefix": "https://energyplus.readthedocs.io/en/latest/",
+      "categories": [
+        "energyplus_bes",
+        "thermal_fluid"
+      ]
+    },
+    {
+      "id": "modelica-by-example",
+      "url": "https://mbe.modelica.university/",
+      "prefix": "https://mbe.modelica.university/",
+      "categories": [
+        "modelica",
+        "thermal_fluid"
+      ]
+    },
+    {
+      "id": "trnsys-public-support",
+      "url": "https://www.trnsys.com/support/",
+      "prefix": "https://www.trnsys.com/support/",
+      "categories": [
+        "other_bes",
+        "thermal_fluid"
+      ]
+    },
+    {
+      "id": "coolprop-docs",
+      "url": "https://coolprop.org/",
+      "prefix": "https://coolprop.org/",
+      "categories": [
+        "thermal_fluid"
+      ]
+    },
+    {
+      "id": "tespy-docs",
+      "url": "https://tespy.readthedocs.io/en/main/",
+      "prefix": "https://tespy.readthedocs.io/en/main/",
+      "categories": [
+        "thermal_fluid"
+      ]
+    },
+    {
+      "id": "espr-current-documentation",
+      "url": "https://appdocs.esru.strath.ac.uk/books",
+      "prefix": "https://appdocs.esru.strath.ac.uk/books",
+      "categories": [
+        "other_bes",
+        "thermal_fluid"
+      ]
+    },
+    {
+      "id": "espr-courseware",
+      "url": "https://www.esru.strath.ac.uk/Courseware/ESP-r/tour/Overview.html",
+      "prefix": "https://www.esru.strath.ac.uk/Courseware/ESP-r/",
+      "categories": [
+        "other_bes",
+        "thermal_fluid"
+      ]
+    },
+    {
+      "id": "espr-introduction-2024",
+      "url": "https://www.esru.strath.ac.uk/Documents/2024_Introduction_to_ESP-r_1ed.pdf",
+      "format": "pdf",
+      "version_note": "2024 first edition; not a claim about latest software",
+      "categories": [
+        "other_bes",
+        "thermal_fluid"
+      ]
+    },
+    {
+      "id": "espr-user-guide-10",
+      "url": "https://www.esru.strath.ac.uk/Documents/ESP-r_userguide.pdf",
+      "format": "pdf",
+      "version_note": "Legacy version 10 guide, separately labeled",
+      "categories": [
+        "other_bes",
+        "thermal_fluid"
+      ]
+    },
+    {
+      "id": "trnsys-17-mathematical-reference",
+      "url": "https://trnsys.org/MaillistArchive/pdfkSLYr_lzDr.pdf",
+      "format": "pdf",
+      "version_note": "Publicly hosted TRNSYS 17 mathematical reference; not TRNSYS 18 coverage",
+      "categories": [
+        "other_bes",
+        "thermal_fluid"
+      ]
+    },
+    {
+      "id": "trnsys-18-update-guide",
+      "url": "https://trnsys.org/files/trnsys18_0_updates.pdf",
+      "format": "pdf",
+      "version_note": "TRNSYS 18 update guide; not the complete manual set",
+      "categories": [
+        "other_bes",
+        "thermal_fluid"
+      ]
+    },
+    {
+      "id": "annex60-final-report",
+      "url": "https://www.iea-annex60.org/downloads/iea-ebc-annex60-final-report.pdf",
+      "format": "pdf",
+      "version_note": "IEA EBC Annex 60 final report",
+      "categories": [
+        "modelica",
+        "thermal_fluid",
+        "numerics_coupling"
+      ]
+    },
+    {
+      "id": "modelica-buildings-tutorial-2024",
+      "url": "https://simulationresearch.lbl.gov/modelica/downloads/workshops/2024-10-14-american-modelica/tutorial_slides.pdf",
+      "format": "pdf",
+      "version_note": "October 2024 workshop slides; images retained in original PDF",
+      "categories": [
+        "modelica",
+        "thermal_fluid"
+      ]
+    },
+    {
+      "id": "contam-3.4-reference",
+      "url": "https://nvlpubs.nist.gov/nistpubs/TechnicalNotes/NIST.TN.1887r1.pdf",
+      "format": "pdf",
+      "version_note": "NIST TN1887r1, CONTAM3.4, 2020",
+      "categories": [
+        "thermal_fluid",
+        "numerics_coupling"
+      ]
+    },
+    {
+      "id": "champs-public-manual",
+      "url": "https://beesl.syr.edu/wp-content/uploads/2016/11/CHAMPS_manual.pdf",
+      "format": "pdf",
+      "version_note": "Public CHAMPS manual; independent related scope, not an interpretation of CHANCES",
+      "categories": [
+        "other_bes",
+        "thermal_fluid"
+      ]
+    }
+  ],
+  "unresolved": [
+    {
+      "name": "CHANCES",
+      "status": "awaiting operator clarification; not silently mapped to TRNSYS or CHAMPS"
+    },
+    {
+      "name": "BES",
+      "status": "treated as Building Energy Simulation unless operator clarifies a particular package"
+    }
+  ]
+}

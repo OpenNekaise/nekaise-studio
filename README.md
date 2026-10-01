@@ -180,6 +180,11 @@ chat unavailable; training continues independently. See the [runtime contract](A
 
 ## Forward curriculum coverage
 
+The operator's energy/physical-modeling focus is being prepared offline before a
+new training decision. [Domain data preparation](docs/ENERGY-MODELING-DATA.md)
+documents the corpus audit, pinned public sources, verified export and remaining
+gaps. Preparation preserves the explicit training pause and does not activate a recipe.
+
 The current progressive curriculum traverses all eligible built-environment corpus
 passages and a pinned general-purpose map (20 domains, 265 units). The Teacher chooses
 the forward mix; adaptive follow-up is capped at 20% of causal targets. Every registered

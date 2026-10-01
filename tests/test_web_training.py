@@ -113,6 +113,30 @@ def test_readable_extractor_omits_navigation_and_preserves_code_indentation():
     assert 'menu' not in text and 'footer' not in text and '    code()' in text
 
 
+def test_readable_extractor_closes_unclosed_navigation_with_ancestor():
+    from nekaise_loop.curriculum_research import TrainingPageText
+    p=TrainingPageText()
+    p.feed('<aside><nav><div><nav>hidden navigation</div></aside>'
+           '<main><article><p>Visible subject</p><br><img src="x">'
+           '<pre>if yes:\n    code()</pre><a href="/next">Next</a>'
+           '</main><footer>hidden footer</footer>')
+    text=''.join(p.main_parts)
+    assert 'Visible subject' in text and '    code()' in text
+    assert 'hidden' not in text and p.links==['/next']
+    assert p.hidden==p.main_depth==0 and p.stack==[]
+
+
+def test_readable_extractor_ignores_unmatched_ends_and_balances_self_closing_tags():
+    from nekaise_loop.curriculum_research import TrainingPageText
+    p=TrainingPageText()
+    p.feed('<main><nav>hidden</aside></script>still hidden</nav>'
+           '<aside/><p>Visible</p><br/><input/></main>outside')
+    assert 'hidden' not in ''.join(p.parts)
+    assert 'Visible' in ''.join(p.main_parts)
+    assert 'outside' not in ''.join(p.main_parts)
+    assert p.hidden==p.main_depth==0 and p.stack==[]
+
+
 @pytest.mark.parametrize('quote,text,license_url', [
     ('licensed under a Creative Commons Attribution', 'This is licensed under a Creative Commons Attribution-NonCommercial-ShareAlike 4.0 license.', 'https://example.org/license'),
     ('CC BY 4.0', 'CC BY 4.0', 'https://creativecommons.org/licenses/by/4.0/'),

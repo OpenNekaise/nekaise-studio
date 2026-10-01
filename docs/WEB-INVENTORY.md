@@ -78,6 +78,14 @@ hashes, robots snapshots, URL mappings and full-text source references remain av
 GPQA/MMLU-Pro banks and the excluded general datasets remain outside training sources;
 no benchmark results are read or used by this path.
 
+Readable-body extraction records its version. Closing an HTML ancestor also closes
+unclosed child regions, so malformed navigation cannot hide the following article.
+An extractor upgrade may create a separate bounded journal for a completed, empty
+collection whose failures were exclusively insufficient readable text. The original
+journal and raw response bytes remain intact. Successful collections and HTTP/access
+failures are not reset; the ordinary robots, scope and cache-integrity checks still
+apply. This is extraction recovery, not new training exposure or rendered JavaScript.
+
 ## Limitations and verification
 
 This implementation supports static HTML/text and explicit XML sitemaps. It does not

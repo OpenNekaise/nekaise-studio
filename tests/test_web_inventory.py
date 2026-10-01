@@ -267,3 +267,65 @@ def test_rate_limit_is_deferred_and_retry_after_is_honored(tmp_path,monkeypatch)
     clock[0]+=30;limited[0]=False
     last=ctx.artifacts.get(collect(ctx,req,session))
     assert last['complete'] and len(last['pages'])==2
+
+
+def test_revised_extraction_preserves_failed_journal_and_reuses_raw_bytes(tmp_path,monkeypatch):
+    from nekaise_loop import web_inventory as inventory
+    def handler(r):
+        if r.url.path=='/robots.txt':return httpx.Response(404)
+        return httpx.Response(200,text='<aside><nav><div><nav>menu</div></aside>'+page('body'),
+                              headers={'content-type':'text/html'})
+    session,calls=network(monkeypatch,tmp_path,handler);ctx=context(tmp_path)
+    original=inventory.extract_page;version=inventory.TrainingPageText.version
+    def failed_extract(*args):raise ValueError('Research page contains insufficient readable text')
+    monkeypatch.setattr(inventory.TrainingPageText,'version','readable_body_v1')
+    monkeypatch.setattr(inventory,'extract_page',failed_extract)
+    with pytest.raises(ValueError,match='no usable pages'):collect(ctx,source(),session)
+    old=next((tmp_path/'curriculum/web').glob('*.json'))
+    legacy=json.loads(old.read_text());legacy.pop('extractor');old.write_text(json.dumps(legacy))
+    before=old.read_bytes();requests=list(calls)
+    monkeypatch.setattr(inventory.TrainingPageText,'version',version)
+    monkeypatch.setattr(inventory,'extract_page',original)
+    result=ctx.artifacts.get(collect(ctx,source(),session))
+    assert result['complete'] and len(result['pages'])==1 and calls==requests
+    assert old.read_bytes()==before and len(list((tmp_path/'curriculum/web').glob('*.json')))==2
+    text=ctx.artifacts.get(result['pages'][0]['artifact'])
+    assert text['extractor']==version and 'menu' not in text['text'] and 'body' in text['text']
+    assert ctx.artifacts.get(collect(ctx,source(),session))==result and calls==requests
+
+
+@pytest.mark.parametrize('status',[200,403])
+def test_extractor_upgrade_does_not_reset_successful_or_http_failed_collections(tmp_path,monkeypatch,status):
+    from nekaise_loop import web_inventory as inventory
+    def handler(r):
+        if r.url.path=='/robots.txt':return httpx.Response(404)
+        return httpx.Response(status,text=page('body'),headers={'content-type':'text/html'})
+    session,calls=network(monkeypatch,tmp_path,handler);ctx=context(tmp_path)
+    version=inventory.TrainingPageText.version
+    monkeypatch.setattr(inventory.TrainingPageText,'version','readable_body_v1')
+    if status==200:key=collect(ctx,source(),session)
+    else:
+        with pytest.raises(ValueError,match='no usable pages'):collect(ctx,source(),session)
+    old=next((tmp_path/'curriculum/web').glob('*.json'));before=old.read_bytes();requests=list(calls)
+    monkeypatch.setattr(inventory.TrainingPageText,'version',version)
+    if status==200:assert collect(ctx,source(),session)==key
+    else:
+        with pytest.raises(ValueError,match='exhausted'):collect(ctx,source(),session)
+    assert calls==requests and old.read_bytes()==before
+    assert len(list((tmp_path/'curriculum/web').glob('*.json')))==1
+
+
+def test_revised_extraction_failure_is_still_bounded(tmp_path,monkeypatch):
+    from nekaise_loop import web_inventory as inventory
+    def handler(r):
+        if r.url.path=='/robots.txt':return httpx.Response(404)
+        return httpx.Response(200,text='<main>short</main>',headers={'content-type':'text/html'})
+    session,calls=network(monkeypatch,tmp_path,handler);ctx=context(tmp_path)
+    version=inventory.TrainingPageText.version
+    monkeypatch.setattr(inventory.TrainingPageText,'version','readable_body_v1')
+    with pytest.raises(ValueError,match='no usable pages'):collect(ctx,source(),session)
+    monkeypatch.setattr(inventory.TrainingPageText,'version',version)
+    with pytest.raises(ValueError,match='no usable pages'):collect(ctx,source(),session)
+    requests=list(calls)
+    with pytest.raises(ValueError,match='exhausted'):collect(ctx,source(),session)
+    assert calls==requests and len(list((tmp_path/'curriculum/web').glob('*.json')))==2

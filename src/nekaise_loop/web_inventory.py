@@ -16,6 +16,7 @@ import httpx
 
 from .artifacts import atomic_write, canonical, digest
 from .curriculum_types import WebTrainingSelection
+from .curriculum_research import TrainingPageText
 from .processes import Cancelled
 from .storage import now
 from .web_http import WebSession, extract_page, normalize_url, retry_delay
@@ -59,9 +60,22 @@ def admitted_location(location, seed, prefix):
 
 
 def _journal_path(ctx, request):
-    key=digest({'contract':'inventory_v1','request':request,
-                'policy':ctx.config.curriculum_loop.web_training_policy})
-    return ctx.engine.settings.workspace/'curriculum/web'/f'{key}.json'
+    identity={'contract':'inventory_v1','request':request,
+              'policy':ctx.config.curriculum_loop.web_training_policy}
+    root=ctx.engine.settings.workspace/'curriculum/web'
+    path=root/f'{digest(identity)}.json'
+    if path.exists():
+        prior=json.loads(path.read_text())
+        failures=prior.get('failures',[])
+        if (prior.get('extractor','readable_body_v1') != TrainingPageText.version
+                and prior['complete'] and not prior['pages'] and failures
+                and all(f.get('error')=='Research page contains insufficient readable text'
+                        for f in failures)):
+            # Preserve the exhausted extraction receipt. A changed extractor may
+            # reconsider its cached bytes once under its own bounded journal;
+            # successful collections and HTTP/access failures are not reset.
+            path=root/f'{digest({**identity, "extractor":TrainingPageText.version})}.json'
+    return path
 
 
 def collect(ctx, request, session=None, *, deadline=None):
@@ -99,6 +113,7 @@ def _collect(ctx, request, path, session, deadline):
         journal=json.loads(path.read_text())
     else:
         journal={'format':'web_training_collection_v2','acquisition_policy':'inventory_v1',
+            'extractor':TrainingPageText.version,
             'permission':selection,'admission_policy':'teacher_selected_v1','license_checked':False,
             'license_evidence_artifact':None,'pages':[],'pending':list(dict.fromkeys([seed,*seeds])),
             'visited':[],'failures':[],'discovery_pending':sitemaps,'discovery_visited':[],

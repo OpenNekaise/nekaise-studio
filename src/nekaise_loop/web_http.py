@@ -218,5 +218,5 @@ def extract_page(record, request):
         'span_start':0,'span_length':len(text),'excerpt_truncated':False,
         'retrieved_at':record['retrieved_at'],'content_type':record['content_type'],
         'source_sha256':record['sha256'],'text_sha256':hashlib.sha256(text.encode()).hexdigest(),
-        'extractor':'readable_body_v1','topic':'general curriculum','replay':False,
+        'extractor':TrainingPageText.version,'topic':'general curriculum','replay':False,
         'redirect_chain':record['redirect_chain'], 'license':'not_assessed'}

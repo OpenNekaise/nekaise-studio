@@ -41,7 +41,10 @@ class PageText(HTMLParser):
 
 class TrainingPageText(PageText):
     """Conservative readable-body extraction; preserve explicit preformatted text."""
+    version = 'readable_body_v2'
     excluded = {'script', 'style', 'noscript', 'nav', 'footer', 'header', 'aside', 'form'}
+    void = {'area', 'base', 'br', 'col', 'embed', 'hr', 'img', 'input', 'link',
+            'meta', 'param', 'source', 'track', 'wbr'}
 
     def __init__(self):
         super().__init__()
@@ -51,6 +54,8 @@ class TrainingPageText(PageText):
 
     def handle_starttag(self, tag, attrs):
         super().handle_starttag(tag, attrs)
+        if tag not in self.void:
+            self.stack.append(tag)
         if tag in self.excluded and tag not in {'script', 'style', 'noscript'}:
             self.hidden += 1
         if tag in {'main', 'article'}:
@@ -59,11 +64,18 @@ class TrainingPageText(PageText):
             self.main_parts.append('\n')
 
     def handle_endtag(self, tag):
-        super().handle_endtag(tag)
-        if tag in self.excluded and tag not in {'script', 'style', 'noscript'}:
-            self.hidden = max(0, self.hidden-1)
-        if tag in {'main', 'article'}:
-            self.main_depth = max(0, self.main_depth-1)
+        # HTMLParser does not close omitted child tags. Closing their ancestor
+        # must also release hidden regions, or an unclosed navigation element
+        # inside a sidebar suppresses the entire following article.
+        if tag not in self.stack:
+            return
+        index = len(self.stack) - 1 - self.stack[::-1].index(tag)
+        for opened in self.stack[index:]:
+            if opened in self.excluded:
+                self.hidden -= 1
+            if opened in {'main', 'article'}:
+                self.main_depth -= 1
+        del self.stack[index:]
 
     def handle_data(self, text):
         super().handle_data(text)

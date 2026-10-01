@@ -88,7 +88,10 @@ def test_recovery_context_follows_incident_not_unrelated_active_campaign(setup_l
     campaign = service.store.campaign(child["id"])
     campaign["config"]["orchestrator_provider"] = "codex"
     run_agent(settings, row, campaign, directory, CaptureRunner())
+    incident = json.loads((directory / "incident.json").read_text())
+    assert incident["host_gpu_observation"] == {"fixture": "host GPU observation"}
     saved = json.loads((directory / "reports.json").read_text())
+    assert "host_gpu_observation" not in saved
     assert saved["current"]["campaign"] == scoped["current"]["campaign"]
     assert saved["operator_review_requests"] == scoped["operator_review_requests"]
     assert saved["reports"] == scoped["reports"]

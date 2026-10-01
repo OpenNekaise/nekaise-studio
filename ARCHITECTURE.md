@@ -420,6 +420,18 @@ complete report index, and reads relevant reports before deciding. Raw provider 
 are not served by the report API. Existing incidents without narratives are identified
 as such; their recorded events remain visible. No synthetic student results are added.
 
+Recovery incident construction also samples GPU capacity on the host, before launching
+the sandboxed agent. Two fixed read-only `nvidia-smi` queries have five-second timeouts
+and bounded parsed output. They report device UUIDs, MiB totals/usage/free space and
+compute-process memory, with numeric PID/start-time/UID observations from `/proc`.
+Missing tools, timeouts, failed queries and unavailable memory remain explicit unknowns;
+they do not imply zero usage or a host driver fault. Command lines, environment and
+workload/benchmark files are never read. These non-atomic snapshots are neither memory
+reservations nor ownership/termination authority; graphics and MPS/MIG consumers may
+not be fully identified. Only recovery receives this evidence, not teaching requests
+or dashboard read handlers. The orchestrator still decides whether capacity supports
+retry or continuation; the host adds no resource threshold or automatic decision.
+
 The orchestrator chooses routine actions without requiring user approval. Agent wait
 and pause both schedule an operational review using its chosen retry_seconds; pause
 suspends learning, not the operational supervisor. Explicit user pause/stop still

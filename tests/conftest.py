@@ -16,6 +16,14 @@ def isolated_source_lock(tmp_path, monkeypatch):
     monkeypatch.setattr("nekaise_loop.ownership.LOCK_DIRECTORY", tmp_path/"source-locks")
 
 
+@pytest.fixture(autouse=True)
+def isolated_recovery_gpu_observation(monkeypatch):
+    # Recovery integration tests must not depend on or probe the host GPU.
+    # The collector's own tests exercise its fixed commands with synthetic output.
+    monkeypatch.setattr("nekaise_loop.recovery.gpu_observation",
+                        lambda: {"fixture": "host GPU observation"})
+
+
 @pytest.fixture
 def corpus(tmp_path):
     root = tmp_path / "corpus-source"

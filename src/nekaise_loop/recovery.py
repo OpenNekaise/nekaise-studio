@@ -23,6 +23,7 @@ from .history import RunRetention, LogRemoval, inventory, apply_history
 from .checkpoint_retention import CheckpointRetention
 from .reports import agent_context
 from .material_allowance import MaterialAllowance, allowance_status, apply_allowance
+from .gpu_observation import gpu_observation
 
 
 def restore_failed_source(settings, directory):
@@ -141,6 +142,7 @@ def run_agent(settings, row, campaign, directory, runner):
     reports_path = directory/"reports.json"
     atomic_write(reports_path, canonical(agent_context(Service(settings), campaign_id=row["campaign_id"])))
     context["reports"] = str(reports_path)
+    context["host_gpu_observation"] = gpu_observation()
     atomic_write(directory/"incident.json", canonical(context))
     prompt = (settings.root/"prompts/orchestrator.txt").read_text() + "\n\n" + json.dumps({"workspace": str(settings.workspace), "incident_file": str(directory/"incident.json"), "repository": str(settings.root), "teacher_provider": config.teacher_provider, "teacher_model": config.teacher_model}, ensure_ascii=False)
     schema_path, result_path = directory/"schema.json", directory/"response.json"

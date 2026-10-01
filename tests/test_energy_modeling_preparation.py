@@ -31,6 +31,7 @@ def test_body_mentions_and_patents_do_not_become_core():
 
 def test_untrusted_archive_paths_and_benchmark_banks_are_not_selected():
     assert prep.include_repo_file('Buildings/Fluid/Examples/Pump.mo')
+    assert prep.include_repo_file('idd/Energy+.idd.in')
     for path in ('../../escaped.mo', '/absolute.mo', 'vendor/foo.mo', 'tasks/GPQA.md', 'ReferenceResults/run.mo'):
         assert not prep.include_repo_file(path)
     assert not prep.include_repo_file('code/foo.py', ['docs/'])
@@ -98,6 +99,10 @@ def test_versions_and_bundled_sources_remain_separate():
     assert final.partition(row, 'IDD', set())[0] == 'reference_assets'
     row.update(source='NatLabRockies/Spawn', path='energyplus/src/EnergyPlus/Zone.cc')
     assert final.partition(row, 'code', set())[0] == 'reference_assets'
+    row.update(source='santoshphilip/eppy', path='eppy/iddv940.py')
+    assert final.partition(row, 'schema', set())[0] == 'reference_assets'
+    row['path'] = 'eppy/resources/iddfiles/Energy+V9_2_0.idd'
+    assert final.partition(row, 'schema', set())[0] == 'reference_assets'
     row = {'origin': 'existing_corpus', 'url': 'https://raw.githubusercontent.com/modelica/ModelicaStandardLibrary/master/Modelica/Fluid.mo', 'tier': 'core'}
     assert final.partition(row, 'code', {('modelica/modelicastandardlibrary', 'Modelica/Fluid.mo')})[0] == 'reference_history'
 

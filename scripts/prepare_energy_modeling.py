@@ -54,7 +54,7 @@ gh_openstudio-standards gh_project1-boptest gh_radiance gh_resstock gh_comstock
 gh_sinergym gh_teaser gh_tespy gh_fmi-standard gh_archetypal gh_cityenergyanalyst
 gh_citylearn gh_pvlib-python gh_pysam gh_bifacial-radiance gh_fds gh_cfast""".split())
 RESEARCH_SOURCES = {'ibpsa', 'modelica_conf'}
-CODE_EXTENSIONS = {'.mo', '.mos', '.py', '.cpp', '.cc', '.c', '.h', '.hh', '.hpp', '.f90', '.f', '.idf', '.idd', '.cal', '.rad', '.order'}
+CODE_EXTENSIONS = {'.mo', '.mos', '.py', '.cpp', '.cc', '.c', '.h', '.hh', '.hpp', '.f90', '.f', '.idf', '.idd', '.idd.in', '.cal', '.rad', '.order'}
 DOC_EXTENSIONS = {'.md', '.rst', '.tex', '.adoc', '.1'}
 OMIT_PARTS = {'.git', '.github', 'node_modules', 'third_party', 'third-party', 'vendor', 'vendors', '_build', 'build', 'dist', 'referenceResults', 'ReferenceResults', 'obsolete', 'Obsolete'}
 
@@ -246,7 +246,8 @@ def include_repo_file(path, prefixes=()):
         return False
     if prefixes and not any(path.startswith(prefix) for prefix in prefixes):
         return False
-    return p.suffix.lower() in CODE_EXTENSIONS | DOC_EXTENSIONS or p.name.lower().startswith(('readme', 'license', 'copying'))
+    return (any(p.name.lower().endswith(extension) for extension in CODE_EXTENSIONS | DOC_EXTENSIONS)
+            or p.name.lower().startswith(('readme', 'license', 'copying')))
 
 
 def acquire_repo(spec, out):

@@ -10,6 +10,7 @@ from collections import Counter
 from contextlib import ExitStack
 import json
 from pathlib import Path
+import re
 from urllib.parse import urlsplit
 
 from prepare_energy_modeling import body_text, dump, emit, now, safe_path, sha
@@ -33,6 +34,9 @@ def partition(row, text, new_paths):
     if location:
         path = location[1]
     normalized = '/' + path.lower()
+    if location and location[0] == 'santoshphilip/eppy' and (
+            '/iddfiles/' in normalized or re.search(r'/iddv\d+\.py$', normalized)):
+        return 'reference_assets', 'bundled historical EnergyPlus schema; current canonical IDD source collected separately'
     if path.endswith('.order'):
         return 'reference_assets', 'Modelica package ordering metadata; retained alongside source'
     if '/idd/versions/' in normalized or '/obsolete/' in normalized:

@@ -1,5 +1,12 @@
 # Working on Nekaise Studio
 
+## User communication (operator preference, 2026-10-02)
+
+For user-facing messages, aim for roughly 80% adherence to ASD-STE100: short sentences,
+common words, direct statements and consistent terms. Explain unfamiliar technical terms.
+Allow natural conversation and the user's chosen language. This preference applies to
+agent communication; it does not change Kai's character or training material.
+
 ## Reusable web sources and Teacher upgrade (authorized 2026-09-30)
 
 Use `gpt-6.1-sol` at high effort as the primary Teacher. Preserve the separate

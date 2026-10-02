@@ -20,6 +20,7 @@ def load_script(name):
 
 prep = load_script('prepare_energy_modeling')
 final = load_script('finalize_energy_modeling')
+web = load_script('acquire_energy_modeling_web')
 
 
 def test_body_mentions_and_patents_do_not_become_core():
@@ -129,3 +130,97 @@ def test_empty_repository_scope_is_not_complete_and_corrected_scope_retries(tmp_
     assert result['status'] == 'complete'
     assert result['counts']['documents'] == 1
     assert list((directory / 'attempts').glob('*.json'))
+
+
+@pytest.mark.parametrize('title, expected', [
+    ('IDAICE building simulation', 'ida_ice'),
+    ('IDA-ICE workflow', 'ida_ice'),
+    ('IDA Klimat och Energi', 'ida_ice'),
+    ('住宅建筑能效标识方法', 'building_energy_rating'),
+    ('Rakennuksen energialuokka', 'building_energy_rating'),
+    ('Building energy class A', 'energy_class_contextual'),
+    ('EPC engineering procurement construction', None),
+    ('ICE railway timetable', None),
+    ('Energy class A refrigerator', None),
+    ('NMF matrix factorization and IDA loans', None),
+])
+def test_multilingual_aliases_keep_ambiguous_abbreviations_out(title, expected):
+    config = json.loads((Path(__file__).parents[1] / 'curricula/energy_modeling_keywords.json').read_text())
+    result = prep.keyword_matches(title, config)
+    assert expected in result if expected else not result
+
+
+def test_addition_deduplicates_verified_base_without_modifying_it(tmp_path):
+    base, addition = tmp_path / 'base', tmp_path / 'addition'
+    base.mkdir(); addition.mkdir()
+    spec, _, _ = make_bundle(base)
+    final.finalize(base, spec)
+    before = {str(p): p.read_bytes() for p in base.rglob('*') if p.is_file()}
+    spec, row, _ = make_bundle(addition)
+    text = b'model NewWall\nend NewWall;\n'
+    digest, path = prep.pin_text(addition, text)
+    with (addition / 'local-documents.jsonl').open('a') as handle:
+        prep.emit(handle, {**row, 'id': 'new-wall', 'object_path': path, 'text_sha256': digest,
+                           'duplicate_key': prep.sha(text.strip()), 'chars': len(text)})
+    report = final.finalize(addition, spec, base)
+    assert report['counts']['core'] == 1
+    assert report['counts']['base_duplicates'] == 2
+    assert before == {str(p): p.read_bytes() for p in base.rglob('*') if p.is_file()}
+    (base / 'dataset/core.manifest.jsonl').write_text('tampered')
+    with pytest.raises(ValueError, match='Base manifest hash mismatch'):
+        final.finalize(addition, spec, base)
+
+
+def test_addition_cannot_overwrite_its_base(tmp_path):
+    spec, _, _ = make_bundle(tmp_path)
+    before = (tmp_path / 'local-summary.json').read_bytes()
+    with pytest.raises(ValueError, match='must differ'):
+        final.finalize(tmp_path, spec, tmp_path)
+    assert (tmp_path / 'local-summary.json').read_bytes() == before
+
+
+def test_declared_main_region_recovers_form_wrapped_handbook_not_cookie_banner():
+    html = '''<form><nav>Site navigation</nav><div role="main"><nav>Breadcrumb</nav>
+    <div><h1>Building energy calculation</h1><p>Heating load equals transmission
+    plus ventilation losses. Outdoor &lt; indoor temperature.</p>
+    <table><tr><td>U-value</td><td>0.18 W/(m² K)</td></tr></table><br/>
+    <form>Search control</form></div></div></form><p>Cookie banner</p>'''
+    text = web.role_main_text(html)
+    assert 'Heating load' in text and 'Outdoor < indoor' in text
+    assert '0.18 W/(m² K)' in text
+    assert all(value not in text for value in ('Breadcrumb', 'Cookie banner', 'Search control', 'Site navigation'))
+    with pytest.raises(ValueError, match='missing or unclosed'):
+        web.role_main_text('<p>Cookie banner</p>')
+
+
+def test_web_region_omission_keeps_readable_pages_and_source_metadata(tmp_path, monkeypatch):
+    import base64
+
+    def collect(ctx, request):
+        pages = []
+        for index, html in enumerate([
+            '<form><div role="main"><p>Building heat loss and ventilation calculation with '
+            'reference outdoor and indoor temperatures, heat transfer coefficients and areas.</p></div></form>',
+            '<div role="main">Index</div>',
+        ]):
+            raw = html.encode()
+            raw_key = ctx.artifacts.put({'body_base64': base64.b64encode(raw).decode(), 'encoding': 'utf-8'})
+            page_key = ctx.artifacts.put({'id': str(index), 'url': request['url'] + str(index),
+                'text': 'Cookie banner', 'extractor': 'readable_body_v2', 'text_sha256': prep.sha(b'Cookie banner'),
+                'raw_response_artifact': raw_key, 'source_sha256': prep.sha(raw),
+                'robots_artifact': 'test-robots', 'retrieved_at': '2026-10-02'})
+            pages.append({'artifact': page_key})
+        return ctx.artifacts.put({'complete': True, 'pages': pages, 'pending': [],
+            'failures': [], 'bounded_by': 'frontier_exhausted'})
+
+    monkeypatch.setattr(web, 'collect', collect)
+    receipt = web.acquire({'id': 'handbook', 'url': 'https://example.org/', 'prefix': 'https://example.org/',
+        'categories': ['energy_rating'], 'html_region': 'role_main',
+        'language_hint': 'da', 'jurisdiction': 'DK', 'version_note': '2023'}, tmp_path)
+    assert receipt['status'] == 'partial' and receipt['pages'] == 1
+    assert len(receipt['extraction_omissions']) == 1
+    row, = final.records(tmp_path / 'web-sources/handbook/documents.jsonl')
+    assert row['language_hint'] == 'da' and row['language_hint_is_detection'] is False
+    assert row['jurisdiction'] == 'DK' and row['version_note'] == '2023'
+    assert row['prior_extraction_sha256'] == prep.sha(b'Cookie banner')
+    assert 'Building heat loss' in (tmp_path / row['object_path']).read_text()

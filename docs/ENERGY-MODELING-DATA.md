@@ -83,6 +83,61 @@ tokens/truncation. It is not trained exposure or prepared causal-target accounti
 future packing, chat templates, answer masks and passes determine those figures.
 The tokenizer, its hash, per-document counts and manifest hash are retained.
 
+## Multilingual additions
+
+The 2026-10-02 addition is in
+`workspace/domain-prep/energy-modeling-multilingual-20261002/`. Its report and
+`dataset-set.json` reference the original bundle plus the unique addition. Training
+remains paused. `curricula/energy_modeling_keywords.json` declares phrase aliases
+and 14 search languages; `curricula/energy_modeling_multilingual_sources.json`
+declares the acquired public sources. This is a bounded source inventory, not an
+exhaustive internet search or a promise that every language has equal coverage.
+
+IDA ICE / IDAICE / IDA-ICE, Indoor Climate and Energy, ESBO and related modeling
+terms are included. Here **energy class means building energy performance classes,
+certificates and calculation methods**. National terms include energiklass,
+energideklaration, primärenergital, E-luku, Energieausweis, DPE and APE. Ambiguous
+standalone acronyms such as ICE, EPC, NMF and SAP are not admission phrases.
+Generic class/comfort/load terms require building context in titles. Full-text
+mentions remain search leads; lexical relevance is not scientific validation.
+
+```bash
+.venv/bin/python scripts/prepare_energy_modeling.py audit \
+  --corpus ../nekaise-corpus \
+  --keywords curricula/energy_modeling_keywords.json \
+  --out workspace/domain-prep/energy-modeling-multilingual-20261002
+.venv/bin/python scripts/acquire_energy_modeling_web.py \
+  --sources curricula/energy_modeling_multilingual_sources.json \
+  --out workspace/domain-prep/energy-modeling-multilingual-20261002
+.venv/bin/python scripts/finalize_energy_modeling.py \
+  --sources curricula/energy_modeling_multilingual_sources.json \
+  --out workspace/domain-prep/energy-modeling-multilingual-20261002 \
+  --base workspace/domain-prep/energy-modeling-20261001
+```
+
+`--base` verifies the ready base's manifest hashes and excludes exact normalized
+bodies already present in **any** base split. Base files are never rewritten.
+`duplicates.jsonl` identifies `duplicate_scope=base` versus `addition`; the base
+readiness hash is recorded. Keep both bundles accessible: cross-bundle duplicate
+references are not copies of the original objects. Different translations and
+editions remain distinct when their bodies differ. Near-duplicates are not removed.
+Token accounting on the addition counts only its unique core export.
+
+Web provenance carries `language_hint`, `jurisdiction`, `version_note` and
+`document_role` where declared. A language hint is source metadata, **not detected
+language**. National energy classes are not mapped onto a universal scale; dated
+manuals are not automatically current regulations. Boverket's handbook explicitly
+warned that updates for its October 2026 changes were still in progress at capture.
+
+For the Danish HBEMO handbook, inspection found that the standard extractor kept
+cookie text because an outer HTML form enclosed the page. Its explicit
+`html_region=role_main` option extracts the declared main region from hash-verified
+saved HTML before normal readable extraction. HTTP evidence and previous
+extraction hashes remain available. Missing/short regions are recorded as
+`extraction_omissions`; other readable pages survive in a partial receipt. This
+offline override does not change the live teaching crawler. PDF originals and
+layout extractions remain in `reference_pdf` pending equation/figure review.
+
 ## Export and extension contract
 
 `readiness.json` contains source receipts, exclusions/errors, counts and SHA256 for
@@ -121,4 +176,6 @@ material from it after the operator chooses to proceed.
 
 Validation: `pytest tests/test_energy_modeling_preparation.py tests/test_corpus_policy.py`
 checks corpus immutability, original-code recovery, hash quarantine, exact dedup,
-source/path exclusions and reference separation without network, teacher or GPU work.
+source/path exclusions, multilingual ambiguity, immutable cross-bundle dedup,
+form-wrapped handbook extraction and reference separation without network,
+teacher or GPU work.

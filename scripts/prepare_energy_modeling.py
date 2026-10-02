@@ -145,7 +145,7 @@ def pin_text(out, data):
     return digest, str(target.relative_to(out))
 
 
-def audit(root, out):
+def audit(root, out, keyword_config=None):
     out.mkdir(parents=True, exist_ok=True)
     started = now()
     snapshots = out / 'source-manifests'
@@ -169,7 +169,9 @@ def audit(root, out):
     # Fixed-string discovery avoids expensive Unicode word-boundary regex scans
     # over tens of gigabytes. Broad hits remain candidates, not automatic admission.
     command = ['rg', '-l', '-i', '-F', '--threads', '4', '--glob', '*.md']
-    for term in FULLTEXT_TERMS:
+    additional = json.loads(keyword_config.read_text()) if keyword_config else {}
+    phrases = [phrase for group in additional.get('concepts', []) for phrase in group['aliases']]
+    for term in dict.fromkeys((*FULLTEXT_TERMS, *phrases)):
         command.extend(['-e', term])
     command.extend(['--', str(root / 'corpus')])
     with scan.open('w') as hits, (out / 'fulltext-scan.stderr').open('w') as errors:
@@ -190,10 +192,14 @@ def audit(root, out):
                     admitted = eligible(row, policy)
                     counts['publisher_eligible' if admitted else 'outside_publisher_view'] += 1
                     tier, reason = classify(row, row['id'] in hit_ids)
+                    matched = keyword_matches(row.get('title') or '', additional)
+                    if matched and tier not in ('core', 'research', 'excluded'):
+                        tier = 'patent_supplement' if row.get('source') == 'google_patents' else 'research'
+                        reason = 'title matches explicit multilingual modeling/building-rating phrase: ' + ', '.join(matched)
                     if tier is None:
                         continue
                     record = {k: row.get(k) for k in ('id', 'title', 'url', 'source', 'license', 'topic', 'format', 'fetched_at', 'sha256', 'corpus_sha256')}
-                    record.update(tier=tier, selection_reason=reason, manifest=manifest.name, publisher_eligible=admitted, origin='existing_corpus')
+                    record.update(tier=tier, selection_reason=reason, manifest=manifest.name, publisher_eligible=admitted, origin='existing_corpus', matched_concepts=matched)
                     emit(candidates, record)
                     counts['candidates_' + tier] += 1
                     if not admitted or tier in ('excluded', 'mention_candidate'):
@@ -236,6 +242,15 @@ def audit(root, out):
         raise RuntimeError('Publisher eligibility changed during audit; repeat snapshot and selection')
     dump(out / 'local-summary.json', {'started_at': started, 'finished_at': now(), 'counts': counts, 'by_source': sources, 'verified_by_tier': tiers, 'fulltext_match_documents': len(hit_ids), 'exact_duplicates': len(duplicates), 'unique_document_bodies': len(unique), 'errors': errors, 'training_started': False, 'semantic_recall': 'not measured; full-text-only matches remain candidates'})
     dump(out / 'local-duplicates.json', duplicates)
+
+
+def keyword_matches(text, config):
+    """Explicit phrases only: ambiguous acronyms are query hints, never aliases."""
+    folded = text.casefold()
+    return [group['id'] for group in config.get('concepts', [])
+            if any(phrase.casefold() in folded for phrase in group['aliases'])
+            and (not group.get('requires_building_context') or any(
+                anchor.casefold() in folded for anchor in config.get('building_context', [])))]
 
 
 def include_repo_file(path, prefixes=()):
@@ -340,10 +355,11 @@ def main():
     parser.add_argument('--corpus', type=Path, default=Path('../nekaise-corpus'))
     parser.add_argument('--out', type=Path, required=True)
     parser.add_argument('--sources', type=Path)
+    parser.add_argument('--keywords', type=Path)
     args = parser.parse_args()
     args.out.mkdir(parents=True, exist_ok=True)
     if args.action == 'audit':
-        audit(args.corpus.resolve(), args.out.resolve())
+        audit(args.corpus.resolve(), args.out.resolve(), args.keywords)
     else:
         specs = json.loads(args.sources.read_text())['repositories']
         with ThreadPoolExecutor(max_workers=2) as pool:

@@ -64,7 +64,31 @@ def records(path):
             yield json.loads(line)
 
 
-def finalize(out, sources):
+def base_documents(base):
+    """Use only verified manifests for exact cross-bundle dedup; never mutate base."""
+    raw = (base / 'readiness.json').read_bytes()
+    report = json.loads(raw)
+    if report.get('readiness') != 'integrity_verified_core_available':
+        raise ValueError('Base bundle is not ready')
+    known = {}
+    for name, evidence in report['exports'].items():
+        if not name.endswith('.manifest.jsonl'):
+            continue
+        path = safe_path(base, 'dataset/' + name)
+        data = path.read_bytes()
+        if sha(data) != evidence['sha256']:
+            raise ValueError('Base manifest hash mismatch: ' + name)
+        for line in data.decode().splitlines():
+            row = json.loads(line)
+            known[row['duplicate_key']] = row['id']
+    return known, {'root': str(base.resolve()), 'readiness_sha256': sha(raw),
+                   'deduplication': 'exact normalized bodies across all base manifest splits'}
+
+
+def finalize(out, sources, base=None):
+    if base and base.resolve() == out.resolve():
+        raise ValueError('Addition output must differ from base bundle')
+    inherited, base_receipt = base_documents(base) if base else ({}, None)
     dump(out / 'readiness.json', {'readiness': 'building', 'training_started': False, 'started_at': now()})
     summary = json.loads((out / 'local-summary.json').read_text())
     spec = json.loads(sources.read_text())
@@ -85,7 +109,7 @@ def finalize(out, sources):
     destination.mkdir(exist_ok=True)
     split_names = ('core', 'research_candidates', 'patent_supplement', 'reference_assets', 'reference_history', 'reference_pdf')
     counts, chars, categories, sources_count, reasons = Counter(), Counter(), Counter(), Counter(), Counter()
-    unique, failures = {}, []
+    unique, failures = dict(inherited), []
     with ExitStack() as stack:
         handles = {split: stack.enter_context((destination / (split + '.manifest.jsonl')).open('w')) for split in split_names}
         full_text = stack.enter_context((destination / 'core.text.jsonl').open('w'))
@@ -106,8 +130,9 @@ def finalize(out, sources):
                         raise ValueError('body hash mismatch')
                     split, reason = partition(row, text, new_paths)
                     if key in unique:
-                        emit(duplicates, {'id': row['id'], 'duplicate_of': unique[key], 'url': row['url'], 'text_sha256': row['text_sha256'], 'would_be_split': split})
-                        counts['exact_duplicates'] += 1
+                        scope = 'base' if key in inherited else 'addition'
+                        emit(duplicates, {'id': row['id'], 'duplicate_of': unique[key], 'url': row['url'], 'text_sha256': row['text_sha256'], 'would_be_split': split, 'duplicate_scope': scope})
+                        counts['base_duplicates' if scope == 'base' else 'exact_duplicates'] += 1
                         continue
                     unique[key] = row['id']
                     entry = {**row, 'split': split, 'preparation_reason': reason, 'input_catalog': str(catalog.relative_to(out))}
@@ -127,6 +152,7 @@ def finalize(out, sources):
         'readiness': 'integrity_verified_core_available' if counts['core'] and not failures else 'integrity_failure',
         'meaning': 'Core export is verified source material, not simulated/compiled models or teacher-approved teaching targets.',
         'counts': counts, 'characters': chars, 'core_by_category_overlapping': categories, 'core_by_source': sources_count,
+        'base_bundle': base_receipt,
         'selection_reasons': reasons, 'verification_failures': failures, 'source_receipts': receipts,
         'local_scan': {k: summary[k] for k in ('counts', 'fulltext_match_documents', 'verified_by_tier')},
         'local_quarantined': summary['errors'], 'unresolved_names': spec['unresolved'], 'exports': exported,
@@ -149,5 +175,6 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--out', type=Path, required=True)
     parser.add_argument('--sources', type=Path, required=True)
+    parser.add_argument('--base', type=Path)
     args = parser.parse_args()
-    finalize(args.out.resolve(), args.sources)
+    finalize(args.out.resolve(), args.sources, args.base.resolve() if args.base else None)

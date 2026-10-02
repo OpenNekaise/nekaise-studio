@@ -1,0 +1,736 @@
+{
+  "version": "0.1",
+  "purpose": "Multilingual addition to energy-modeling-20261001; training remains paused",
+  "repositories": [],
+  "unresolved": [
+    {
+      "name": "CHANCES",
+      "status": "Previous unresolved name remains unconfirmed."
+    },
+    {
+      "name": "energy class",
+      "status": "Interpreted as building energy performance classes and calculation methods; not silently treated as a named simulator."
+    }
+  ],
+  "web_sources": [
+    {
+      "id": "equa-ida-wiki",
+      "url": "https://equa.cloud.xwiki.com/xwiki/bin/view/IDA_ICE/",
+      "prefix": "https://equa.cloud.xwiki.com/xwiki/bin/view/IDA_ICE/",
+      "max_pages": 256,
+      "language_hint": "en",
+      "categories": [
+        "ida_ice",
+        "other_bes",
+        "thermal_fluid",
+        "controls_calibration"
+      ],
+      "jurisdiction": "international",
+      "version_note": "Dated public source snapshot; software editions/effective dates remain page-specific.",
+      "document_role": "technical_documentation"
+    },
+    {
+      "id": "equa-ida-en",
+      "url": "https://www.equa.se/en/ida-ice",
+      "prefix": "https://www.equa.se/en/ida-ice",
+      "max_pages": 48,
+      "language_hint": "en",
+      "categories": [
+        "ida_ice",
+        "other_bes"
+      ],
+      "jurisdiction": "international",
+      "version_note": "Dated public source snapshot; software editions/effective dates remain page-specific.",
+      "document_role": "technical_documentation"
+    },
+    {
+      "id": "equa-ida-sv",
+      "url": "https://www.equa.se/se/ida-ice",
+      "prefix": "https://www.equa.se/se/ida-ice",
+      "max_pages": 48,
+      "language_hint": "sv",
+      "categories": [
+        "ida_ice",
+        "other_bes"
+      ],
+      "jurisdiction": "international",
+      "version_note": "Dated public source snapshot; software editions/effective dates remain page-specific.",
+      "document_role": "technical_documentation"
+    },
+    {
+      "id": "equa-ida-de",
+      "url": "https://www.equa.se/de/ida-ice",
+      "prefix": "https://www.equa.se/de/ida-ice",
+      "max_pages": 48,
+      "language_hint": "de",
+      "categories": [
+        "ida_ice",
+        "other_bes"
+      ],
+      "jurisdiction": "international",
+      "version_note": "Dated public source snapshot; software editions/effective dates remain page-specific.",
+      "document_role": "technical_documentation"
+    },
+    {
+      "id": "equa-public-documentation",
+      "url": "https://www.equaonline.com/iceuser/new_documentation.html",
+      "prefix": "https://www.equaonline.com/iceuser/new_documentation.html",
+      "max_pages": 1,
+      "language_hint": "en",
+      "categories": [
+        "ida_ice"
+      ],
+      "jurisdiction": "international",
+      "version_note": "Dated public source snapshot; software editions/effective dates remain page-specific.",
+      "document_role": "technical_documentation"
+    },
+    {
+      "id": "boverket-energy-declarations",
+      "url": "https://www.boverket.se/sv/energideklaration/",
+      "prefix": "https://www.boverket.se/sv/energideklaration/",
+      "max_pages": 96,
+      "language_hint": "sv",
+      "categories": [
+        "energy_rating"
+      ],
+      "jurisdiction": "SE",
+      "version_note": "Publisher warns this handbook is not yet fully updated for rules effective2026-10-01. Preserve mixed current/historical context; retrieval date is not an effective date.",
+      "document_role": "building_energy_assessment_reference"
+    },
+    {
+      "id": "boverket-primary-energy",
+      "url": "https://www.boverket.se/sv/byggande/bygg-och-renovera-energieffektivt/energihushallningskrav/primarenergital-och-byggnadens-energiprestanda",
+      "prefix": "https://www.boverket.se/sv/byggande/bygg-och-renovera-energieffektivt/energihushallningskrav/primarenergital-och-byggnadens-energiprestanda",
+      "max_pages": 1,
+      "language_hint": "sv",
+      "categories": [
+        "energy_rating"
+      ],
+      "jurisdiction": "SE",
+      "version_note": "Dated public source snapshot; software editions/effective dates remain page-specific.",
+      "document_role": "building_energy_assessment_reference"
+    },
+    {
+      "id": "motiva-energy-certificates",
+      "url": "https://www.motiva.fi/tietopankki/energiatodistusneuvonta/",
+      "prefix": "https://www.motiva.fi/tietopankki/energiatodistusneuvonta/",
+      "max_pages": 64,
+      "language_hint": "fi",
+      "categories": [
+        "energy_rating"
+      ],
+      "jurisdiction": "FI",
+      "version_note": "Dated public source snapshot; software editions/effective dates remain page-specific.",
+      "document_role": "building_energy_assessment_reference"
+    },
+    {
+      "id": "enova-energy-labels",
+      "url": "https://enova.no/nb/energimerking",
+      "prefix": "https://enova.no/nb/energimerking",
+      "max_pages": 48,
+      "language_hint": "nb",
+      "categories": [
+        "energy_rating"
+      ],
+      "jurisdiction": "NO",
+      "version_note": "Dated public source snapshot; software editions/effective dates remain page-specific.",
+      "document_role": "building_energy_assessment_reference"
+    },
+    {
+      "id": "denmark-energy-handbook",
+      "url": "https://hbemo.dk/",
+      "prefix": "https://hbemo.dk/",
+      "max_pages": 64,
+      "language_hint": "da",
+      "categories": [
+        "energy_rating"
+      ],
+      "jurisdiction": "DK",
+      "version_note": "Dated public source snapshot; software editions/effective dates remain page-specific.",
+      "document_role": "building_energy_assessment_reference"
+    },
+    {
+      "id": "denmark-energy-methods",
+      "url": "https://ens.dk/analyser-og-statistik/lovgivning-om-energimaerkning",
+      "prefix": "https://ens.dk/analyser-og-statistik/lovgivning-om-energimaerkning",
+      "max_pages": 1,
+      "language_hint": "da",
+      "categories": [
+        "energy_rating"
+      ],
+      "jurisdiction": "DK",
+      "version_note": "Dated public source snapshot; software editions/effective dates remain page-specific.",
+      "document_role": "building_energy_assessment_reference"
+    },
+    {
+      "id": "france-dpe-method",
+      "url": "https://www.ecologie.gouv.fr/politiques-publiques/diagnostic-performance-energetique-dpe",
+      "prefix": "https://www.ecologie.gouv.fr/politiques-publiques/diagnostic-performance-energetique-dpe",
+      "max_pages": 1,
+      "language_hint": "fr",
+      "categories": [
+        "energy_rating"
+      ],
+      "jurisdiction": "FR",
+      "version_note": "Dated public source snapshot; software editions/effective dates remain page-specific.",
+      "document_role": "building_energy_assessment_reference"
+    },
+    {
+      "id": "france-dpe-2026-update",
+      "url": "https://www.ecologie.gouv.fr/presse/evolution-du-calcul-du-dpe-1er-janvier-2026-favoriser-lelectrification-du-chauffage",
+      "prefix": "https://www.ecologie.gouv.fr/presse/evolution-du-calcul-du-dpe-1er-janvier-2026-favoriser-lelectrification-du-chauffage",
+      "max_pages": 1,
+      "language_hint": "fr",
+      "categories": [
+        "energy_rating"
+      ],
+      "jurisdiction": "FR",
+      "version_note": "Dated public source snapshot; software editions/effective dates remain page-specific.",
+      "document_role": "building_energy_assessment_reference"
+    },
+    {
+      "id": "uk-sap-method",
+      "url": "https://www.gov.uk/guidance/standard-assessment-procedure",
+      "prefix": "https://www.gov.uk/guidance/standard-assessment-procedure",
+      "max_pages": 1,
+      "language_hint": "en",
+      "categories": [
+        "energy_rating"
+      ],
+      "jurisdiction": "GB",
+      "version_note": "Dated public source snapshot; software editions/effective dates remain page-specific.",
+      "document_role": "building_energy_assessment_reference"
+    },
+    {
+      "id": "karelia-ida-parametric",
+      "url": "https://www.karelia.fi/2022/11/parametrisoitu-laskenta-energiasimulointiohjelmissa/",
+      "prefix": "https://www.karelia.fi/2022/11/parametrisoitu-laskenta-energiasimulointiohjelmissa/",
+      "max_pages": 1,
+      "language_hint": "fi",
+      "categories": [
+        "ida_ice",
+        "controls_calibration"
+      ],
+      "jurisdiction": "FI",
+      "version_note": "Dated public source snapshot; software editions/effective dates remain page-specific.",
+      "document_role": "technical_documentation"
+    },
+    {
+      "id": "equa-pdf-01",
+      "url": "https://www.equaonline.com/iceuser/pdf/ICE48GettingStartedEng.pdf",
+      "format": "pdf",
+      "language_hint": "en",
+      "jurisdiction": "international",
+      "categories": [
+        "ida_ice",
+        "other_bes",
+        "thermal_fluid"
+      ],
+      "document_role": "public_software_manual",
+      "version_note": "Publicly linked by EQUA documentation index; preserve filename/software edition. Legacy4.8 guides are not claimed as version5 manuals."
+    },
+    {
+      "id": "equa-pdf-02",
+      "url": "https://www.equaonline.com/iceuser/pdf/IDAICE48_Einfuhrungstutorium.pdf",
+      "format": "pdf",
+      "language_hint": "de",
+      "jurisdiction": "DE",
+      "categories": [
+        "ida_ice",
+        "other_bes",
+        "thermal_fluid"
+      ],
+      "document_role": "public_software_manual",
+      "version_note": "Publicly linked by EQUA documentation index; preserve filename/software edition. Legacy4.8 guides are not claimed as version5 manuals."
+    },
+    {
+      "id": "equa-pdf-03",
+      "url": "https://www.equaonline.com/esbouser/User_guide.pdf",
+      "format": "pdf",
+      "language_hint": "en",
+      "jurisdiction": "international",
+      "categories": [
+        "ida_ice",
+        "other_bes",
+        "thermal_fluid"
+      ],
+      "document_role": "public_software_manual",
+      "version_note": "Publicly linked by EQUA documentation index; preserve filename/software edition. Legacy4.8 guides are not claimed as version5 manuals."
+    },
+    {
+      "id": "equa-pdf-04",
+      "url": "https://www.equaonline.com/iceuser/pdf/IDA_ICE_Daylight_calculation_instructions.pdf",
+      "format": "pdf",
+      "language_hint": "en",
+      "jurisdiction": "international",
+      "categories": [
+        "ida_ice",
+        "other_bes",
+        "thermal_fluid"
+      ],
+      "document_role": "public_software_manual",
+      "version_note": "Publicly linked by EQUA documentation index; preserve filename/software edition. Legacy4.8 guides are not claimed as version5 manuals."
+    },
+    {
+      "id": "equa-pdf-05",
+      "url": "https://www.equaonline.com/iceuser/pdf/ASHRAE_90.1_Extension_v2010.pdf",
+      "format": "pdf",
+      "language_hint": "en",
+      "jurisdiction": "international",
+      "categories": [
+        "ida_ice",
+        "other_bes",
+        "thermal_fluid"
+      ],
+      "document_role": "public_software_manual",
+      "version_note": "Publicly linked by EQUA documentation index; preserve filename/software edition. Legacy4.8 guides are not claimed as version5 manuals."
+    },
+    {
+      "id": "equa-pdf-06",
+      "url": "https://www.equaonline.com/iceuser/pdf/UserGuideBoreholes.pdf",
+      "format": "pdf",
+      "language_hint": "en",
+      "jurisdiction": "international",
+      "categories": [
+        "ida_ice",
+        "other_bes",
+        "thermal_fluid"
+      ],
+      "document_role": "public_software_manual",
+      "version_note": "Publicly linked by EQUA documentation index; preserve filename/software edition. Legacy4.8 guides are not claimed as version5 manuals."
+    },
+    {
+      "id": "equa-pdf-07",
+      "url": "https://www.equaonline.com/iceuser/pdf/Building_and_zone_geometry_import.pdf",
+      "format": "pdf",
+      "language_hint": "en",
+      "jurisdiction": "international",
+      "categories": [
+        "ida_ice",
+        "other_bes",
+        "thermal_fluid"
+      ],
+      "document_role": "public_software_manual",
+      "version_note": "Publicly linked by EQUA documentation index; preserve filename/software edition. Legacy4.8 guides are not claimed as version5 manuals."
+    },
+    {
+      "id": "equa-pdf-08",
+      "url": "https://www.equaonline.com/iceuser/pdf/Facade_windows_and_shading_objects.pdf",
+      "format": "pdf",
+      "language_hint": "en",
+      "jurisdiction": "international",
+      "categories": [
+        "ida_ice",
+        "other_bes",
+        "thermal_fluid"
+      ],
+      "document_role": "public_software_manual",
+      "version_note": "Publicly linked by EQUA documentation index; preserve filename/software edition. Legacy4.8 guides are not claimed as version5 manuals."
+    },
+    {
+      "id": "equa-pdf-09",
+      "url": "https://www.equaonline.com/iceuser/pdf/Guide%20Anpassning%20Sverige_2022.02.pdf",
+      "format": "pdf",
+      "language_hint": "sv",
+      "jurisdiction": "SE",
+      "categories": [
+        "ida_ice",
+        "other_bes",
+        "thermal_fluid"
+      ],
+      "document_role": "public_software_manual",
+      "version_note": "Publicly linked by EQUA documentation index; preserve filename/software edition. Legacy4.8 guides are not claimed as version5 manuals."
+    },
+    {
+      "id": "equa-pdf-10",
+      "url": "https://www.equaonline.com/iceuser/pdf/Guide_Miljobyggnad_i_IDA%20ICE_2024.02.pdf",
+      "format": "pdf",
+      "language_hint": "sv",
+      "jurisdiction": "SE",
+      "categories": [
+        "ida_ice",
+        "other_bes",
+        "thermal_fluid"
+      ],
+      "document_role": "public_software_manual",
+      "version_note": "Publicly linked by EQUA documentation index; preserve filename/software edition. Legacy4.8 guides are not claimed as version5 manuals."
+    },
+    {
+      "id": "equa-pdf-11",
+      "url": "https://www.equaonline.com/iceuser/pdf/Manual_IDA-ICE-48-Sui_D.pdf",
+      "format": "pdf",
+      "language_hint": "de",
+      "jurisdiction": "CH",
+      "categories": [
+        "ida_ice",
+        "other_bes",
+        "thermal_fluid"
+      ],
+      "document_role": "public_software_manual",
+      "version_note": "Publicly linked by EQUA documentation index; preserve filename/software edition. Legacy4.8 guides are not claimed as version5 manuals."
+    },
+    {
+      "id": "equa-pdf-12",
+      "url": "https://www.equaonline.com/iceuser/pdf/Manual_IDA-ICE-48-Sui_F.pdf",
+      "format": "pdf",
+      "language_hint": "fr",
+      "jurisdiction": "CH",
+      "categories": [
+        "ida_ice",
+        "other_bes",
+        "thermal_fluid"
+      ],
+      "document_role": "public_software_manual",
+      "version_note": "Publicly linked by EQUA documentation index; preserve filename/software edition. Legacy4.8 guides are not claimed as version5 manuals."
+    },
+    {
+      "id": "equa-pdf-13",
+      "url": "https://www.equaonline.com/iceuser/pdf/Konvertieren_von_TRY_Effekte_aufpraegen-Datensatzen_nach_IDA_ICE.pdf",
+      "format": "pdf",
+      "language_hint": "de",
+      "jurisdiction": "DE",
+      "categories": [
+        "ida_ice",
+        "other_bes",
+        "thermal_fluid"
+      ],
+      "document_role": "public_software_manual",
+      "version_note": "Publicly linked by EQUA documentation index; preserve filename/software edition. Legacy4.8 guides are not claimed as version5 manuals."
+    },
+    {
+      "id": "equa-pdf-14",
+      "url": "https://www.equaonline.com/iceuser/pdf/Handbuch%20IDA%20ICE-Deutsche%20Lokalisierung%204.8-SP2_211111.pdf",
+      "format": "pdf",
+      "language_hint": "de",
+      "jurisdiction": "DE",
+      "categories": [
+        "ida_ice",
+        "other_bes",
+        "thermal_fluid"
+      ],
+      "document_role": "public_software_manual",
+      "version_note": "Publicly linked by EQUA documentation index; preserve filename/software edition. Legacy4.8 guides are not claimed as version5 manuals."
+    },
+    {
+      "id": "equa-pdf-15",
+      "url": "https://www.equaonline.com/iceuser/pdf/IFC_Import.pdf",
+      "format": "pdf",
+      "language_hint": "en",
+      "jurisdiction": "international",
+      "categories": [
+        "ida_ice",
+        "other_bes",
+        "thermal_fluid"
+      ],
+      "document_role": "public_software_manual",
+      "version_note": "Publicly linked by EQUA documentation index; preserve filename/software edition. Legacy4.8 guides are not claimed as version5 manuals."
+    },
+    {
+      "id": "equa-pdf-16",
+      "url": "https://www.equaonline.com/iceuser/pdf/IFC_import_and_export_using_simplebim-exercise.pdf",
+      "format": "pdf",
+      "language_hint": "en",
+      "jurisdiction": "international",
+      "categories": [
+        "ida_ice",
+        "other_bes",
+        "thermal_fluid"
+      ],
+      "document_role": "public_software_manual",
+      "version_note": "Publicly linked by EQUA documentation index; preserve filename/software edition. Legacy4.8 guides are not claimed as version5 manuals."
+    },
+    {
+      "id": "equa-pdf-17",
+      "url": "https://www.equaonline.com/iceuser/pdf/IFC_Reference_Guide_for_ARCHICAD_22_1003.pdf",
+      "format": "pdf",
+      "language_hint": "en",
+      "jurisdiction": "international",
+      "categories": [
+        "ida_ice",
+        "other_bes",
+        "thermal_fluid"
+      ],
+      "document_role": "public_software_manual",
+      "version_note": "Publicly linked by EQUA documentation index; preserve filename/software edition. Legacy4.8 guides are not claimed as version5 manuals."
+    },
+    {
+      "id": "equa-pdf-18",
+      "url": "https://www.equaonline.com/iceuser/pdf/180213_Revit_IFC_Manual.pdf",
+      "format": "pdf",
+      "language_hint": "en",
+      "jurisdiction": "international",
+      "categories": [
+        "ida_ice",
+        "other_bes",
+        "thermal_fluid"
+      ],
+      "document_role": "public_software_manual",
+      "version_note": "Publicly linked by EQUA documentation index; preserve filename/software edition. Legacy4.8 guides are not claimed as version5 manuals."
+    },
+    {
+      "id": "equa-ida4-equations",
+      "url": "https://www.equa.se/deliv/ICE4eng.pdf",
+      "format": "pdf",
+      "language_hint": "en",
+      "jurisdiction": "international",
+      "categories": [
+        "ida_ice",
+        "thermal_fluid"
+      ],
+      "version_note": "Legacy IDA ICE4 documentation; retain original edition."
+    },
+    {
+      "id": "france-dpe-professional-guide",
+      "url": "https://www.ecologie.gouv.fr/sites/default/files/documents/Guide_pour_les_diagnostiqueurs_DPE.pdf",
+      "format": "pdf",
+      "language_hint": "fr",
+      "jurisdiction": "FR",
+      "categories": [
+        "energy_rating"
+      ],
+      "version_note": "Publisher guide; historic edition, not a claim of2026 rule coverage."
+    },
+    {
+      "id": "motiva-worked-energy-certificate",
+      "url": "https://www.motiva.fi/wp-content/uploads/sites/2/2025/08/Energiatodistuksen-laadintaesimerkki-%E2%80%93-Pientalo-1940-luku-korjaus-06-2023.pdf",
+      "format": "pdf",
+      "language_hint": "fi",
+      "jurisdiction": "FI",
+      "categories": [
+        "energy_rating",
+        "thermal_fluid"
+      ],
+      "version_note": "Worked1940s-house example, June2023 revision; historic method context retained."
+    },
+    {
+      "id": "equa-ida-zh",
+      "url": "https://www.equa.se/cn/ida-ice",
+      "language_hint": "zh",
+      "jurisdiction": "international",
+      "categories": [
+        "ida_ice",
+        "other_bes"
+      ],
+      "version_note": "Dated source snapshot; legal/software applicability is source-specific, not inferred from acquisition date.",
+      "document_role": "technical_reference",
+      "prefix": "https://www.equa.se/cn/ida-ice",
+      "max_pages": 32
+    },
+    {
+      "id": "dena-energy-certificate",
+      "url": "https://www.gebaeudeforum.de/ordnungsrecht/energieausweis/",
+      "language_hint": "de",
+      "jurisdiction": "DE",
+      "categories": [
+        "energy_rating"
+      ],
+      "version_note": "Dated source snapshot; legal/software applicability is source-specific, not inferred from acquisition date.",
+      "document_role": "technical_reference",
+      "prefix": "https://www.gebaeudeforum.de/ordnungsrecht/energieausweis/",
+      "max_pages": 32
+    },
+    {
+      "id": "dena-calculation-guide",
+      "url": "https://www.gebaeudeforum.de/fileadmin/gebaeudeforum/Downloads/Leitfaden-Handbuch/dena_Leitfaden_Energieausweis_1.pdf",
+      "language_hint": "de",
+      "jurisdiction": "DE",
+      "categories": [
+        "energy_rating"
+      ],
+      "version_note": "Dated source snapshot; legal/software applicability is source-specific, not inferred from acquisition date.",
+      "document_role": "technical_reference",
+      "format": "pdf"
+    },
+    {
+      "id": "enea-ape-glossary",
+      "url": "https://www.efficienzaenergetica.enea.it/glossario-efficienza-energetica/lettera-a/ape-attestato-di-prestazione-energetica.html",
+      "language_hint": "it",
+      "jurisdiction": "IT",
+      "categories": [
+        "energy_rating"
+      ],
+      "version_note": "Dated source snapshot; legal/software applicability is source-specific, not inferred from acquisition date.",
+      "document_role": "technical_reference",
+      "prefix": "https://www.efficienzaenergetica.enea.it/glossario-efficienza-energetica/lettera-a/ape-attestato-di-prestazione-energetica.html",
+      "max_pages": 1
+    },
+    {
+      "id": "enea-ape-method",
+      "url": "https://pnpe2.enea.it/ape",
+      "language_hint": "it",
+      "jurisdiction": "IT",
+      "categories": [
+        "energy_rating"
+      ],
+      "version_note": "Dated source snapshot; legal/software applicability is source-specific, not inferred from acquisition date.",
+      "document_role": "technical_reference",
+      "prefix": "https://pnpe2.enea.it/ape",
+      "max_pages": 1
+    },
+    {
+      "id": "idae-building-rating",
+      "url": "https://www.idae.es/tecnologias/eficiencia-energetica/edificacion/calificacion-energetica-de-edificios",
+      "language_hint": "es",
+      "jurisdiction": "ES",
+      "categories": [
+        "energy_rating"
+      ],
+      "version_note": "Dated source snapshot; legal/software applicability is source-specific, not inferred from acquisition date.",
+      "document_role": "technical_reference",
+      "prefix": "https://www.idae.es/tecnologias/eficiencia-energetica/edificacion/calificacion-energetica-de-edificios",
+      "max_pages": 1
+    },
+    {
+      "id": "idae-rating-scale-existing",
+      "url": "https://www.idae.es/sites/default/files/documentos/publicaciones_idae/documentos_11261_escalacalifenerg_edifexistentes_2011_accesible_c762988d.pdf",
+      "language_hint": "es",
+      "jurisdiction": "ES",
+      "categories": [
+        "energy_rating"
+      ],
+      "version_note": "2011 existing-building scale reference; historic method, not a statement of current law.",
+      "document_role": "technical_reference",
+      "format": "pdf"
+    },
+    {
+      "id": "japan-building-performance-label",
+      "url": "https://www.mlit.go.jp/shoene-label/",
+      "language_hint": "ja",
+      "jurisdiction": "JP",
+      "categories": [
+        "energy_rating"
+      ],
+      "version_note": "Dated source snapshot; legal/software applicability is source-specific, not inferred from acquisition date.",
+      "document_role": "technical_reference",
+      "prefix": "https://www.mlit.go.jp/shoene-label/",
+      "max_pages": 48
+    },
+    {
+      "id": "korea-building-efficiency",
+      "url": "https://www.energy.or.kr/front/conts/105002002002000.do",
+      "language_hint": "ko",
+      "jurisdiction": "KR",
+      "categories": [
+        "energy_rating"
+      ],
+      "version_note": "Dated source snapshot; legal/software applicability is source-specific, not inferred from acquisition date.",
+      "document_role": "technical_reference",
+      "prefix": "https://www.energy.or.kr/front/conts/105002002002000.do",
+      "max_pages": 1
+    },
+    {
+      "id": "korea-building-assessment-method",
+      "url": "https://beec.energy.or.kr/BC/BC02/BC02_03_001.do",
+      "language_hint": "ko",
+      "jurisdiction": "KR",
+      "categories": [
+        "energy_rating"
+      ],
+      "version_note": "Dated source snapshot; legal/software applicability is source-specific, not inferred from acquisition date.",
+      "document_role": "technical_reference",
+      "prefix": "https://beec.energy.or.kr/BC/BC02/BC02_03_001.do",
+      "max_pages": 1
+    },
+    {
+      "id": "netherlands-building-label",
+      "url": "https://www.rvo.nl/onderwerpen/wetten-en-regels-gebouwen/energielabel-woningen",
+      "language_hint": "nl",
+      "jurisdiction": "NL",
+      "categories": [
+        "energy_rating"
+      ],
+      "version_note": "Dated source snapshot; legal/software applicability is source-specific, not inferred from acquisition date.",
+      "document_role": "technical_reference",
+      "prefix": "https://www.rvo.nl/onderwerpen/wetten-en-regels-gebouwen/energielabel-woningen",
+      "max_pages": 24
+    },
+    {
+      "id": "portugal-building-method-qa",
+      "url": "https://academia.adene.pt/wp-content/uploads/PeR_DL101D2020_2024Set_V4.pdf",
+      "language_hint": "pt",
+      "jurisdiction": "PT",
+      "categories": [
+        "energy_rating"
+      ],
+      "version_note": "ADENE2024Septemberv4 technical FAQ; dated context retained.",
+      "document_role": "technical_reference",
+      "format": "pdf"
+    },
+    {
+      "id": "denmark-handbook-canonical",
+      "url": "https://www.hbemo.dk/haandbog-for-energikonsulenter-hb2023",
+      "prefix": "https://www.hbemo.dk/haandbog-for-energikonsulenter-hb2023",
+      "max_pages": 128,
+      "language_hint": "da",
+      "jurisdiction": "DK",
+      "categories": [
+        "energy_rating"
+      ],
+      "version_note": "HB2023 named handbook; canonical www host explicitly selected after non-www robots redirect failed.",
+      "html_region": "role_main"
+    },
+    {
+      "id": "portugal-sce-documentation",
+      "url": "https://www.sce.pt/documentacao/",
+      "prefix": "https://www.sce.pt/documentacao/",
+      "max_pages": 1,
+      "language_hint": "pt",
+      "jurisdiction": "PT",
+      "categories": [
+        "energy_rating"
+      ],
+      "version_note": "ADENE SCE public documentation index; replacement discovery source for stale academia PDF URL."
+    },
+    {
+      "id": "portugal-sce-professionals",
+      "url": "https://www.sce.pt/certificacao-energetica-de-edificios/profissionais-sce/",
+      "prefix": "https://www.sce.pt/certificacao-energetica-de-edificios/profissionais-sce/",
+      "max_pages": 16,
+      "language_hint": "pt",
+      "jurisdiction": "PT",
+      "categories": [
+        "energy_rating"
+      ],
+      "version_note": "Public professional-method guidance; no login or certificate database collection."
+    },
+    {
+      "id": "sveby-residential-inputs-2024",
+      "url": "https://www.sveby.org/wp-content/uploads/2024/11/Sveby-brukarindata-bostadshus-2.0-241111.pdf",
+      "format": "pdf",
+      "language_hint": "sv",
+      "jurisdiction": "SE",
+      "categories": [
+        "energy_rating",
+        "controls_calibration",
+        "thermal_fluid"
+      ],
+      "version_note": "Sveby residential standard-user inputs v2.0 dated2024-11-11; preserve exact method/edition."
+    },
+    {
+      "id": "sveby-office-inputs",
+      "url": "https://www.sveby.org/wp-content/uploads/2013/06/Brukarindata-kontor-version-1.1.pdf",
+      "format": "pdf",
+      "language_hint": "sv",
+      "jurisdiction": "SE",
+      "categories": [
+        "energy_rating",
+        "controls_calibration",
+        "thermal_fluid"
+      ],
+      "version_note": "Sveby office-user inputs v1.1,2013 historical reference."
+    },
+    {
+      "id": "portugal-sce-method-qa-2023",
+      "url": "https://www.sce.pt/wp-content/uploads/2023/04/P_R_2023_04_V3.pdf",
+      "format": "pdf",
+      "categories": [
+        "energy_rating",
+        "other_bes"
+      ],
+      "language_hint": "pt",
+      "jurisdiction": "PT",
+      "version_note": "Official SCE questions and answers, April 2023 v3; historical dated method, not a claim of current law.",
+      "document_role": "building energy certification methodology"
+    }
+  ]
+}

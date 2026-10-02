@@ -2,6 +2,8 @@
 import argparse
 import base64
 from concurrent.futures import ThreadPoolExecutor
+from html import escape
+from html.parser import HTMLParser
 import json
 from pathlib import Path
 import subprocess
@@ -10,9 +12,52 @@ from types import SimpleNamespace
 from urllib.parse import urlsplit
 
 from nekaise_loop.artifacts import Artifacts
+from nekaise_loop.curriculum_research import TrainingPageText
 from nekaise_loop.web_http import WebSession
 from nekaise_loop.web_inventory import collect
 from prepare_energy_modeling import dump, emit, now, pin_text, sha
+
+
+def role_main_text(html):
+    """Explicit offline extraction for publishers wrapping all content in a form.
+
+    Keep the original HTTP artifact; select its declared role=main region before
+    ordinary readable extraction. Never turn a missing region into boilerplate.
+    """
+    class Region(HTMLParser):
+        def __init__(self):
+            super().__init__(convert_charrefs=True)
+            self.stack, self.parts, self.done = [], [], False
+
+        def handle_starttag(self, tag, attrs):
+            if self.done or (not self.stack and dict(attrs).get('role') != 'main'):
+                return
+            self.parts.append(self.get_starttag_text())
+            if tag not in TrainingPageText.void:
+                self.stack.append(tag)
+
+        def handle_endtag(self, tag):
+            if tag not in self.stack:
+                return
+            self.parts.append('</' + tag + '>')
+            index = len(self.stack) - 1 - self.stack[::-1].index(tag)
+            del self.stack[index:]
+            self.done = not self.stack
+
+        def handle_data(self, data):
+            if self.stack:
+                self.parts.append(escape(data, quote=False))
+
+    region = Region()
+    region.feed(html)
+    if not region.done:
+        raise ValueError('Declared role=main region is missing or unclosed')
+    parser = TrainingPageText()
+    parser.feed(''.join(region.parts))
+    text = '\n'.join(line.rstrip() for line in ''.join(parser.main_parts or parser.parts).splitlines() if line.strip())
+    if len(text) < 80:
+        raise ValueError('Declared role=main region has insufficient readable text')
+    return text
 
 
 def acquire(spec, out):
@@ -62,20 +107,41 @@ def acquire(spec, out):
                 if collection.get('next_retry_at',0) and collection['next_retry_at']>time.time():
                     break
             rows=[]
+            extraction_omissions=[]
             for entry in collection['pages']:
                 page=artifacts.get(entry['artifact']);text=page['text']
+                representation = page['extractor']
+                extraction_evidence = {}
+                if spec.get('html_region') == 'role_main':
+                    response = artifacts.get(page['raw_response_artifact'])
+                    raw = base64.b64decode(response['body_base64'])
+                    if sha(raw) != page['source_sha256']:
+                        raise ValueError('Raw HTML hash changed before region extraction')
+                    try:
+                        text = role_main_text(raw.decode(response.get('encoding') or 'utf-8'))
+                    except ValueError as exc:
+                        extraction_omissions.append({'url': page['url'], 'error': str(exc),
+                            'raw_response_artifact': page['raw_response_artifact']})
+                        continue
+                    representation = 'offline_role_main_readable_v1'
+                    extraction_evidence = {'prior_extraction_sha256': page['text_sha256']}
                 digest,object_path=pin_text(out,text.encode())
                 rows.append({'id':page['id'],'title':spec['id']+': '+page['url'],'url':page['url'],'source':spec['id'],
                     'origin':'new_web_page','tier':'core','categories':spec['categories'],'text_sha256':digest,
                     'duplicate_key':sha(text.strip().encode()),'object_path':object_path,'chars':len(text),'bytes':len(text.encode()),
-                    'source_sha256':page['source_sha256'],'representation':page['extractor'],'retrieved_at':page['retrieved_at'],
+                    'source_sha256':page['source_sha256'],'representation':representation,'retrieved_at':page['retrieved_at'],
                     'raw_response_artifact':page['raw_response_artifact'],'robots_artifact':page['robots_artifact'],
-                    'license':'recorded source-use policy; no license check','quality_note':'HTML extraction; original bytes preserved for equation/code review'})
-            receipt.update(status='complete' if collection['complete'] else 'partial',pages=len(rows),characters=sum(x['chars'] for x in rows),
+                    'license':'recorded source-use policy; no license check','quality_note':'HTML extraction; original bytes preserved for equation/code review', **extraction_evidence})
+            if not rows:
+                raise ValueError('No usable pages after declared extraction')
+            receipt.update(status='complete' if collection['complete'] and not extraction_omissions else 'partial',pages=len(rows),characters=sum(x['chars'] for x in rows),
                 collection_artifact=key,bounded_by=collection.get('bounded_by'),remaining_frontier=len(collection['pending']),failures=collection['failures'],
-                coverage_limit=request['training']['max_pages'],scope=spec['prefix'])
+                coverage_limit=request['training']['max_pages'],scope=spec['prefix'],extraction_omissions=extraction_omissions)
         with (destination/'documents.jsonl').open('w') as handle:
-            for row in rows:emit(handle,row)
+            for row in rows:
+                row.update({k:spec[k] for k in ('language_hint', 'jurisdiction', 'version_note', 'document_role') if k in spec})
+                row['language_hint_is_detection'] = False
+                emit(handle,row)
     except Exception as exc:
         receipt.update(status='failed',error=repr(exc))
     receipt['finished_at']=now()

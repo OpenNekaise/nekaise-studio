@@ -179,6 +179,12 @@ def test_addition_cannot_overwrite_its_base(tmp_path):
     assert (tmp_path / 'local-summary.json').read_bytes() == before
 
 
+@pytest.mark.parametrize('role', ['reference_assets', 'reference_history', 'reference_pdf'])
+def test_archive_preparation_role_keeps_references_out_of_core(role):
+    split, reason = final.partition({'preparation_role': role}, 'model Example end Example;', set())
+    assert split == role and 'archive preparation role' in reason
+
+
 def test_declared_main_region_recovers_form_wrapped_handbook_not_cookie_banner():
     html = '''<form><nav>Site navigation</nav><div role="main"><nav>Breadcrumb</nav>
     <div><h1>Building energy calculation</h1><p>Heating load equals transmission

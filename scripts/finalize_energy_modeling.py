@@ -29,6 +29,9 @@ def git_location(row):
 
 
 def partition(row, text, new_paths):
+    declared = row.get('preparation_role')
+    if declared in {'reference_assets', 'reference_history', 'reference_pdf'}:
+        return declared, 'explicit archive preparation role; raw bytes and file inventory retained'
     path = row.get('path', '')
     location = git_location(row)
     if location:

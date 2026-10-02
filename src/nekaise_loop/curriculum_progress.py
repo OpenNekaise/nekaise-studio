@@ -5,7 +5,7 @@ from pathlib import Path
 
 from .artifacts import digest
 from .author_config import catalog
-from .corpus import eligible, policy_at
+from .corpus import pinned_source_eligible
 from .curriculum_inventory import build_inventory, next_document, read_inventory_source
 from .storage import encode, now
 
@@ -21,11 +21,18 @@ def cursor_state(state):
     return {k: v for k, v in state.items() if k != "checkpoint"}
 
 
+def require_active_namespace(db, namespace):
+    replacement = db.execute('SELECT to_namespace FROM curriculum_source_replacements WHERE from_namespace=?', (namespace,)).fetchone()
+    if replacement:
+        raise ValueError('Curriculum source was superseded; continue the replacement namespace: ' + replacement[0])
+
+
 def assignment(ctx, *, prepared_state=None, sequence=None, predecessor_round_id=None):
     policy = ctx.config.curriculum_loop
     root = (ctx.engine.settings.root / ctx.config.corpus_path).resolve()
     contract = {"projection_artifact": policy.projection_artifact, "corpus_path": str(root)}
     with ctx.store.connect(immediate=True) as db:
+        require_active_namespace(db, policy.namespace)
         db.execute("INSERT OR IGNORE INTO curriculum_progress VALUES (?,?,0,?,?)",
                    (policy.namespace, encode(contract), encode(initial_state()), now()))
         state_row = dict(db.execute("SELECT * FROM curriculum_progress WHERE namespace=?", (policy.namespace,)).fetchone())
@@ -64,7 +71,7 @@ def assignment(ctx, *, prepared_state=None, sequence=None, predecessor_round_id=
             raise Cancelled("Curriculum assignment cancelled")
         if cursor["document_artifact"]:
             document = ctx.artifacts.get(cursor["document_artifact"])
-            if not eligible({**document, "status": "ok"}, policy_at(root)):
+            if not pinned_source_eligible(root, document):
                 raise ValueError("Pinned corpus document is no longer eligible: " + document["id"])
         else:
             entry = next_document(ctx.engine.settings.workspace, cursor["inventory"], cursor["position"])
@@ -91,6 +98,8 @@ def assignment(ctx, *, prepared_state=None, sequence=None, predecessor_round_id=
                       "title": document["title"], "url": document["url"], "license": document["license"],
                       "span_start": start, "span_length": end-start, "text": text,
                       "document_chars": len(document["text"]),
+                      **({k: document[k] for k in ('domain_source_hash', 'domain_snapshot', 'domain_role', 'original_document_id')}
+                         if 'domain_source_hash' in document else {}),
                       "after": copy.deepcopy(cursor)})
         remaining -= len(text)
         if cycle_end:
@@ -232,6 +241,7 @@ def commit_progress(db, round_id, result, train_artifact):
         if existing[0] != train_artifact:
             raise ValueError("Round already has a different curriculum receipt")
         return
+    require_active_namespace(db, receipt['namespace'])
     current = db.execute("SELECT sequence,state FROM curriculum_progress WHERE namespace=?", (receipt["namespace"],)).fetchone()
     if not current or current[0] != receipt["sequence"] or json.loads(current[1]) != receipt["before"]:
         raise ValueError("Stale curriculum assignment cannot advance progress")

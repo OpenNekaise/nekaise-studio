@@ -179,3 +179,52 @@ checks corpus immutability, original-code recovery, hash quarantine, exact dedup
 source/path exclusions, multilingual ambiguity, immutable cross-bundle dedup,
 form-wrapped handbook extraction and reference separation without network,
 teacher or GPU work.
+
+## Activate a corpus-owned domain collection
+
+An explicit operator continuation can now replace the forward corpus with a frozen
+`nekaise-corpus/workspace/domains/<domain>/snapshots/<digest>` publication:
+
+```bash
+.venv/bin/nekaise-loop bind-domain /absolute/path/to/domain/snapshots/DIGEST \
+  --corpus-root /absolute/path/to/nekaise-corpus --roles core
+```
+
+The command verifies the snapshot identity, member/alias hashes and all text payloads,
+then returns a content-addressed Studio `corpus_path`. Its immutable descriptor pins
+an indexed source catalog, selected forward roles and the original source publication.
+No source is relabeled with an invented open license. The ordinary publisher corpus
+reader and its admission policy remain unchanged. Source IDs use full SHA-256 mapping;
+original IDs, paths, source versions and quality notes remain accessible. Exact-body
+aliases resolve to one canonical document and do not add forward coverage.
+
+Use that returned path, a **new** `curriculum_loop.namespace`, and
+`replace_corpus_source: true` in an operator continuation update. Preserve the rest of
+the existing curriculum configuration. The service transaction resets only the corpus
+frontier; it carries committed GPC progress, web exposure, source catalog, checkpoint
+and budget epoch into the child. It verifies saved weights and Adam compatibility.
+Old prepared blocks are recorded as superseded for this continuation, retain all costs
+and artifacts, and are never transplanted into the new training window. New coverage
+means exposure within the new source contract, not content never seen by the model.
+The old namespace is marked superseded in a separate journal, preserving its original
+state and contract. Starting, retrying or continuing it is refused; resume the child.
+Use an empty `source_prefix` for the new mapped domain IDs. The existing web catalog
+uses flat namespace directories and stable source/collection identities; migrated
+entries retain those identities and link the originals. Catalog copies left by an
+aborted transaction are inactive and reused only when their contents match exactly.
+
+`core` is the initial forward selection. Teacher source search/read can inspect every
+reference role with its provenance and limitations. Explicit Teacher extra readings
+retain ordinary remediation accounting; they do not advance the raw forward cursor.
+PDF formula/figure fidelity is not certified, and TRNSYS extraction defects are recorded
+in the corpus collection. No Teacher authority or benchmark boundary changes.
+
+Runtime never follows a mutable `latest` link or silently falls back to the broad corpus.
+Payload bytes remain in the corpus-owned immutable store, protected by its domain
+retention contract. Missing or changed metadata/payloads stop the stage visibly for
+recovery. A changed domain snapshot needs a new explicit binding and continuation.
+
+Validation covers reference/forward separation, alias resolution, path containment,
+metadata/payload tampering, exact source provenance, atomic cursor migration, unchanged
+GPC/web progress and budget epoch, and missing optimizer rejection. Independent
+benchmarks are neither inputs nor activation gates.

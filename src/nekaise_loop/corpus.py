@@ -76,6 +76,9 @@ def manifest_rows(root, shard=None):
 
 def search_sources(root, query="", prefix="", offset=0, limit=20):
     """Candidate discovery across every page, without the old 600-document frontier."""
+    from .domain_corpus import is_domain, DomainSource
+    if is_domain(root):
+        return DomainSource(root).search(query, prefix, offset, limit)
     policy = policy_at(root)
     index = root/"workspace/corpus-index.sqlite3"
     if index.exists():
@@ -104,6 +107,9 @@ def search_sources(root, query="", prefix="", offset=0, limit=20):
 
 
 def read_source(root, document_id, start=0, length=0):
+    from .domain_corpus import is_domain, DomainSource
+    if is_domain(root):
+        return DomainSource(root).read(document_id, start, length)
     if not re.fullmatch(r"[\w.-]+", document_id) or document_id in {".", ".."} or start<0 or length<0:
         raise ValueError("Invalid source reference")
     with settled_corpus(root):
@@ -127,3 +133,11 @@ def read_source(root, document_id, start=0, length=0):
         if not excerpt.strip():
             raise ValueError("Selected source span is empty")
         return {"source": row.get("source", ""), "id": document_id, "title": row.get("title", document_id), "url": row.get("url", ""), "license": row["license"], "topic": row.get("topic", ""), "source_sha256": source_hash, "manifest_sha256": row.get("sha256"), "text": excerpt, "span_start": start, "span_length": len(excerpt), "document_chars": len(text), "selection_reason": "Selected by the teacher", "replay": False}
+
+
+def pinned_source_eligible(root, document):
+    """Recheck a pinned forward source using its own admission contract."""
+    from .domain_corpus import is_domain, DomainSource
+    if is_domain(root):
+        return DomainSource(root).admits_pinned(document)
+    return eligible({**document, 'status': 'ok'}, policy_at(root))

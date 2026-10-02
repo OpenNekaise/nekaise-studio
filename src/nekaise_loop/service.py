@@ -56,6 +56,10 @@ class Service:
         if actor not in {"operator", "teacher", "supervisor", "orchestrator"}:
             raise ValueError("Unknown action actor")
         campaign = self.store.campaign(campaign_id)
+        if kind in {'start', 'resume', 'review'} and campaign['config'].get('curriculum_loop'):
+            from .curriculum_progress import require_active_namespace
+            with self.store.connect() as db:
+                require_active_namespace(db, campaign['config']['curriculum_loop']['namespace'])
         if actor != "operator" and self.store.operator_cancelled(campaign_id):
             raise Conflict("An explicit operator hold remains in effect")
         if kind == "resume" and campaign["status"] in {"paused", "failed", "stopped", "interrupted", "waiting", "complete"}:
@@ -72,6 +76,8 @@ class Service:
             if actor != "operator" and self.store.operator_cancelled(campaign_id, db=db):
                 raise Conflict("An explicit operator hold remains in effect")
             if kind in {"start", "resume", "review"}:
+                if campaign['config'].get('curriculum_loop'):
+                    require_active_namespace(db, campaign['config']['curriculum_loop']['namespace'])
                 valid = {"ready"} if kind == "start" else {"paused", "failed", "stopped", "interrupted", "waiting"}
                 if kind == "review":
                     valid.add("recovering")
@@ -159,12 +165,19 @@ class Service:
         from .restoration import base_reference, verify_restoration
         from .training_runtime import optimizer_transition
         updates = dict(updates or {})
+        replace_source = updates.pop('replace_corpus_source', False)
+        if type(replace_source) is not bool or replace_source and actor != 'operator':
+            raise ValueError('Corpus replacement requires an explicit operator continuation')
         if "restore_base_from_round" in updates and (not isinstance(updates["restore_base_from_round"], str) or not updates["restore_base_from_round"]):
             raise ValueError("Base restoration requires a completed historical round ID")
         restore_round = updates.pop("restore_base_from_round", None)
         if restore_round is not None and (actor != "orchestrator" or recovery_id is None):
             raise Conflict("Base restoration requires an explicit orchestrator recovery decision")
         parent = self.store.campaign(campaign_id)
+        if parent['config'].get('curriculum_loop'):
+            from .curriculum_progress import require_active_namespace
+            with self.store.connect() as db:
+                require_active_namespace(db, parent['config']['curriculum_loop']['namespace'])
         if parent["status"] in {"running", "queued", "pausing", "stopping"}:
             raise Conflict("Pause or stop the campaign before creating a continuation")
         latest = self.store.one("SELECT s.artifact FROM stage_runs s JOIN rounds r ON s.round_id=r.id WHERE r.campaign_id=? AND s.stage='train' AND s.status='complete' ORDER BY r.number DESC,s.attempt DESC LIMIT 1", (campaign_id,))
@@ -245,6 +258,13 @@ class Service:
         from .identity import validate_identity_update
         validate_identity_update(CampaignConfig.model_validate(parent["config"]).student_identity, config.student_identity)
         config = config.model_copy(update={"corpus_path": str((self.settings.root/config.corpus_path).resolve())})
+        changed_source = Path(config.corpus_path).resolve() != (self.settings.root / parent['config']['corpus_path']).resolve()
+        if prior_loop and changed_source and not replace_source:
+            raise Conflict('Use replace_corpus_source=true to preserve GPC while replacing the corpus')
+        source_migration = None
+        if replace_source:
+            from .corpus_migration import prepare
+            source_migration = prepare(self, parent, config, reason)
         migration = None
         if latest:
             manifest = trained["manifest"]
@@ -264,6 +284,12 @@ class Service:
             context["material_author_update"] = author_change
         if restoration:
             context["restoration"] = restoration
+        if source_migration:
+            context['corpus_source_migration'] = self.artifacts.put(source_migration)
+            if source_migration['optimizer_transition']:
+                if migration and migration != source_migration['optimizer_transition']:
+                    raise Conflict('Source replacement optimizer evidence disagrees with the latest saved stage')
+                context['optimizer_transition'] = source_migration['optimizer_transition']
         context_key, child_id = self.artifacts.put(context), new_id("campaign")
         with self.store.connect(immediate=True) as db:
             if recovery_id is not None:
@@ -273,13 +299,24 @@ class Service:
             current = db.execute("SELECT status FROM campaigns WHERE id=?", (campaign_id,)).fetchone()
             if current["status"] != parent["status"]:
                 raise Conflict("Campaign state changed while preparing its continuation")
+            if prior_loop:
+                require_active_namespace(db, prior_loop['namespace'])
             if actor != "operator" and self.store.operator_cancelled(campaign_id, db=db):
                 raise Conflict("An explicit operator hold remains in effect")
             if db.execute("SELECT id FROM campaigns WHERE id!=? AND status IN ('running','queued','pausing','stopping','waiting','recovering')", (campaign_id,)).fetchone():
                 raise Conflict("Another campaign is already active")
-            budget_since = now() if start and actor == "operator" else parent.get("teacher_budget_since") or parent["created_at"]
+            budget_since = (source_migration['prior_budget_since'] if source_migration else
+                            now() if start and actor == "operator" else parent.get("teacher_budget_since") or parent["created_at"])
+            if source_migration:
+                from .corpus_migration import commit
+                commit(db, source_migration)
             db.execute("INSERT INTO campaigns(id,name,status,config,created_at,updated_at,parent_campaign_id,context_artifact,implementation_hash,teacher_budget_since) VALUES(?,?,?,?,?,?,?,?,?,?)", (child_id, parent["name"][:75] + " · continued", "queued" if start else "ready", encode(config.model_dump()), now(), now(), campaign_id, context_key, source_fingerprint(), budget_since))
             self.store.event(child_id, None, "campaign", "Continuation created", {"parent_campaign_id": campaign_id, "inherit_optimizer": config.inherit_optimizer}, db=db)
+            if source_migration:
+                self.store.event(child_id, None, 'corpus_source_migration',
+                    'Physical domain source selected; GPC frontier, saved optimizer and budget epoch preserved',
+                    {'artifact': context['corpus_source_migration'], 'from_namespace': source_migration['from_namespace'],
+                     'to_namespace': source_migration['to_namespace'], 'gpc_next_unit': source_migration['gpc_next_unit']}, db=db)
             if restore_round is not None:
                 self.store.event(child_id, None, "checkpoint_restoration", "Original Base selected; prior checkpoint and teaching lineage preserved", restoration, db=db)
             if start:

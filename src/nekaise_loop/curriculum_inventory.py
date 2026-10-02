@@ -25,6 +25,9 @@ def file_hash(path):
 
 
 def build_inventory(root, workspace, cancelled=lambda: False):
+    from .domain_corpus import is_domain, DomainSource
+    if is_domain(root):
+        return DomainSource(root).inventory(workspace, cancelled)
     directory = workspace / "curriculum/inventories"
     directory.mkdir(parents=True, exist_ok=True)
     fd, temporary = tempfile.mkstemp(dir=directory, suffix=".sqlite3")
@@ -102,6 +105,13 @@ def _verify_inventory(path, expected, inode, size, mtime):
 
 
 def read_inventory_source(root, inventory, entry):
+    from .domain_corpus import is_domain, DomainSource
+    if is_domain(root):
+        source = DomainSource(root)
+        if (inventory.get('domain_source_hash') != source.identity
+                or entry['metadata'].get('domain_source_hash') != source.identity):
+            raise ValueError('Domain inventory belongs to a different binding')
+        return source.read(entry['document_id'], forward=True)
     row = entry["metadata"]
     stamp = entry["manifest_stamp"]
     current = (root / "manifest" / row["manifest_name"]).stat()

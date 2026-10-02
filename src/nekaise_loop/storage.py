@@ -99,6 +99,11 @@ class Store:
                     namespace TEXT PRIMARY KEY, contract TEXT NOT NULL, sequence INTEGER NOT NULL,
                     state TEXT NOT NULL, updated_at TEXT NOT NULL
                 );
+                CREATE TABLE IF NOT EXISTS curriculum_source_replacements (
+                    from_namespace TEXT PRIMARY KEY REFERENCES curriculum_progress(namespace),
+                    to_namespace TEXT UNIQUE NOT NULL REFERENCES curriculum_progress(namespace),
+                    parent_campaign_id TEXT NOT NULL REFERENCES campaigns(id), created_at TEXT NOT NULL
+                );
                 CREATE TABLE IF NOT EXISTS curriculum_assignments (
                     namespace TEXT NOT NULL REFERENCES curriculum_progress(namespace), sequence INTEGER NOT NULL,
                     artifact TEXT NOT NULL, research_artifact TEXT, created_at TEXT NOT NULL,

@@ -34,6 +34,10 @@ def main():
     curriculum = sub.add_parser("import-curriculum", help="Pin the safe teaching projection and print a continuation update")
     curriculum.add_argument("path")
     curriculum.add_argument("--namespace", default=None)
+    domain = sub.add_parser("bind-domain", help="Verify and pin a corpus-owned domain snapshot; no training")
+    domain.add_argument("snapshot")
+    domain.add_argument("--corpus-root", required=True)
+    domain.add_argument("--roles", nargs='+', default=['core'])
     reports = sub.add_parser("reports")
     reports.add_argument("--before", type=int)
     reports.add_argument("--limit", type=int, choices=range(1, 101), default=30)
@@ -94,6 +98,9 @@ def main():
     elif args.command == "import-curriculum":
         from .general_curriculum import import_curriculum
         result = {"curriculum_loop": import_curriculum(settings.workspace, args.path, namespace=args.namespace).model_dump(), "train_steps": 0}
+    elif args.command == "bind-domain":
+        from .domain_corpus import bind_source
+        result = bind_source(settings.workspace, args.corpus_root, args.snapshot, args.roles)
     elif args.command == "reports":
         from .reports import catalog, current_status
         result = {"current": current_status(service), **catalog(service, before=args.before, limit=args.limit)}

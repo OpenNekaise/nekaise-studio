@@ -22,7 +22,8 @@ Independent evaluations from [nekaise-bench](https://github.com/OpenNekaise/neka
 remain outside the teaching loop.
 
 The dashboard brings together lessons, training progress, operational reports,
-independent benchmark results and a conversation with the latest saved Kai model.
+independent benchmark results and model chat, using the latest saved Kai or a configured
+local model.
 
 ## Start
 

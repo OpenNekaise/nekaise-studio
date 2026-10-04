@@ -45,3 +45,12 @@ test('identity metadata is escaped', () => {
   assert.match(html, /&lt;Kai&gt;/);
   assert.match(html, /&lt;Nekaise&gt;/);
 });
+
+test('external model shows its own name, GPU and limits without Kai iteration labels', () => {
+  const model = {kind:'external',id:'external',display_name:'Qwen3.8-27B',quantization:'UD-Q6_K',max_prompt_tokens:6144,max_new_tokens:2048};
+  const html = chatView({status:{available:true,model},messages:[{role:'assistant',content:'Hello',model}],busy:false,draft:'',progress:'',error:''});
+  assert.match(html, /Qwen3.8-27B/);
+  assert.match(html, /8192 token context/);
+  assert.match(html, /training is paused/);
+  assert.ok(!html.includes('Iteration') && !html.includes('CPU chat') && !html.includes('Latest student'));
+});

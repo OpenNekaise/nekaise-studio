@@ -1,4 +1,4 @@
-import { escapeHTML as e, time } from "./lib.js?v=54fd9ba1f414";
+import { escapeHTML as e, time } from "./lib.js?v=9a2009180d1e";
 
 export async function readChatStream(response, receive) {
   if (!response.ok) {
@@ -27,23 +27,29 @@ export async function readChatStream(response, receive) {
 
 function modelInfo(status) {
   const model = status?.model;
+  if (model?.kind === "external") return `<span>${e(model.quantization)} · GPU · ${e(model.max_prompt_tokens + model.max_new_tokens)} token context</span><span class="quiet">${e(status.available ? "Ready · Thinking off" : status.message || "Loading…")}</span>`;
   return model ? `<span>${e(model.run_name)} · Iteration ${e(model.round_number)}</span><span class="quiet">Completed ${time(model.completed_at)}</span>` : `<span>${e(status?.message || "Checking model availability…")}</span>`;
 }
 
-function modelName(model) { return model?.identity?.display_name || "Model"; }
+function modelName(model) { return model?.display_name || model?.identity?.display_name || "Model"; }
+function modelLabel(model) { return model?.kind === "external" ? model.quantization : `Iteration ${model?.round_number} · ${model?.id?.slice(0, 8)}`; }
+function modelNote(model) {
+  return `${model?.kind === "external" ? "Local GPU chat is available while training is paused." : "CPU chat keeps GPU capacity available for training."} Conversations stay in this page and are not used for training.`;
+}
 function modelDescription(model) {
+  if (model?.kind === "external") return "Talk to the selected local model.";
   return model?.identity ? `${model.identity.name} from ${model.identity.developer}. Talk to the latest completed checkpoint.`
     : "Talk to the latest completed model. Each message uses the newest available checkpoint.";
 }
 
 export function chatView(state) {
   return `<section class="model-page" aria-labelledby="model-title">
-    <div class="section-heading"><div><div class="eyebrow">Latest student</div><h1 id="model-title">${e(modelName(state.status?.model))}</h1>
+    <div class="section-heading"><div><div class="eyebrow" id="model-eyebrow">${state.status?.model?.kind === "external" ? "Local model" : "Latest student"}</div><h1 id="model-title">${e(modelName(state.status?.model))}</h1>
     <p class="quiet" id="model-description">${e(modelDescription(state.status?.model))}</p></div>
     <button class="button secondary" id="model-new" ${state.busy ? "disabled" : ""}>New chat</button></div>
     <div class="model-info" id="model-info">${modelInfo(state.status)}</div>
-    <p class="model-note quiet">CPU chat keeps GPU capacity available for training. Conversations stay in this page and are not used for training.</p>
-    <div class="model-messages" id="model-messages" aria-live="polite" aria-label="Conversation">${state.messages.length ? state.messages.map(m => `<article class="model-message ${m.role}"><div class="model-message-heading">${m.role === "user" ? "You" : e(modelName(m.model))}${m.model ? ` <span class="quiet">· Iteration ${e(m.model.round_number)} · ${e(m.model.id.slice(0, 8))}</span>` : ""}</div><div class="model-message-text">${e(m.content)}</div>${m.partial && m.role === "assistant" ? '<small class="quiet">Incomplete reply · excluded from conversation context</small>' : ""}</article>`).join("") : '<div class="model-empty">Ask a question, explore an idea, or try a follow-up.</div>'}</div>
+    <p class="model-note quiet" id="model-note">${e(modelNote(state.status?.model))}</p>
+    <div class="model-messages" id="model-messages" aria-live="polite" aria-label="Conversation">${state.messages.length ? state.messages.map(m => `<article class="model-message ${m.role}"><div class="model-message-heading">${m.role === "user" ? "You" : e(modelName(m.model))}${m.model ? ` <span class="quiet">· ${e(modelLabel(m.model))}</span>` : ""}</div><div class="model-message-text">${e(m.content)}</div>${m.partial && m.role === "assistant" ? '<small class="quiet">Incomplete reply · excluded from conversation context</small>' : ""}</article>`).join("") : '<div class="model-empty">Ask a question, explore an idea, or try a follow-up.</div>'}</div>
     <div id="model-progress" class="quiet" role="status">${e(state.progress)}</div>
     <div id="model-error" class="error-banner" role="alert" ${state.error ? "" : "hidden"}>${e(state.error)}</div>
     <form id="model-form" class="model-composer"><label for="model-input">Message</label>
@@ -75,6 +81,8 @@ export function createModelChat(api, fetcher = fetch) {
       container.querySelector("#model-title").textContent = modelName(state.status?.model);
       container.querySelector("#model-description").textContent = modelDescription(state.status?.model);
       container.querySelector("#model-info").innerHTML = modelInfo(state.status);
+      container.querySelector("#model-eyebrow").textContent = state.status?.model?.kind === "external" ? "Local model" : "Latest student";
+      container.querySelector("#model-note").textContent = modelNote(state.status?.model);
       container.querySelector("[type=submit]").disabled = state.busy || !state.status?.available;
     }
   }
@@ -82,19 +90,23 @@ export function createModelChat(api, fetcher = fetch) {
     event.preventDefault();
     if (state.busy || !state.draft.trim() || !state.status?.available) return;
     const text = state.draft.trim();
+    const previous = state.messages.findLast(m => m.role === "assistant" && !m.partial)?.model;
+    if (previous && previous.id !== state.status.model.id && (previous.kind === "external" || state.status.model.kind === "external")) {
+      state.error = "The chat model changed. Start a new chat."; draw(); return;
+    }
     const history = state.messages.filter(m => !m.partial).map(({ role, content }) => ({ role, content }));
     if (history.length >= 30) { state.error = "Start a new chat to continue; this conversation has reached its limit."; draw(); return; }
-    state.busy = true; state.error = ""; state.progress = "Loading the latest model…"; state.draft = "";
+    state.busy = true; state.error = ""; state.progress = "Connecting to the model…"; state.draft = "";
     const user = { role: "user", content: text }, answer = { role: "assistant", content: "" };
     state.messages.push(user, answer); controller = new AbortController(); draw();
     try {
       const response = await fetcher("/api/model/chat", { method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ messages: [...history, { role: "user", content: text }] }), signal: controller.signal });
+        body: JSON.stringify({ messages: [...history, { role: "user", content: text }], model_id: state.status.model.id }), signal: controller.signal });
       await readChatStream(response, event => {
         if (event.type === "model") answer.model = event.model;
         if (event.type === "ready") state.progress = "Replying…";
         if (event.type === "delta") answer.content += event.text;
-        if (event.type === "done") { answer.content = event.text; state.progress = `${event.tokens} tokens · ${event.seconds.toFixed(1)}s${event.stop_reason === "length" ? " · Reply length limit reached" : ""}`; }
+        if (event.type === "done") { answer.content = event.text; state.progress = `${event.tokens} tokens · ${event.seconds.toFixed(1)}s${Number.isFinite(event.tokens_per_second) ? ` · ${event.tokens_per_second.toFixed(1)} tokens/s` : ""}${event.stop_reason === "length" ? " · Reply length limit reached" : ""}`; }
         draw();
       });
     } catch (error) {

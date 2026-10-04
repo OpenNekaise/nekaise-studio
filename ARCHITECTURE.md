@@ -760,8 +760,8 @@ chat adds no identity system message and does not rewrite the model's words.
 
 `model_chat.py` exposes a read-only snapshot resolver and a request-owned CPU chat
 worker; `workers/chat.py` is the isolated ML entrypoint. The HTTP process imports no
-ML libraries. The training worker retains exclusive ownership of training and GPU
-model processes. Chat owns only its own subprocess group, never training commands.
+ML libraries. Workers retain exclusive ownership of model processes. Chat owns only
+its own subprocess group, never training commands.
 
 `GET /api/model` follows the current campaign's ancestor chain to the newest completed
 round. Unstarted drafts and unfinished round outputs are excluded. A missing latest
@@ -780,7 +780,7 @@ checkpoint decisions or independent benchmarks. A refreshed page starts a new ch
 
 One workspace file lock permits one chat request at a time across API processes. A
 second request returns a busy event. Limits are 31 alternating messages, 4,000 characters
-per message, 12,000 characters total, 2,048 native prompt tokens, 256 new tokens and a
+per user message, 12,000 characters per assistant message and in total, 2,048 native prompt tokens, 256 new tokens and a
 180-second request deadline. Oversized context fails before weight loading; it is never
 silently truncated. Incomplete replies and their prompts are excluded from later context.
 The owned child is killed and reaped on disconnect, timeout or cancellation; Linux
@@ -794,6 +794,27 @@ Checkpoint files are read-only and no optimizer state is loaded. Each request ex
 and releases its memory; there is no GPU residency, background model server or training
 pause for ordinary chat. CPU, RAM bandwidth and checkpoint reads remain shared machine
 resources, so this is GPU isolation rather than a claim of zero overall contention.
+
+An optional ignored `workspace/model-chat.json` selects an external local GGUF model
+for the Model tab. `external_chat.py` validates configuration and streams the loopback
+HTTP response. `workers/external_chat.py` verifies the GGUF SHA-256, owns llama-server,
+and holds the same exclusive `worker.lock` as training and profiling. The server inherits
+that lock and has parent-death signaling. An orphan therefore cannot overlap a new
+training worker. Launch requires an explicit operator pause and no recorded live model
+children. A queued training start/resume makes the chat worker stop and reap its server,
+then release the lock so the existing supervisor can consume the command. Chat never
+changes a campaign or adds training actions. It is started explicitly through its service.
+
+The external server binds only to loopback with a fresh local credential, one slot,
+native chat template, thinking off, no context shifting, and no prompt/response logs.
+Runtime state is mode 0600, separate from the teaching ledger. The API checks configuration
+and process identities; the worker checks authenticated health and the configured model
+alias. Readiness cannot silently select Kai or a different external model. Chat requests
+carry a model ID to reject a switch between status and generation. Native prompt tokens
+are checked before generation; request limits remain bounded. Disconnect closes the
+upstream stream. The UI labels external name, quantization, GPU and measured generation
+speed separately from Kai versions and iterations. These conversations do not enter
+training, reports or benchmark evidence. See [deployment](deploy/README.md#local-gpu-chat).
 
 ## Forward curriculum coverage
 

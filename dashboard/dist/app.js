@@ -1,11 +1,11 @@
-import { createModelChat } from "./model-chat.js?v=54fd9ba1f414";
-import { escapeHTML as e, time, modelLabel, readAPIResponse } from "./lib.js?v=54fd9ba1f414";
-import { overview, iterationView, historyView, reportsView, emptyStudio, badge, recoveryNotice, studioScope, studioNavigation } from "./views.js?v=54fd9ba1f414";
-import { elapsedLabel } from "./telemetry.js?v=54fd9ba1f414";
+import { createModelChat } from "./model-chat.js?v=9a2009180d1e";
+import { escapeHTML as e, time, modelLabel, readAPIResponse } from "./lib.js?v=9a2009180d1e";
+import { overview, iterationView, historyView, reportsView, emptyStudio, badge, recoveryNotice, studioScope, studioNavigation } from "./views.js?v=9a2009180d1e";
+import { elapsedLabel } from "./telemetry.js?v=9a2009180d1e";
 
-import { createAssessmentHistory } from "./teacher-assessment.js?v=54fd9ba1f414";
-import { createBenchmarkBrowser } from "./benchmark-browser.js?v=54fd9ba1f414";
-import { createExperimentBrowser } from "./experiment-browser.js?v=54fd9ba1f414";
+import { createAssessmentHistory } from "./teacher-assessment.js?v=9a2009180d1e";
+import { createBenchmarkBrowser } from "./benchmark-browser.js?v=9a2009180d1e";
+import { createExperimentBrowser } from "./experiment-browser.js?v=9a2009180d1e";
 
 const $ = id => document.getElementById(id);
 const state = {
@@ -76,7 +76,7 @@ function render(force = false) {
   renderHeader();
   if (state.view === "model") {
     modelChat.mount($("content"));
-    $("updated-label").textContent = "Latest completed student · Interactive chat";
+    $("updated-label").textContent = "Model · Interactive chat";
     state.contentScope = "model";
     state.signature = "";
     return;

@@ -1,0 +1,17 @@
+[Unit]
+Description=Nekaise local GPU model chat (training must be paused)
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=%h/Code/nekaise-studio
+Environment=PYTHONPATH=%h/Code/nekaise-studio/src
+Environment=PATH=%h/.local/bin:/usr/local/bin:/usr/bin:/bin
+EnvironmentFile=-%h/Code/nekaise-studio/workspace/model-chat.env
+ExecStart=%h/Code/nekaise-studio/.venv/bin/python -m nekaise_loop.workers.external_chat
+Restart=no
+KillMode=control-group
+TimeoutStopSec=15
+UMask=0077
+
+# Start explicitly for a paused campaign. Do not enable at boot.

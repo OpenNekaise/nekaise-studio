@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Literal
 
 import anyio
+import httpx
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from .artifacts import digest
@@ -25,11 +26,12 @@ TIMEOUT_SECONDS = 180
 class ChatMessage(BaseModel):
     model_config = ConfigDict(extra="forbid")
     role: Literal["user", "assistant"]
-    content: str = Field(min_length=1, max_length=4000)
+    content: str = Field(min_length=1, max_length=12000)
 
 
 class ChatRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
+    model_id: str | None = Field(default=None, max_length=128)
     messages: list[ChatMessage] = Field(min_length=1, max_length=31)
 
     @model_validator(mode="after")
@@ -41,6 +43,8 @@ class ChatRequest(BaseModel):
             raise ValueError("Conversation must alternate user/assistant and end with a user message")
         if any(not m.content.strip() for m in self.messages):
             raise ValueError("Messages cannot be blank")
+        if any(m.role == 'user' and len(m.content) > 4000 for m in self.messages):
+            raise ValueError('User messages must not exceed 4000 characters')
         if sum(len(m.content) for m in self.messages) > 12000:
             raise ValueError("Conversation is too long; start a new chat")
         return self
@@ -71,6 +75,10 @@ def latest_snapshot(service):
 
 def status(service):
     try:
+        from . import external_chat
+        config = external_chat.read_config(service.settings.workspace)
+        if config is not None:
+            return external_chat.status(service.settings.workspace, config)
         snapshot, _ = latest_snapshot(service)
         return {'available': True, 'model': snapshot}
     except (ValueError, OSError, KeyError) as exc:
@@ -115,6 +123,24 @@ async def stream_chat(service, body):
         except BlockingIOError:
             yield {'type': 'error', 'message': 'The model is answering another request. Try again shortly.'}
             return
+        # A configured external model never silently falls back to Kai. Its
+        # dedicated worker owns GPU residency; HTTP only bridges the stream.
+        from . import external_chat
+        try:
+            config = external_chat.read_config(workspace)
+            if config is not None:
+                stream = external_chat.stream(service, body, config)
+                try:
+                    async for event in stream:
+                        yield event
+                finally:
+                    with anyio.CancelScope(shield=True):
+                        await stream.aclose()
+                return
+        except (OSError, ValueError, KeyError, TimeoutError, httpx.HTTPError) as exc:
+            message = 'Local model connection interrupted. Training may have resumed.' if isinstance(exc, httpx.HTTPError) else str(exc)
+            yield {'type': 'error', 'message': message[:400]}
+            return
         ownership.LOCK_DIRECTORY.mkdir(parents=True, exist_ok=True)
         with (ownership.LOCK_DIRECTORY/'source.lock').open('a+') as source_lock, (workspace/'checkpoint-retention.lock').open('a+') as checkpoint_lock:
             try:
@@ -122,6 +148,8 @@ async def stream_chat(service, body):
                 fcntl.flock(source_lock, fcntl.LOCK_SH | fcntl.LOCK_NB)
                 fcntl.flock(checkpoint_lock, fcntl.LOCK_SH | fcntl.LOCK_NB)
                 metadata, result = latest_snapshot(service)
+                if body.model_id and body.model_id != metadata['id']:
+                    raise ValueError('The chat model changed. Start a new chat.')
                 env = {**os.environ, 'PYTHONPATH': str(service.settings.root/'src'),
                        'CUDA_VISIBLE_DEVICES': '', 'OMP_NUM_THREADS': '4',
                        'MKL_NUM_THREADS': '4', 'TOKENIZERS_PARALLELISM': 'false',

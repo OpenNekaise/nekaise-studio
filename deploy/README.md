@@ -85,3 +85,56 @@ not guess a series from whichever directory has newer files. Verify the dedicate
 `/api/campaigns/{id}/benchmark` endpoint and its history endpoint after deployment.
 Missing display data does not establish that no evaluation has run. Actual measurements
 stay in Bench storage and never enter teaching, normal Report or recovery inputs.
+
+## Local GPU chat
+
+The Model tab defaults to the latest Kai checkpoint on CPU. To use a separate local
+model, pause training through Studio and wait for the worker to stop. Put its configuration
+in ignored `workspace/model-chat.json`:
+
+```json
+{
+  "display_name": "Qwen3.8-27B",
+  "model_source": "unsloth/Qwen3.8-27B-GGUF",
+  "revision": "4ca720788d1e01f1bff70c033e0d0028fd02e502",
+  "quantization": "UD-Q6_K",
+  "model_path": "/absolute/path/Qwen3.8-27B-UD-Q6_K.gguf",
+  "sha256": "c9c206812fbe4ac7b76a729e25928b63f2ae89d37f69da7a71c20aec763cd436",
+  "server_binary": "/absolute/path/llama-server",
+  "port": 8791,
+  "context_tokens": 8192,
+  "max_new_tokens": 2048
+}
+```
+
+Use a CUDA llama.cpp build that supports the model (validated with b11396). Keep weights
+and runtime binaries outside Git. The worker verifies the complete model hash before
+loading. If CUDA libraries need a search path, put `LD_LIBRARY_PATH=/absolute/library/path`
+in ignored `workspace/model-chat.env`. Install and start the dedicated worker:
+
+```bash
+cp deploy/nekaise-model-chat.service ~/.config/systemd/user/
+systemctl --user daemon-reload
+systemctl --user start nekaise-model-chat
+systemctl --user status nekaise-model-chat
+```
+
+Refresh Studio and open Model. Loading and stopped states are unavailable; they never
+fall back silently to Kai. Text chat uses the model's native template with thinking off.
+The reply limit is 2,048 tokens; total context is 8,192 tokens in this configuration.
+Prompt limits include the whole conversation. File/image input and tool execution are
+not part of this interface. Messages remain private to the page and in-memory inference.
+
+The chat worker holds the same lock as training. Resume through Studio first stops the
+chat server and frees the GPU; the training supervisor then processes the queued command.
+Do not enable this chat service at boot. After another explicit training pause, start
+the service again. To return the Model tab to Kai:
+
+```bash
+systemctl --user stop nekaise-model-chat
+mv workspace/model-chat.json workspace/model-chat.disabled.json
+```
+
+Stop this worker before code maintenance: it holds a shared source lock. Source changes
+still require the usual verified continuation when training later resumes. Chat does not
+replace the training student, optimizer or checkpoint lineage.

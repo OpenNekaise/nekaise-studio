@@ -198,6 +198,7 @@ def select(ctx):
     if work["unit"]["id"] != block_plan["unit_id"]:
         raise ValueError("Prepared GPC unit differs from the frozen Teacher plan")
     validate_plan(ctx, curriculum, work, progression["required_authors"])
+    ctx.additional_sources = reference_sources(ctx, cycle, curriculum["lessons"])
     lessons = []
     for task in curriculum["lessons"]:
         sources = stages._sources(ctx, task["sources"])
@@ -207,6 +208,8 @@ def select(ctx):
         document["selection_reason"] = task["reason"]
         lessons.append({**task, "sources": sources, "document": document, "student": None,
                         "student_observation": "not_requested", "teacher": "", "errors": [], "evidence": [], "gate": None})
+    # Historical citations support original lessons, not raw training readings.
+    ctx.additional_sources = []
     from .teacher_tools import replay_lesson
     result = {"curriculum": curriculum, "lessons": lessons, "readings": stages._sources(ctx, curriculum["readings"]),
         "replay": [replay_lesson(ctx.engine.settings.workspace, r["round_id"], r["lesson_id"]) for r in curriculum["replay"]],
@@ -239,15 +242,15 @@ def last_block(ctx):
     return cycle["position"] == len(ctx.artifacts.get(cycle["plan_artifact"])["blocks"])-1
 
 
-def assessment_sources(ctx, cycle, assessments):
-    """Resolve exact historical research IDs for Teacher-selected follow-up checks.
+def reference_sources(ctx, cycle, items):
+    """Resolve exact historical research IDs for lessons and assessments.
 
     Only recorded research artifacts are searched, never arbitrary files or model
     output. Artifact hashes and the ordinary source-span checks remain mandatory.
-    This supplies assessment references, not training admission or fresh coverage.
+    This supplies citations, not raw training admission or fresh coverage.
     """
     sources = [s for u in ctx.artifacts.get(cycle["research_artifact"])["units"] for s in u["sources"]]
-    missing = {r["document_id"] for item in assessments for r in item["sources"]
+    missing = {r["document_id"] for item in items for r in item["sources"]
                if r["document_id"].startswith("research-")} - {s["id"] for s in sources}
     if missing:
         rows = ctx.store.query("SELECT DISTINCT research_artifact FROM teaching_cycles "
@@ -269,7 +272,7 @@ def evaluate(ctx):
         return {"items": [], "reference_hash": digest([]), "comparison_pair": None, "review_pending": True}
     cycle = cycle_for(ctx.store, ctx.round["id"])
     plan = ctx.artifacts.get(cycle["plan_artifact"])
-    ctx.additional_sources = assessment_sources(ctx, cycle, plan["assessments"])
+    ctx.additional_sources = reference_sources(ctx, cycle, plan["assessments"])
     items = []
     for value in plan["assessments"]:
         row = Evaluation.model_validate(value).model_dump()

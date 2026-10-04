@@ -80,7 +80,8 @@ def test_cycle_saves_each_block_all_authors_and_reviews_once(setup_loop, monkeyp
         assert service.artifacts.get(cycle["parent_binding_artifact"])["parent_checkpoint"] == row["model_before"]
 
 
-def test_cycle_assessment_resolves_previous_campaign_research(setup_loop, monkeypatch):
+@pytest.mark.parametrize("target", ["assessment", "lesson", "reading"])
+def test_cycle_reference_resolves_previous_campaign_research(setup_loop, monkeypatch, target):
     _, service, campaign, engine, _ = setup_cycle(setup_loop, monkeypatch, rounds=2)
     engine.run(campaign["id"])
     assert service.store.campaign(campaign["id"])["status"] == "complete"
@@ -98,16 +99,25 @@ def test_cycle_assessment_resolves_previous_campaign_research(setup_loop, monkey
 
     def plan(self, brief):
         value = original(self, brief)
-        value["assessments"][0]["sources"] = [{"document_id": "research-historical-citation", "start": 8, "length": 12}]
+        item = value["assessments"][0] if target == "assessment" else value["blocks"][0]["curriculum"]["lessons"][0]
+        item["sources"] = [{"document_id": "research-historical-citation", "start": 8, "length": 12}]
+        if target == "reading":
+            value["blocks"][0]["curriculum"]["readings"] = item["sources"]
         return value
 
     monkeypatch.setattr(CycleTeacher, "cycle_plan", plan)
     child = service.continue_campaign(campaign["id"], {"rounds": 2})
     engine.run(child["id"])
+    if target == "reading":
+        assert "Research reference is unavailable" in service.store.campaign(child["id"])["error"]
+        assert len(service.store.query("SELECT * FROM curriculum_receipts")) == 2
+        assert service.artifacts.get(old_cycle["research_artifact"]) == old_research
+        return
     assert service.store.campaign(child["id"])["status"] == "complete", service.store.campaign(child["id"])["error"]
+    stage, collection, order = ("evaluate", "items", "DESC") if target == "assessment" else ("select", "lessons", "ASC")
     saved = service.store.one("SELECT s.artifact FROM stage_runs s JOIN rounds r ON r.id=s.round_id "
-                             "WHERE r.campaign_id=? AND s.stage='evaluate' ORDER BY r.number DESC LIMIT 1", (child["id"],))
-    source = service.artifacts.get(saved["artifact"])["items"][0]["sources"][0]
+                             f"WHERE r.campaign_id=? AND s.stage=? ORDER BY r.number {order} LIMIT 1", (child["id"], stage))
+    source = service.artifacts.get(saved["artifact"])[collection][0]["sources"][0]
     assert source["text"] == old_research["units"][0]["sources"][0]["text"][8:20]
     assert source["research_artifact"] == old_cycle["research_artifact"]
     assert source["source_sha256"] == old_research["units"][0]["sources"][0]["source_sha256"]
@@ -115,9 +125,9 @@ def test_cycle_assessment_resolves_previous_campaign_research(setup_loop, monkey
 
 
 @pytest.mark.parametrize("failure", ["unknown_id", "outside_span", "tampered_artifact"])
-def test_historical_assessment_reference_checks_remain_enforced(setup_loop, monkeypatch, failure):
+def test_historical_reference_checks_remain_enforced(setup_loop, monkeypatch, failure):
     from types import SimpleNamespace
-    from nekaise_loop.cycle_stages import assessment_sources
+    from nekaise_loop.cycle_stages import reference_sources
     from nekaise_loop.stages import _sources
     _, service, campaign, engine, _ = setup_cycle(setup_loop, monkeypatch, rounds=2)
     engine.run(campaign["id"])
@@ -131,13 +141,13 @@ def test_historical_assessment_reference_checks_remain_enforced(setup_loop, monk
         path = service.artifacts.root / old["research_artifact"][:2] / (old["research_artifact"] + ".json")
         path.write_text('{}')
         with pytest.raises(ValueError, match="Artifact integrity failed"):
-            assessment_sources(ctx, current, [{"sources": [reference]}])
+            reference_sources(ctx, current, [{"sources": [reference]}])
     else:
-        ctx.additional_sources = assessment_sources(ctx, current, [{"sources": [reference]}])
+        ctx.additional_sources = reference_sources(ctx, current, [{"sources": [reference]}])
         def rejected(*args):
-            raise ValueError("Unresolved reference reached ordinary source admission")
+            pytest.fail("Research reference reached ordinary source admission")
         monkeypatch.setattr("nekaise_loop.stages.read_source", rejected)
-        with pytest.raises(ValueError, match="Unresolved reference"):
+        with pytest.raises(ValueError, match="Research reference is unavailable or outside its verified span"):
             _sources(ctx, [reference])
 
 

@@ -153,6 +153,8 @@ def _sources(ctx, references):
             if not excerpt.strip():
                 raise ValueError("Selected reference excerpt is empty")
         else:
+            if r["document_id"].startswith("research-"):
+                raise ValueError("Research reference is unavailable or outside its verified span: " + r["document_id"])
             source = read_source((ctx.engine.settings.root/ctx.config.corpus_path).resolve(), r["document_id"], r["start"], r["length"])
         result.append({**source, "material_scope": r.get("material_scope", "unspecified")})
     return result

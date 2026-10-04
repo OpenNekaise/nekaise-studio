@@ -254,11 +254,14 @@ then chooses continue, a teacher-authored pause through the command queue that w
 operational review, or campaign completion. Changing
 online scores remain diagnostics, not a fixed benchmark trend.
 
-Cycle assessments may cite research from previous teaching cycles. Missing current-cycle
+Cycle lessons and assessments may cite research from previous teaching cycles. Missing current-cycle
 research IDs are looked up exactly in recorded, hash-verified cycle research artifacts,
 without a recency cutoff; resolved snapshots retain their artifact provenance. Normal span
-checks still apply. This assessment-only lookup does not admit raw training text, grant
+checks still apply. This citation lookup does not admit raw training readings, grant
 fresh coverage, or resolve arbitrary files and unrecorded source IDs.
+Lesson selection clears these additional references before resolving raw readings.
+Unknown research IDs and out-of-range excerpts fail as research-reference errors;
+they are never sent to the domain corpus reader.
 
 Inference honors the checkpoint's generation EOS token or token list, falling back to
 the tokenizer's EOS only when the checkpoint has none. Saved generations include token

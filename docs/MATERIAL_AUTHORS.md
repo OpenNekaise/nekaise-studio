@@ -128,7 +128,12 @@ active progressive corpus/GPC loop requires every registered Author to contribut
 material in each positive round; the Teacher assigns their jobs within the existing
 allowances. Historical protocols retain their recorded author-selection behavior.
 
-Example for the user-selected DeepSeek endpoint:
+On 2026-10-04, the operator removed `deepseek-flash` from the active and default
+Author registries. GPT-6 Luna, Kimi K3 and Claude Code Sonnet 5.5 remain registered.
+Historical DeepSeek material and provenance remain accessible; new work must not
+require DeepSeek. Other Author settings and execution budgets are unchanged.
+
+Historical configuration example for the DeepSeek endpoint:
 
 ```json
 {

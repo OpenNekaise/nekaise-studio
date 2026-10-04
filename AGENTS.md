@@ -1,5 +1,18 @@
 # Working on Nekaise Studio
 
+## DeepSeek Author removal (authorized 2026-10-04)
+
+The operator explicitly removed `deepseek-flash` from the active and default Author
+registries. Preserve `gpt-luna`, `kimi-k3` and `claude-sonnet`, with their existing
+settings and shared limits. Earlier instructions to preserve all four Authors are
+superseded only for this named removal. Future additions remain additive.
+Apply the removal through `remove_material_author_ids` in a recorded continuation;
+do not change historical campaign configs, jobs, material, reservations or provenance.
+The Teacher should plan future work for the remaining registered Authors within the
+existing budgets. Preserve the physical-corpus and GPC progress, Kai identity, saved
+model and compatible Adam, and resume after validation. Do not wait for DeepSeek
+credit or make new DeepSeek Author calls after the new continuation is active.
+
 ## User communication (operator preference, 2026-10-02)
 
 For user-facing messages, aim for roughly 80% adherence to ASD-STE100: short sentences,
